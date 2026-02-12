@@ -1,0 +1,14 @@
+---
+extends: default
+rules:
+  line-length:
+    max: 200
+    level: warning
+  truthy:
+    allowed-values: ["true", "false", "yes", "no"]
+  document-start: disable
+  indentation:
+    spaces: 2
+ignore:
+  - charts/
+  - node_modules/
