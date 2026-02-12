@@ -103,5 +103,5 @@
 
 - name: Reboot server
   ansible.builtin.reboot:
-    reboot_timeout: 300
+    reboot_timeout: 100
   when: common_reboot_required.stat.exists

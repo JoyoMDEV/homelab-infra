@@ -11,7 +11,7 @@
 
 # noqa command-instead-of-module no-changed-when risky-shell-pipe
 - name: Install k3s server
-  when: not k3s_serverbinary.stat.exists
+  when: not k3s_server_binary.stat.exists
   ansible.builtin.shell: |
     curl -sfL https://get.k3s.io | sh -s - server \
       --write-kubeconfig-mode 644 \
@@ -40,7 +40,7 @@
 
 - name: Display cluster info
   ansible.builtin.debug:
-    msg: "{{ node_status.stdout_lines }}"
+    msg: "{{ k3s_server_node_status.stdout_lines }}"
 
 - name: Read node token
   ansible.builtin.slurp:
@@ -58,12 +58,12 @@
 - name: Fetch kubeconfig
   ansible.builtin.fetch:
     src: /etc/rancher/k3s/k3s.yaml
-    dest: "{{ playbook_dir }}/../../kubeconfig"
+    dest: "{{ playbook_dir }}/../kubeconfig"
     flat: true
 
 - name: Fix kubeconfig server address
   ansible.builtin.replace:
-    path: "{{ playbook_dir }}/../../kubeconfig"
+    path: "{{ playbook_dir }}/../kubeconfig"
     regexp: "https://127.0.0.1:6443"
     replace: "https://{{ k3s_server_tailscale_ip.stdout }}:6443"
   delegate_to: localhost

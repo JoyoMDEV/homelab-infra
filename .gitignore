@@ -27,3 +27,9 @@ node_modules/
 .idea/
 *.swp
 .DS_Store
+
+# Kubeconfig
+kubeconfig
+
+# Ansible
+.ansible/
