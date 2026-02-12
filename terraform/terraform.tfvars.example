@@ -1,0 +1,3 @@
+hcloud_token        = "your-hetzner-api-token-here"
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+location            = "fsn1"
