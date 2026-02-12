@@ -1,0 +1,216 @@
+---
+- name: Install Samba AD DC packages
+  ansible.builtin.apt:
+    name:
+      - samba
+      - smbclient
+      - winbind
+      - krb5-user
+      - krb5-config
+      - libnss-winbind
+      - libpam-winbind
+      - ldb-tools
+      - dnsutils
+    state: present
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Check if domain is already provisioned
+  ansible.builtin.stat:
+    path: /etc/samba/smb.conf.bak
+  register: samba_provisioned
+
+- name: Stop conflicting services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - smbd
+    - nmbd
+    - winbind
+  when: not samba_provisioned.stat.exists
+  failed_when: false
+
+# noqa risky-file-permissions
+- name: Backup original smb.conf
+  ansible.builtin.copy:
+    src: /etc/samba/smb.conf
+    dest: /etc/samba/smb.conf.orig
+    remote_src: true
+  when: not samba_provisioned.stat.exists
+  failed_when: false
+
+- name: Remove existing smb.conf for provisioning
+  ansible.builtin.file:
+    path: /etc/samba/smb.conf
+    state: absent
+  when: not samba_provisioned.stat.exists
+
+# noqa no-changed-when
+- name: Provision Samba AD domain
+  ansible.builtin.command: >
+    samba-tool domain provision
+    --use-rfc2307
+    --realm={{ samba_realm }}
+    --domain={{ samba_domain }}
+    --server-role=dc
+    --dns-backend=SAMBA_INTERNAL
+    --host-ip={{ tailscale_ip.stdout }}
+    --adminpass={{ samba_admin_password }}
+  when: not samba_provisioned.stat.exists
+  notify: Restart samba-ad-dc
+
+- name: Mark as provisioned
+  ansible.builtin.file:
+    path: /etc/samba/smb.conf.bak
+    state: touch
+    mode: "0644"
+  when: not samba_provisioned.stat.exists
+
+- name: Set DNS forwarder in smb.conf
+  ansible.builtin.lineinfile:
+    path: /etc/samba/smb.conf
+    regexp: '^\s*dns forwarder'
+    insertafter: '^\[global\]'
+    line: "        dns forwarder = {{ samba_dns_forwarder }}"
+  notify: Restart samba-ad-dc
+
+- name: Copy Samba Kerberos config
+  ansible.builtin.copy:
+    src: /var/lib/samba/private/krb5.conf
+    dest: /etc/krb5.conf
+    remote_src: true
+    mode: "0644"
+
+- name: Disable systemd-resolved (conflicts with Samba DNS)
+  ansible.builtin.service:
+    name: systemd-resolved
+    state: stopped
+    enabled: false
+
+- name: Configure resolv.conf for Samba DNS
+  ansible.builtin.template:
+    src: resolv.conf.j2
+    dest: /etc/resolv.conf
+    mode: "0644"
+
+- name: Enable and start samba-ad-dc
+  ansible.builtin.service:
+    name: samba-ad-dc
+    state: started
+    enabled: true
+
+- name: Wait for Samba to be ready
+  ansible.builtin.command: samba-tool domain level show
+  register: samba_level
+  retries: 5
+  delay: 5
+  until: samba_level.rc == 0
+  changed_when: false
+
+# noqa risky-shell-pipe
+- name: Get Kerberos ticket for DNS management
+  ansible.builtin.shell: |
+    echo '{{ samba_admin_password }}' | kinit administrator@{{ samba_realm }}
+  changed_when: false
+  no_log: true
+
+# noqa risky-shell-pipe
+- name: Get all A records for k3s-server
+  ansible.builtin.shell: |
+    samba-tool dns query 127.0.0.1 {{ samba_realm | lower }} {{ inventory_hostname }} A \
+      -U administrator --password='{{ samba_admin_password }}' 2>/dev/null \
+      | grep -oP 'A: \K[\d.]+'
+  register: samba_dns_a_records
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Remove incorrect A records (not Tailscale IP)
+  ansible.builtin.command: >
+    samba-tool dns delete 127.0.0.1 {{ samba_realm | lower }}
+    {{ inventory_hostname }} A {{ item }}
+    -U administrator --password='{{ samba_admin_password }}'
+  loop: "{{ samba_dns_a_records.stdout_lines | default([]) }}"
+  when: item != tailscale_ip.stdout
+  changed_when: true
+  failed_when: false
+  no_log: true
+
+- name: Ensure Tailscale A record exists
+  ansible.builtin.command: >
+    samba-tool dns add 127.0.0.1 {{ samba_realm | lower }}
+    {{ inventory_hostname }} A {{ tailscale_ip.stdout }}
+    -U administrator --password='{{ samba_admin_password }}'
+  register: samba_dns_add_result
+  changed_when: "'already exists' not in samba_dns_add_result.stderr"
+  failed_when: false
+  no_log: true
+
+# noqa risky-shell-pipe
+- name: Get zone root A records
+  ansible.builtin.shell: |
+    samba-tool dns query 127.0.0.1 {{ samba_realm | lower }} @ A \
+      -U administrator --password='{{ samba_admin_password }}' 2>/dev/null \
+      | grep -oP 'A: \K[\d.]+'
+  register: samba_dns_zone_records
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Remove incorrect zone root A records
+  ansible.builtin.command: >
+    samba-tool dns delete 127.0.0.1 {{ samba_realm | lower }}
+    @ A {{ item }}
+    -U administrator --password='{{ samba_admin_password }}'
+  loop: "{{ samba_dns_zone_records.stdout_lines | default([]) }}"
+  when: item != tailscale_ip.stdout
+  changed_when: true
+  failed_when: false
+  no_log: true
+
+# yamllint disable rule:braces
+- name: Allow Samba ports through UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop:
+    - { port: "53", proto: "tcp" }
+    - { port: "53", proto: "udp" }
+    - { port: "88", proto: "tcp" }
+    - { port: "88", proto: "udp" }
+    - { port: "135", proto: "tcp" }
+    - { port: "139", proto: "tcp" }
+    - { port: "389", proto: "tcp" }
+    - { port: "389", proto: "udp" }
+    - { port: "445", proto: "tcp" }
+    - { port: "464", proto: "tcp" }
+    - { port: "464", proto: "udp" }
+    - { port: "636", proto: "tcp" }
+    - { port: "3268", proto: "tcp" }
+    - { port: "3269", proto: "tcp" }
+# yamllint enable rule:braces
+
+- name: Show domain info
+  ansible.builtin.debug:
+    msg: "{{ samba_level.stdout_lines }}"
+
+- name: Test DNS resolution
+  ansible.builtin.command: "dig @127.0.0.1 {{ inventory_hostname }}.{{ samba_realm | lower }} A +short"
+  register: samba_dns_test
+  changed_when: false
+
+- name: Show DNS test result
+  ansible.builtin.debug:
+    msg: "DNS resolves {{ inventory_hostname }}.{{ samba_realm | lower }} to: {{ samba_dns_test.stdout }}"
+
+- name: Display Kerberos ticket
+  ansible.builtin.command: klist
+  register: samba_klist_output
+  changed_when: false
+
+- name: Show Kerberos ticket
+  ansible.builtin.debug:
+    msg: "{{ samba_klist_output.stdout_lines }}"

@@ -1,0 +1,5 @@
+---
+samba_realm: HOMELAB.LOCAL
+samba_domain: HOMELAB
+samba_admin_password: "{{ vault_samba_admin_password }}"
+samba_dns_forwarder: 1.1.1.1

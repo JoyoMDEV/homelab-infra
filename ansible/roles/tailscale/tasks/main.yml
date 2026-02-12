@@ -42,12 +42,30 @@
   failed_when: false
 
 # noqa no-changed-when
-- name: Authenticate Tailscale
+- name: Authenticate Tailscale (server - no accept-dns)
   ansible.builtin.command: >
     tailscale up
     --auth-key={{ tailscale_auth_key }}
     --hostname={{ inventory_hostname }}
-  when: "'Logged out' in tailscale_status.stdout or tailscale_status.rc != 0"
+    --accept-dns=false
+  when:
+    - "'Logged out' in tailscale_status.stdout or tailscale_status.rc != 0"
+    - k3s_role is defined and k3s_role == 'server'
+
+# noqa no-changed-when
+- name: Authenticate Tailscale (worker - with accept-dns)
+  ansible.builtin.command: >
+    tailscale up
+    --auth-key={{ tailscale_auth_key }}
+    --hostname={{ inventory_hostname }}
+  when:
+    - "'Logged out' in tailscale_status.stdout or tailscale_status.rc != 0"
+    - k3s_role is not defined or k3s_role != 'server'
+
+- name: Disable accept-dns on server (if already authenticated)
+  ansible.builtin.command: tailscale set --accept-dns=false
+  when: k3s_role is defined and k3s_role == 'server'
+  changed_when: false
 
 - name: Get Tailscale IP
   ansible.builtin.command: tailscale ip -4

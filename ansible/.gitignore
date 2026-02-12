@@ -9,9 +9,6 @@
 inventory/host_vars/*/vault.yml.bak
 inventory/group_vars/*/vault.yml.bak
 
-# kubeconfig (fetched by playbook)
-kubeconfig
-
 # SSH keys
 *.pem
 *.key
