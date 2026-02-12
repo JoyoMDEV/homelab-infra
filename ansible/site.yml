@@ -1,0 +1,8 @@
+---
+- name: Setup k3s-server
+  hosts: server
+  become: true
+  roles:
+    - common
+    - tailscale
+    - k3s_server

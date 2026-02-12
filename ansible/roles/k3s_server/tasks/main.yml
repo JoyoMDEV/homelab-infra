@@ -1,0 +1,70 @@
+---
+- name: Get Tailscale IP
+  ansible.builtin.command: tailscale ip -4
+  register: k3s_server_tailscale_ip
+  changed_when: false
+
+- name: Check if k3s_server is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_server_binary
+
+# noqa command-instead-of-module no-changed-when risky-shell-pipe
+- name: Install k3s server
+  when: not k3s_serverbinary.stat.exists
+  ansible.builtin.shell: |
+    curl -sfL https://get.k3s.io | sh -s - server \
+      --write-kubeconfig-mode 644 \
+      --disable servicelb \
+      --node-ip {{ k3s_server_tailscale_ip.stdout }} \
+      --flannel-iface tailscale0 \
+      --node-label role=server \
+      --node-label location=cloud \
+      --tls-san {{ k3s_server_tailscale_ip.stdout }} \
+      --tls-san {{ ansible_host }}
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_server_version | default(omit) }}"
+
+- name: Wait for k3s to be ready
+  ansible.builtin.command: k3s kubectl get nodes
+  register: k3s_server_ready
+  retries: 10
+  delay: 10
+  until: k3s_server_ready.rc == 0
+  changed_when: false
+
+- name: Show node status
+  ansible.builtin.command: k3s kubectl get nodes -o wide
+  register: k3s_server_node_status
+  changed_when: false
+
+- name: Display cluster info
+  ansible.builtin.debug:
+    msg: "{{ node_status.stdout_lines }}"
+
+- name: Read node token
+  ansible.builtin.slurp:
+    src: /var/lib/rancher/k3s/server/node-token
+  register: k3s_server_token
+
+- name: Show join info
+  ansible.builtin.debug:
+    msg: >
+      k3s server is ready!
+      Join workers with:
+      K3S_URL=https://{{ k3s_server_tailscale_ip.stdout }}:6443
+      K3S_TOKEN={{ k3s_server_token.content | b64decode | trim }}
+
+- name: Fetch kubeconfig
+  ansible.builtin.fetch:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "{{ playbook_dir }}/../../kubeconfig"
+    flat: true
+
+- name: Fix kubeconfig server address
+  ansible.builtin.replace:
+    path: "{{ playbook_dir }}/../../kubeconfig"
+    regexp: "https://127.0.0.1:6443"
+    replace: "https://{{ k3s_server_tailscale_ip.stdout }}:6443"
+  delegate_to: localhost
+  become: false
