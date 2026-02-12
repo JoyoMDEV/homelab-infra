@@ -3,6 +3,19 @@ resource "hcloud_ssh_key" "default" {
   public_key = file(var.ssh_public_key_path)
 }
 
+# Private Network between cloud servers
+resource "hcloud_network" "k3s" {
+  name     = "k3s-network"
+  ip_range = "10.0.0.0/16"
+}
+
+resource "hcloud_network_subnet" "k3s" {
+  network_id   = hcloud_network.k3s.id
+  type         = "cloud"
+  network_zone = "eu-central"
+  ip_range     = "10.0.1.0/24"
+}
+
 resource "hcloud_firewall" "k3s" {
   name = "k3s-firewall"
 
@@ -22,13 +35,13 @@ resource "hcloud_firewall" "k3s" {
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 
-  # Tailscale WireGuard
-  rule {
-    direction  = "in"
-    protocol   = "udp"
-    port       = "41641"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
+  #   # Tailscale WireGuard
+  #   rule {
+  #     direction  = "in"
+  #     protocol   = "udp"
+  #     port       = "41641"
+  #     source_ips = ["0.0.0.0/0", "::/0"]
+  #   }
 
   # HTTP/HTTPS (for later public phase)
   rule {
@@ -65,6 +78,13 @@ resource "hcloud_server" "k3s_server" {
     ipv4_enabled = true
     ipv6_enabled = true
   }
+
+  network {
+    network_id = hcloud_network.k3s.id
+    ip         = "10.0.1.1"
+  }
+
+  depends_on = [hcloud_network_subnet.k3s]
 }
 
 # CX43 - Cloud Worker (uncomment when ready)
@@ -86,4 +106,11 @@ resource "hcloud_server" "k3s_server" {
 #     ipv4_enabled = true
 #     ipv6_enabled = true
 #   }
+#
+#   network {
+#     network_id = hcloud_network.k3s.id
+#     ip         = "10.0.1.2"
+#   }
+#
+#   depends_on = [hcloud_network_subnet.k3s]
 # }
