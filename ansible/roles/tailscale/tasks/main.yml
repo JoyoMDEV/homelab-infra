@@ -1,0 +1,65 @@
+---
+- name: Check if Tailscale is already installed
+  ansible.builtin.command: tailscale --version
+  register: tailscale_check
+  changed_when: false
+  failed_when: false
+
+- name: Install Tailscale
+  when: tailscale_check.rc != 0
+  block:
+    # noqa risky-shell-pipe command-instead-of-module
+    - name: Add Tailscale GPG key
+      ansible.builtin.shell: |
+        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
+          | tee /usr/share/keyrings/tailscale-archive-keyring.gpg > /dev/null
+      args:
+        creates: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    # noqa risky-shell-pipe command-instead-of-module
+    - name: Add Tailscale repository
+      ansible.builtin.shell: |
+        curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list \
+          | tee /etc/apt/sources.list.d/tailscale.list > /dev/null
+      args:
+        creates: /etc/apt/sources.list.d/tailscale.list
+
+    - name: Install Tailscale package
+      ansible.builtin.apt:
+        update_cache: true
+        name: tailscale
+        state: present
+
+- name: Enable and start Tailscaled
+  ansible.builtin.service:
+    name: tailscaled
+    state: started
+    enabled: true
+
+- name: Check Tailscale status
+  ansible.builtin.command: tailscale status
+  register: tailscale_status
+  changed_when: false
+  failed_when: false
+
+# noqa no-changed-when
+- name: Authenticate Tailscale
+  ansible.builtin.command: >
+    tailscale up
+    --auth-key={{ tailscale_auth_key }}
+    --hostname={{ inventory_hostname }}
+  when: "'Logged out' in tailscale_status.stdout or tailscale_status.rc != 0"
+
+- name: Get Tailscale IP
+  ansible.builtin.command: tailscale ip -4
+  register: tailscale_ip
+  changed_when: false
+
+- name: Show Tailscale IP
+  ansible.builtin.debug:
+    msg: "Tailscale IP for {{ inventory_hostname }}: {{ tailscale_ip.stdout }}"
+
+- name: Allow Tailscale through UFW
+  community.general.ufw:
+    rule: allow
+    interface: tailscale0
+    direction: in
