@@ -1,0 +1,24 @@
+# Ansible
+*.retry
+*.log
+
+# Vault password file
+.vault_password
+
+# Inventory secrets (unencrypted)
+inventory/host_vars/*/vault.yml.bak
+inventory/group_vars/*/vault.yml.bak
+
+# kubeconfig (fetched by playbook)
+kubeconfig
+
+# SSH keys
+*.pem
+*.key
+id_*
+!id_*.pub
+
+# Temporary files
+*.tmp
+*.bak
+*.swp

@@ -1,0 +1,12 @@
+---
+# Non-secret variables for all hosts
+timezone: Europe/Berlin
+ssh_port: 22
+
+# k3s
+k3s_version: ""  # empty = latest stable
+k3s_disable:
+  - servicelb
+
+# Tailscale
+tailscale_hostname_prefix: k3s

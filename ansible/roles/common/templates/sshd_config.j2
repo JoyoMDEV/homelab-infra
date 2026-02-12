@@ -1,0 +1,19 @@
+Port 22
+Protocol 2
+
+PermitRootLogin prohibit-password
+PubkeyAuthentication yes
+PasswordAuthentication no
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+UsePAM yes
+
+X11Forwarding no
+PrintMotd no
+AcceptEnv LANG LC_*
+
+MaxAuthTries 3
+MaxSessions 5
+LoginGraceTime 30
+
+Subsystem sftp /usr/lib/openssh/sftp-server
