@@ -13,5 +13,5 @@ variable "ssh_public_key_path" {
 variable "location" {
   description = "Hetzner datacenter location"
   type        = string
-  default     = "fsn1"
+  default     = "nbg1"
 }
