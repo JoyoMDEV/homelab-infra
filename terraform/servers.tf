@@ -35,13 +35,13 @@ resource "hcloud_firewall" "k3s" {
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 
-  #   # Tailscale WireGuard
-  #   rule {
-  #     direction  = "in"
-  #     protocol   = "udp"
-  #     port       = "41641"
-  #     source_ips = ["0.0.0.0/0", "::/0"]
-  #   }
+  # Tailscale WireGuard
+  rule {
+    direction  = "in"
+    protocol   = "udp"
+    port       = "41641"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
 
   # HTTP/HTTPS (for later public phase)
   rule {
