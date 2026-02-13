@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: { { .Release.Name } }
+  name: {{ .Release.Name }}
   labels:
     app: gitlab
 spec:
@@ -23,20 +23,20 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: { { .Release.Name } }
+  name: {{ .Release.Name }}
   labels:
     app: gitlab
 spec:
   ingressClassName: traefik
   rules:
-    - host: { { .Values.hostname | quote } }
+    - host: {{ .Values.hostname | quote }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: { { .Release.Name } }
+                name: {{ .Release.Name }}
                 port:
                   number: 80
     - host: "registry.homelab.local"
@@ -46,6 +46,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: { { .Release.Name } }
+                name: {{ .Release.Name }}
                 port:
                   number: 5050
