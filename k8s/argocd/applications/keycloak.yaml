@@ -9,44 +9,57 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://charts.bitnami.com/bitnami
-    chart: keycloak
-    targetRevision: 24.*
+    repoURL: https://codecentric.github.io/helm-charts
+    chart: keycloakx
+    targetRevision: 2.*
     helm:
       values: |
-        image:
-          registry: docker.io
-          repository: bitnami/keycloak
-          tag: latest
-        auth:
-          adminUser: admin
-          existingSecret: keycloak-secret
-          passwordSecretKey: admin-password
-        proxy: edge
-        httpRelativePath: /
-        production: false
-        replicaCount: 1
+        replicas: 1
+        command:
+          - "/opt/keycloak/bin/kc.sh"
+          - "start"
+          - "--hostname-strict=false"
+          - "--http-enabled=true"
+          - "--proxy=edge"
+        extraEnv: |
+          - name: KEYCLOAK_ADMIN
+            value: admin
+          - name: KEYCLOAK_ADMIN_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: keycloak-secret
+                key: admin-password
+          - name: KC_DB
+            value: postgres
+          - name: KC_DB_URL_HOST
+            value: homelab-pg-rw.infrastructure.svc.cluster.local
+          - name: KC_DB_URL_PORT
+            value: "5432"
+          - name: KC_DB_URL_DATABASE
+            value: keycloak
+          - name: KC_DB_USERNAME
+            value: keycloak
+          - name: KC_DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: keycloak-db-secret
+                key: password
         resources:
           requests:
             memory: 512Mi
             cpu: 250m
           limits:
             memory: 1Gi
-        postgresql:
-          enabled: false
-        externalDatabase:
-          host: homelab-pg-rw.infrastructure.svc.cluster.local
-          port: 5432
-          user: keycloak
-          database: keycloak
-          existingSecret: keycloak-db-secret
-          existingSecretPasswordKey: password
+        http:
+          relativePath: /
         ingress:
           enabled: true
           ingressClassName: traefik
-          hostname: auth.homelab.local
-          path: /
-          pathType: Prefix
+          rules:
+            - host: auth.homelab.local
+              paths:
+                - path: /
+                  pathType: Prefix
   destination:
     server: https://kubernetes.default.svc
     namespace: auth
