@@ -15,6 +15,10 @@ spec:
     helm:
       values: |
         architecture: standalone
+        image:
+          registry: docker.io
+          repository: bitnami/redis
+          tag: latest
         auth:
           enabled: true
           existingSecret: redis-secret
