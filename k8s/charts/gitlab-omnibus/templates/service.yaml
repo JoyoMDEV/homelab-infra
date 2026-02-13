@@ -29,7 +29,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: { { .Values.hostname } }
+    - host: { { .Values.hostname | quote } }
       http:
         paths:
           - path: /
@@ -39,7 +39,7 @@ spec:
                 name: { { .Release.Name } }
                 port:
                   number: 80
-    - host: registry.homelab.local
+    - host: "registry.homelab.local"
       http:
         paths:
           - path: /
