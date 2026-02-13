@@ -1,0 +1,49 @@
+---
+- name: Get Tailscale IP
+  ansible.builtin.command: tailscale ip -4
+  register: k3s_agent_tailscale_ip
+  changed_when: false
+
+- name: Check if k3s is already installed
+  ansible.builtin.stat:
+    path: /usr/local/bin/k3s
+  register: k3s_agent_binary
+
+- name: Set node labels based on location
+  ansible.builtin.set_fact:
+    k3s_agent_node_labels: >-
+      --node-label role=worker
+      --node-label location={{ location | default('home') }}
+
+# noqa command-instead-of-module no-changed-when risky-shell-pipe
+- name: Install k3s agent
+  when: not k3s_binary.stat.exists
+  ansible.builtin.shell: |
+    curl -sfL https://get.k3s.io | sh -s - agent \
+      --server {{ k3s_agent_server_url }} \
+      --token {{ k3s_agent_token }} \
+      --node-ip {{ k3s_agent_tailscale_ip.stdout }} \
+      --flannel-iface tailscale0 \
+      {{ k3s_agent_node_labels }}
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_agent_version | default(omit) }}"
+
+- name: Wait for k3s-agent to be running
+  ansible.builtin.service:
+    name: k3s-agent
+    state: started
+    enabled: true
+
+- name: Verify node joined cluster
+  ansible.builtin.command: >
+    k3s kubectl get node {{ inventory_hostname }}
+  delegate_to: "{{ groups['server'][0] }}"
+  register: k3s_agent_node_check
+  retries: 10
+  delay: 10
+  until: k3s_agent_node_check.rc == 0
+  changed_when: false
+
+- name: Show node status
+  ansible.builtin.debug:
+    msg: "{{ k3s_agent_node_check.stdout_lines }}"

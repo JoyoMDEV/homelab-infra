@@ -1,0 +1,14 @@
+---
+- name: Setup k3s server
+  hosts: server
+  become: true
+  roles:
+    - tailscale
+    - k3s_server
+
+- name: Setup k3s agents
+  hosts: workers
+  become: true
+  roles:
+    - tailscale
+    - k3s_agent
