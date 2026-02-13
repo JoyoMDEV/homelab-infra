@@ -5,7 +5,7 @@ echo "==> Creating namespaces..."
 kubectl apply -f k8s/namespaces.yaml
 
 echo "==> Configuring Traefik (hostPort 80/443)..."
-kubectl apply -f k8s/infrastructure/traefik-config.yaml
+kubectl apply -f k8s/traefik-config.yaml
 echo "    Waiting for Traefik to restart..."
 sleep 15
 
