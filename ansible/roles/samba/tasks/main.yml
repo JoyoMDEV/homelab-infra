@@ -76,6 +76,14 @@
     line: "        dns forwarder = {{ samba_dns_forwarder }}"
   notify: Restart samba-ad-dc
 
+- name: Allow simple LDAP bind (Tailscale provides encryption)
+  ansible.builtin.lineinfile:
+    path: /etc/samba/smb.conf
+    regexp: '^\s*ldap server require strong auth'
+    insertafter: '^\[global\]'
+    line: "        ldap server require strong auth = no"
+  notify: Restart samba-ad-dc
+
 - name: Copy Samba Kerberos config
   ansible.builtin.copy:
     src: /var/lib/samba/private/krb5.conf

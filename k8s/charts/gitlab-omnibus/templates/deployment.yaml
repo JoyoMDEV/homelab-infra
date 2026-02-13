@@ -1,0 +1,155 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app: gitlab
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: gitlab
+  template:
+    metadata:
+      labels:
+        app: gitlab
+    spec:
+      containers:
+        - name: gitlab
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: GITLAB_OMNIBUS_CONFIG
+              value: |
+                external_url 'http://{{ .Values.hostname }}'
+                nginx['listen_port'] = 80
+                nginx['listen_https'] = false
+
+                # Disable built-in PostgreSQL (we use CloudNativePG)
+                postgresql['enable'] = false
+                gitlab_rails['db_adapter'] = 'postgresql'
+                gitlab_rails['db_encoding'] = 'unicode'
+                gitlab_rails['db_host'] = 'homelab-pg-rw.infrastructure.svc.cluster.local'
+                gitlab_rails['db_port'] = 5432
+                gitlab_rails['db_username'] = 'gitlab'
+                gitlab_rails['db_password'] = ENV['DB_PASSWORD']
+                gitlab_rails['db_database'] = 'gitlab'
+
+                # Disable built-in Redis (we use external)
+                redis['enable'] = false
+                gitlab_rails['redis_host'] = 'redis-master.infrastructure.svc.cluster.local'
+                gitlab_rails['redis_port'] = 6379
+                gitlab_rails['redis_password'] = ENV['REDIS_PASSWORD']
+
+                # Container Registry
+                registry_external_url 'http://registry.homelab.local'
+                registry['enable'] = true
+                registry_nginx['listen_port'] = 5050
+                registry_nginx['listen_https'] = false
+
+                # Disable extras to save RAM
+                prometheus_monitoring['enable'] = false
+                grafana['enable'] = false
+                alertmanager['enable'] = false
+                node_exporter['enable'] = false
+                redis_exporter['enable'] = false
+                postgres_exporter['enable'] = false
+                pgbouncer_exporter['enable'] = false
+                gitlab_exporter['enable'] = false
+
+                # Puma workers (reduce for RAM savings)
+                puma['worker_processes'] = 2
+
+                # Sidekiq concurrency
+                sidekiq['max_concurrency'] = 10
+
+                {{- if .Values.oidc.enabled }}
+                # Keycloak OIDC
+                gitlab_rails['omniauth_enabled'] = true
+                gitlab_rails['omniauth_allow_single_sign_on'] = ['openid_connect']
+                gitlab_rails['omniauth_block_auto_created_users'] = false
+                gitlab_rails['omniauth_auto_link_ldap_user'] = true
+                gitlab_rails['omniauth_providers'] = [
+                  {
+                    name: 'openid_connect',
+                    label: 'Keycloak',
+                    args: {
+                      name: 'openid_connect',
+                      scope: ['openid', 'profile', 'email'],
+                      response_type: 'code',
+                      issuer: '{{ .Values.oidc.issuer }}',
+                      discovery: true,
+                      client_auth_method: 'query',
+                      uid_field: 'preferred_username',
+                      pkce: true,
+                      client_options: {
+                        identifier: '{{ .Values.oidc.clientId }}',
+                        secret: ENV['OIDC_CLIENT_SECRET'],
+                        redirect_uri: 'http://{{ .Values.hostname }}/users/auth/openid_connect/callback'
+                      }
+                    }
+                  }
+                ]
+                {{- end }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-secret
+                  key: oidc-client-secret
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-secret
+                  key: db-password
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-secret
+                  key: redis-password
+          ports:
+            - name: http
+              containerPort: 80
+            - name: ssh
+              containerPort: 22
+            - name: registry
+              containerPort: 5050
+          volumeMounts:
+            - name: config
+              mountPath: /etc/gitlab
+            - name: data
+              mountPath: /var/opt/gitlab
+            - name: logs
+              mountPath: /var/log/gitlab
+          resources:
+            requests:
+              memory: {{ .Values.resources.requests.memory }}
+              cpu: {{ .Values.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.resources.limits.memory }}
+          readinessProbe:
+            httpGet:
+              path: /-/readiness
+              port: 80
+            initialDelaySeconds: 120
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /-/liveness
+              port: 80
+            initialDelaySeconds: 180
+            periodSeconds: 30
+            timeoutSeconds: 5
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-data
+        - name: logs
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-logs

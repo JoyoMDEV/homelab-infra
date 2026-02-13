@@ -5,6 +5,7 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        exclude: 'k8s/charts/.*/templates/.*'
         args: [--allow-multiple-documents]
       - id: check-added-large-files
         args: [--maxkb=1024]
@@ -17,6 +18,7 @@ repos:
     rev: v1.35.1
     hooks:
       - id: yamllint
+        exclude: 'k8s/charts/.*/templates/.*'
         args: [-c, .yamllint.yml]
 
   - repo: https://github.com/antonbabenko/pre-commit-terraform

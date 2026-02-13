@@ -59,6 +59,7 @@ if ! kubectl get secret gitlab-secret -n gitlab &>/dev/null; then
   kubectl create secret generic gitlab-secret \
     --from-literal=db-password="$GITLAB_DB_PW" \
     --from-literal=redis-password="$REDIS_PW" \
+    --from-literal=oidc-client-secret="REPLACE_AFTER_KEYCLOAK_SETUP" \
     -n gitlab
 fi
 

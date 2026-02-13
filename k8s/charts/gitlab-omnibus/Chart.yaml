@@ -1,0 +1,6 @@
+apiVersion: v2
+name: gitlab-omnibus
+description: GitLab CE Omnibus as single container deployment
+type: application
+version: 0.1.0
+appVersion: "17.8.0"

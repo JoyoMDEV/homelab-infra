@@ -1,0 +1,32 @@
+image:
+  repository: gitlab/gitlab-ce
+  tag: latest
+  pullPolicy: IfNotPresent
+
+hostname: gitlab.homelab.local
+
+resources:
+  requests:
+    memory: 4Gi
+    cpu: "2"
+  limits:
+    memory: 6Gi
+
+persistence:
+  config:
+    size: 2Gi
+  data:
+    size: 30Gi
+  logs:
+    size: 2Gi
+
+# Keycloak OIDC settings
+oidc:
+  enabled: false
+  issuer: ""
+  clientId: ""
+
+# GitLab Runner
+runner:
+  enabled: true
+  token: ""
