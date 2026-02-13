@@ -9,6 +9,23 @@ kubectl apply -f k8s/infrastructure/traefik-config.yaml
 echo "    Waiting for Traefik to restart..."
 sleep 15
 
+echo "==> Creating infrastructure secrets..."
+if ! kubectl get secret redis-secret -n infrastructure &>/dev/null; then
+  REDIS_PW=$(openssl rand -base64 24)
+  kubectl create secret generic redis-secret \
+    --from-literal=redis-password="$REDIS_PW" \
+    -n infrastructure
+  echo "    Redis secret created (password saved below)"
+  echo "    Redis password: $REDIS_PW"
+  echo "    (Save this somewhere safe!)"
+else
+  echo "    Redis secret already exists, skipping"
+fi
+
+echo "==> Installing CloudNativePG CRDs..."
+kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.28/releases/cnpg-1.28.1.yaml 2>/dev/null || \
+  echo "    Warning: Could not install CNPG CRDs, operator may handle it"
+
 echo "==> Installing ArgoCD via Helm..."
 helm repo add argo https://argoproj.github.io/argo-helm
 helm repo update
