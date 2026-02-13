@@ -1,0 +1,58 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keycloak
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.bitnami.com/bitnami
+    chart: keycloak
+    targetRevision: 24.*
+    helm:
+      values: |
+        image:
+          registry: docker.io
+          repository: bitnami/keycloak
+          tag: latest
+        auth:
+          adminUser: admin
+          existingSecret: keycloak-secret
+          passwordSecretKey: admin-password
+        proxy: edge
+        httpRelativePath: /
+        production: false
+        replicaCount: 1
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 250m
+          limits:
+            memory: 1Gi
+        postgresql:
+          enabled: false
+        externalDatabase:
+          host: homelab-pg-rw.infrastructure.svc.cluster.local
+          port: 5432
+          user: keycloak
+          database: keycloak
+          existingSecret: keycloak-db-secret
+          existingSecretPasswordKey: password
+        ingress:
+          enabled: true
+          ingressClassName: traefik
+          hostname: auth.homelab.local
+          path: /
+          pathType: Prefix
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: auth
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
