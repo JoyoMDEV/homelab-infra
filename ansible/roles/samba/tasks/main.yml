@@ -170,6 +170,16 @@
   failed_when: false
   no_log: true
 
+- name: Add wildcard DNS record (*.homelab.local)
+  ansible.builtin.command: >
+    samba-tool dns add 127.0.0.1 {{ samba_realm | lower }}
+    '*' A {{ tailscale_ip.stdout }}
+    -U administrator --password='{{ samba_admin_password }}'
+  register: samba_dns_wildcard_result
+  changed_when: "'already exists' not in (samba_dns_wildcard_result.stderr | default(''))"
+  failed_when: false
+  no_log: true
+
 # yamllint disable rule:braces
 - name: Allow Samba ports through UFW
   community.general.ufw:

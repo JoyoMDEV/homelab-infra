@@ -1,0 +1,77 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: argocd
+  labels:
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitlab
+  labels:
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: auth
+  labels:
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: productivity
+  labels:
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: automation
+  labels:
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: security
+  labels:
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: finance
+  labels:
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: infrastructure
+  labels:
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dashboard
+  labels:
+    managed-by: argocd
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: backend
+  labels:
+    managed-by: argocd

@@ -1,0 +1,32 @@
+---
+apiVersion: v1
+kind: Cluster
+metadata:
+  name: homelab-pg
+  namespace: infrastructure
+spec:
+  instances: 1
+
+  postgresql:
+    parameters:
+      shared_buffers: "256MB"
+      effective_cache_size: "512MB"
+      max_connections: "100"
+
+  storage:
+    size: 10Gi
+
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+
+  bootstrap:
+    initdb:
+      database: homelab
+      owner: homelab
+
+  monitoring:
+    enablePodMonitor: false
