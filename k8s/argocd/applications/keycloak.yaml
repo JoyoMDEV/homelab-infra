@@ -20,7 +20,7 @@ spec:
           - "start"
           - "--hostname-strict=false"
           - "--http-enabled=true"
-          - "--proxy=edge"
+          - "--proxy-headers=xforwarded"
         extraEnv: |
           - name: KEYCLOAK_ADMIN
             value: admin
@@ -29,6 +29,8 @@ spec:
               secretKeyRef:
                 name: keycloak-secret
                 key: admin-password
+          - name: KC_CACHE
+            value: local
           - name: KC_DB
             value: postgres
           - name: KC_DB_URL_HOST
