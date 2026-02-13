@@ -44,13 +44,6 @@ spec:
                 registry_nginx['listen_port'] = 5050
                 registry_nginx['listen_https'] = false
                 prometheus_monitoring['enable'] = false
-                grafana['enable'] = false
-                alertmanager['enable'] = false
-                node_exporter['enable'] = false
-                redis_exporter['enable'] = false
-                postgres_exporter['enable'] = false
-                pgbouncer_exporter['enable'] = false
-                gitlab_exporter['enable'] = false
                 puma['worker_processes'] = 2
                 sidekiq['max_concurrency'] = 10
                 {{- if .Values.oidc.enabled }}
