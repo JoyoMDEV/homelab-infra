@@ -1,4 +1,4 @@
-.PHONY: help lint tf-init tf-plan tf-apply tf-destroy ansible-ping ansible-run ansible-check ansible-samba bootstrap status pods apps vault-edit vault-view argocd-pw
+.PHONY: help lint tf-init tf-plan tf-apply tf-destroy tf-output ansible-ping ansible-run ansible-check ansible-cluster ansible-samba bootstrap status pods apps vault-edit vault-view argocd-pw
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -55,18 +55,24 @@ vault-view: ## View Ansible Vault secrets
 	cd ansible && ansible-vault view inventory/group_vars/all/vault.yml
 
 # ========================
-# Kubernetes
+# Kubernetes Bootstrap
 # ========================
-bootstrap: ## Bootstrap ArgoCD (one-time)
+bootstrap: ## Bootstrap k8s services (one-time)
 	chmod +x scripts/bootstrap-argocd.sh
 	./scripts/bootstrap-argocd.sh
 
+# ========================
+# Kubernetes Status
+# ========================
 status: ## Full cluster status
 	@echo "=== Nodes ==="
 	@kubectl get nodes -o wide
 	@echo ""
 	@echo "=== Unhealthy Pods ==="
 	@kubectl get pods -A --field-selector 'status.phase!=Running,status.phase!=Succeeded' 2>/dev/null || echo "All pods healthy"
+	@echo ""
+	@echo "=== PostgreSQL ==="
+	@kubectl get cluster -n infrastructure 2>/dev/null || echo "No PostgreSQL clusters"
 	@echo ""
 	@echo "=== Resource Usage ==="
 	@kubectl top nodes 2>/dev/null || echo "metrics-server not installed"

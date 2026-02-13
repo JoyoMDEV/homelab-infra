@@ -15,19 +15,34 @@ if ! kubectl get secret redis-secret -n infrastructure &>/dev/null; then
   kubectl create secret generic redis-secret \
     --from-literal=redis-password="$REDIS_PW" \
     -n infrastructure
-  echo "    Redis secret created (password saved below)"
+  echo "    Redis secret created"
   echo "    Redis password: $REDIS_PW"
   echo "    (Save this somewhere safe!)"
 else
   echo "    Redis secret already exists, skipping"
 fi
 
-echo "==> Installing CloudNativePG CRDs..."
-kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.28/releases/cnpg-1.28.1.yaml 2>/dev/null || \
-  echo "    Warning: Could not install CNPG CRDs, operator may handle it"
+echo "==> Installing CloudNativePG Operator..."
+helm repo add cnpg https://cloudnative-pg.github.io/charts 2>/dev/null || true
+helm repo update
+if helm status cnpg-operator -n infrastructure &>/dev/null; then
+  echo "    CNPG operator already installed, upgrading..."
+  helm upgrade cnpg-operator cnpg/cloudnative-pg \
+    --namespace infrastructure --wait
+else
+  echo "    Installing CNPG operator..."
+  helm install cnpg-operator cnpg/cloudnative-pg \
+    --namespace infrastructure --create-namespace --wait
+fi
+
+echo "==> Waiting for CNPG CRDs to be ready..."
+kubectl wait --for=condition=Established crd/clusters.postgresql.cnpg.io --timeout=60s
+
+echo "==> Applying PostgreSQL cluster..."
+kubectl apply -f k8s/infrastructure/postgres-cluster.yaml
 
 echo "==> Installing ArgoCD via Helm..."
-helm repo add argo https://argoproj.github.io/argo-helm
+helm repo add argo https://argoproj.github.io/argo-helm 2>/dev/null || true
 helm repo update
 
 helm upgrade --install argocd argo/argo-cd \
@@ -48,17 +63,23 @@ kubectl patch ingress argocd-server -n argocd --type merge \
 echo "==> Getting initial admin password..."
 ARGOCD_PW=$(kubectl -n argocd get secret argocd-initial-admin-secret \
   -o jsonpath="{.data.password}" | base64 -d)
-echo ""
-echo "============================================"
-echo "  ArgoCD is ready!"
-echo "  URL: https://argocd.homelab.local"
-echo "  User: admin"
-echo "  Password: ${ARGOCD_PW}"
-echo "============================================"
-echo ""
 
 echo "==> Applying root application (App-of-Apps)..."
 kubectl apply -f k8s/argocd/root.yaml
 
-echo "==> Done! ArgoCD will now sync all applications from Git."
-echo "    Check status: kubectl get applications -n argocd"
+echo ""
+echo "============================================"
+echo "  Bootstrap complete!"
+echo ""
+echo "  ArgoCD:    http://argocd.homelab.local"
+echo "  User:      admin"
+echo "  Password:  ${ARGOCD_PW}"
+echo ""
+echo "  PostgreSQL: homelab-pg.infrastructure"
+echo "  Redis:      redis-master.infrastructure"
+echo "============================================"
+echo ""
+echo "  Check status:"
+echo "    make apps"
+echo "    kubectl get pods -n infrastructure"
+echo "    kubectl get cluster -n infrastructure"
