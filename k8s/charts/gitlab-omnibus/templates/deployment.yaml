@@ -27,6 +27,7 @@ spec:
                 external_url 'http://{{ .Values.hostname }}'
                 nginx['listen_port'] = 80
                 nginx['listen_https'] = false
+                nginx['server_name'] = '_'
                 postgresql['enable'] = false
                 gitlab_rails['db_adapter'] = 'postgresql'
                 gitlab_rails['db_encoding'] = 'unicode'
