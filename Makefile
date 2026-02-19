@@ -1,4 +1,4 @@
-.PHONY: help lint tf-init tf-plan tf-apply tf-destroy tf-output ansible-ping ansible-run ansible-check ansible-cluster ansible-samba bootstrap bootstrap-certs status pods apps vault-edit vault-view argocd-pw cert-status cert-ca
+.PHONY: help lint tf-init tf-plan tf-apply tf-destroy tf-output ansible-ping ansible-run ansible-check ansible-cluster ansible-samba bootstrap bootstrap-certs setup-coredns status pods apps vault-edit vault-view argocd-pw cert-status cert-ca cert-sync
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -66,6 +66,10 @@ bootstrap: ## Bootstrap k8s services (one-time: CNPG, Redis, ArgoCD)
 bootstrap-certs: ## Bootstrap cert-manager + internal CA (one-time)
 	chmod +x scripts/bootstrap-certmanager.sh
 	./scripts/bootstrap-certmanager.sh
+
+setup-coredns: ## Configure CoreDNS for *.homelab.local resolution inside the cluster
+	chmod +x scripts/setup-coredns.sh
+	./scripts/setup-coredns.sh
 
 # ========================
 # Kubernetes Status

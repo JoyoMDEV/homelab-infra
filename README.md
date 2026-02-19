@@ -121,6 +121,7 @@ make ansible-run
 # 6. Bootstrap Kubernetes services
 make bootstrap        # CNPG, Redis, ArgoCD
 make bootstrap-certs  # cert-manager, internal CA, wildcard HTTPS
+make setup-coredns    # *.homelab.local DNS resolution inside the cluster
 
 # 7. Import CA certificate into your devices (once per device)
 # File: certs/homelab-ca.crt
@@ -149,6 +150,7 @@ curl -v https://argocd.homelab.local
 - ArgoCD + root App-of-Apps
 - cert-manager + internal CA + wildcard TLS certificate
 - cert-sync CronJob (daily auto-renewal sync)
+- CoreDNS wildcard config for `*.homelab.local` (pods can reach each other by hostname)
 
 ### Via ArgoCD (GitOps)
 - cert-manager (Helm upgrades)
@@ -229,6 +231,7 @@ spec:
 | `make vault-view` | View Ansible Vault secrets |
 | `make bootstrap` | Bootstrap k8s services (CNPG, Redis, ArgoCD) |
 | `make bootstrap-certs` | Bootstrap cert-manager + internal CA |
+| `make setup-coredns` | Configure CoreDNS for `*.homelab.local` cluster-internal resolution |
 | `make status` | Cluster overview (nodes, pods, certs, resources) |
 | `make pods` | List all pods |
 | `make apps` | ArgoCD application status |
