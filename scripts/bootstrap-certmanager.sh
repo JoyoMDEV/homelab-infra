@@ -204,11 +204,3 @@ echo "  Verify:"
 echo "    make cert-status"
 echo "    curl -v https://argocd.homelab.local"
 echo ""
-echo ""
-echo ""
-echo ""
-echo "============================================"
-
-  Auto-renewal: cert-sync CronJob runs daily at 03:00 and automatically
-  syncs the wildcard secret to kube-system after cert-manager renews it.
-  Manual trigger: make cert-sync
