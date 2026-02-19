@@ -91,7 +91,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /-/readiness
-              port: 80
+              port: 8080
             initialDelaySeconds: 300
             periodSeconds: 15
             timeoutSeconds: 10
@@ -99,8 +99,8 @@ spec:
           livenessProbe:
             httpGet:
               path: /-/liveness
-              port: 80
-            initialDelaySeconds: 600
+              port: 8080
+            initialDelaySeconds: 900
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 5

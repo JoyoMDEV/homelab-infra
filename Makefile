@@ -34,16 +34,16 @@ ansible-ping: ## Ping all hosts
 	cd ansible && ansible all -m ping
 
 ansible-run: ## Run full site playbook
-	cd ansible && ansible-playbook playbooks/site.yml
+	cd ansible && ansible-playbook site.yml
 
 ansible-check: ## Dry-run full site playbook
-	cd ansible && ansible-playbook playbooks/site.yml --check --diff
+	cd ansible && ansible-playbook site.yml --check --diff
 
 ansible-cluster: ## Run k3s cluster playbook only
-	cd ansible && ansible-playbook playbooks/cluster.yml
+	cd ansible && ansible-playbook cluster.yml
 
 ansible-samba: ## Run Samba AD role only
-	cd ansible && ansible-playbook playbooks/site.yml --start-at-task="Install Samba AD DC packages"
+	cd ansible && ansible-playbook site.yml --start-at-task="Install Samba AD DC packages"
 
 # ========================
 # Secrets
@@ -58,6 +58,8 @@ vault-view: ## View Ansible Vault secrets
 # Kubernetes Bootstrap
 # ========================
 bootstrap: ## Bootstrap k8s services (one-time)
+	chmod +x scripts/setup-databases.sh
+	./scripts/setup-databases.sh
 	chmod +x scripts/bootstrap-argocd.sh
 	./scripts/bootstrap-argocd.sh
 
