@@ -6,72 +6,30 @@ metadata:
   name: cert-sync
   namespace: kube-system
 ---
-# ClusterRole: read secret from infrastructure, write to kube-system
+# ClusterRole: full access to secrets and namespaces cluster-wide.
+# Required for:
+# - Reading wildcard TLS secret from 'infrastructure'
+# - Reading CA secret from 'cert-manager'
+# - Writing secrets to any namespace with label homelab.local/inject-ca=true
+# - Listing namespaces to find labeled ones
+# - Restarting Traefik deployment
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: cert-sync
 rules:
   - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["list", "get"]
+  - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get"]
+    verbs: ["get", "create", "patch", "update"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["get", "patch"]
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "list"]
----
-# Role in kube-system: create/update the wildcard secret there
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: cert-sync
-  namespace: kube-system
-rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get", "create", "patch", "update"]
----
-# Role in infrastructure: read the issued wildcard secret
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: cert-sync
-  namespace: infrastructure
-rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    resourceNames: ["homelab-wildcard-tls"]
-    verbs: ["get"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: cert-sync
-  namespace: kube-system
-subjects:
-  - kind: ServiceAccount
-    name: cert-sync
-    namespace: kube-system
-roleRef:
-  kind: Role
-  apiGroup: rbac.authorization.k8s.io
-  name: cert-sync
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: cert-sync
-  namespace: infrastructure
-subjects:
-  - kind: ServiceAccount
-    name: cert-sync
-    namespace: kube-system
-roleRef:
-  kind: Role
-  apiGroup: rbac.authorization.k8s.io
-  name: cert-sync
+    verbs: ["get", "list", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -86,14 +44,23 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   name: cert-sync
 ---
-# CronJob: runs daily, syncs wildcard secret and restarts Traefik if changed
+# CronJob: runs daily at 03:00
+# 1. Syncs homelab-wildcard-tls from 'infrastructure' to 'kube-system' (Traefik)
+# 2. Syncs homelab-ca cert to every namespace labeled homelab.local/inject-ca=true
+#
+# To enable CA injection for a new namespace, just label it:
+#   kubectl label namespace my-namespace homelab.local/inject-ca=true
+# or in the namespace manifest:
+#   metadata:
+#     labels:
+#       homelab.local/inject-ca: "true"
 apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: cert-sync
   namespace: kube-system
 spec:
-  schedule: "0 3 * * *"   # daily at 03:00
+  schedule: "0 3 * * *"
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
   jobTemplate:
@@ -111,44 +78,94 @@ spec:
                 - |
                   set -e
 
+                  # ── 1. Sync wildcard TLS secret to kube-system for Traefik ────────
+                  echo "==> [1/2] Syncing homelab-wildcard-tls to kube-system..."
+
                   SRC_NS="infrastructure"
                   DST_NS="kube-system"
-                  SECRET="homelab-wildcard-tls"
+                  WILDCARD_SECRET="homelab-wildcard-tls"
 
-                  echo "==> Fetching source secret from ${SRC_NS}..."
-                  SRC_CRT=$(kubectl get secret "${SECRET}" -n "${SRC_NS}" -o jsonpath='{.data.tls\.crt}')
-                  SRC_KEY=$(kubectl get secret "${SECRET}" -n "${SRC_NS}" -o jsonpath='{.data.tls\.key}')
+                  SRC_CRT=$(kubectl get secret "${WILDCARD_SECRET}" -n "${SRC_NS}" \
+                    -o jsonpath='{.data.tls\.crt}')
+                  SRC_KEY=$(kubectl get secret "${WILDCARD_SECRET}" -n "${SRC_NS}" \
+                    -o jsonpath='{.data.tls\.key}')
 
-                  if kubectl get secret "${SECRET}" -n "${DST_NS}" &>/dev/null; then
-                    DST_CRT=$(kubectl get secret "${SECRET}" -n "${DST_NS}" -o jsonpath='{.data.tls\.crt}')
-
+                  if kubectl get secret "${WILDCARD_SECRET}" -n "${DST_NS}" &>/dev/null; then
+                    DST_CRT=$(kubectl get secret "${WILDCARD_SECRET}" -n "${DST_NS}" \
+                      -o jsonpath='{.data.tls\.crt}')
                     if [ "${SRC_CRT}" = "${DST_CRT}" ]; then
-                      echo "==> Secret is up to date, nothing to do."
-                      exit 0
-                    fi
+                      echo "    Wildcard secret up to date, skipping."
+                    else
+                      echo "    Certificate changed, updating..."
+                      kubectl patch secret "${WILDCARD_SECRET}" -n "${DST_NS}" \
+                        --type merge \
+                        -p "{\"data\":{\"tls.crt\":\"${SRC_CRT}\",\"tls.key\":\"${SRC_KEY}\"}}"
 
-                    echo "==> Certificate has changed, updating secret in ${DST_NS}..."
-                    kubectl patch secret "${SECRET}" -n "${DST_NS}" \
-                      --type merge \
-                      -p "{\"data\":{\"tls.crt\":\"${SRC_CRT}\",\"tls.key\":\"${SRC_KEY}\"}}"
+                      echo "    Restarting Traefik..."
+                      OLD_POD=$(kubectl get pod -n "${DST_NS}" \
+                        -l app.kubernetes.io/name=traefik \
+                        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+                      kubectl rollout restart deployment/traefik -n "${DST_NS}"
+                      if [ -n "${OLD_POD}" ]; then
+                        kubectl delete pod "${OLD_POD}" -n "${DST_NS}" \
+                          --wait=false 2>/dev/null || true
+                      fi
+                      kubectl rollout status deployment/traefik \
+                        -n "${DST_NS}" --timeout=180s || true
+                    fi
                   else
-                    echo "==> Secret does not exist in ${DST_NS}, creating..."
-                    kubectl create secret tls "${SECRET}" \
+                    echo "    Creating wildcard secret in ${DST_NS}..."
+                    kubectl create secret tls "${WILDCARD_SECRET}" \
                       --cert=<(echo "${SRC_CRT}" | base64 -d) \
                       --key=<(echo "${SRC_KEY}" | base64 -d) \
                       -n "${DST_NS}"
                   fi
 
-                  echo "==> Restarting Traefik to pick up new certificate..."
-                  OLD_POD=$(kubectl get pod -n "${DST_NS}" -l app.kubernetes.io/name=traefik \
-                    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-                  kubectl rollout restart deployment/traefik -n "${DST_NS}"
-                  if [ -n "${OLD_POD}" ]; then
-                    kubectl delete pod "${OLD_POD}" -n "${DST_NS}" --wait=false 2>/dev/null || true
-                  fi
-                  kubectl rollout status deployment/traefik -n "${DST_NS}" --timeout=180s || true
+                  # ── 2. Sync CA cert to all namespaces labeled inject-ca=true ──────
+                  echo ""
+                  echo "==> [2/2] Syncing homelab-ca to labeled namespaces..."
 
-                  echo "==> Done."
+                  CA_SECRET="homelab-ca"
+                  CA_SRC_NS="cert-manager"
+                  LABEL="homelab.local/inject-ca=true"
+
+                  # Read CA cert from cert-manager (public part only, no key)
+                  CA_CRT=$(kubectl get secret homelab-ca-keypair -n "${CA_SRC_NS}" \
+                    -o jsonpath='{.data.tls\.crt}')
+
+                  # Find all namespaces with the inject-ca label
+                  NAMESPACES=$(kubectl get namespaces \
+                    -l "${LABEL}" \
+                    -o jsonpath='{.items[*].metadata.name}')
+
+                  if [ -z "${NAMESPACES}" ]; then
+                    echo "    No namespaces labeled '${LABEL}' found."
+                    echo "    To enable CA injection: kubectl label namespace <ns> ${LABEL}"
+                  fi
+
+                  for NS in ${NAMESPACES}; do
+                    echo "    Namespace: ${NS}"
+                    if kubectl get secret "${CA_SECRET}" -n "${NS}" &>/dev/null; then
+                      DST_CRT=$(kubectl get secret "${CA_SECRET}" -n "${NS}" \
+                        -o jsonpath='{.data.homelab-ca\.crt}')
+                      if [ "${CA_CRT}" = "${DST_CRT}" ]; then
+                        echo "      CA secret up to date, skipping."
+                      else
+                        echo "      CA changed, updating..."
+                        kubectl patch secret "${CA_SECRET}" -n "${NS}" \
+                          --type merge \
+                          -p "{\"data\":{\"homelab-ca.crt\":\"${CA_CRT}\"}}"
+                      fi
+                    else
+                      echo "      Creating CA secret..."
+                      kubectl create secret generic "${CA_SECRET}" \
+                        --from-literal=homelab-ca.crt="$(echo "${CA_CRT}" | base64 -d)" \
+                        -n "${NS}"
+                    fi
+                  done
+
+                  echo ""
+                  echo "==> cert-sync complete."
               resources:
                 requests:
                   cpu: 10m

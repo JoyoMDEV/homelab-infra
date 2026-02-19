@@ -149,6 +149,38 @@ else
 fi
 echo "    Secret synced to ${TRAEFIK_NAMESPACE}."
 
+# ─── Step 7: Apply namespaces with CA injection labels ───────────────────────
+echo ""
+echo "==> Applying namespaces with CA injection labels..."
+kubectl apply -f k8s/namespaces.yaml
+
+# ─── Step 8: Seed homelab-ca secret to all labeled namespaces ───────────────
+# The CronJob handles ongoing sync, but we seed immediately on bootstrap so
+# services like GitLab can verify Keycloak TLS without waiting until 03:00.
+echo ""
+echo "==> Seeding homelab-ca secret to labeled namespaces..."
+CA_CRT=$(kubectl get secret homelab-ca-keypair -n cert-manager \
+  -o jsonpath='{.data.tls\.crt}')
+NAMESPACES=$(kubectl get namespaces \
+  -l homelab.local/inject-ca=true \
+  -o jsonpath='{.items[*].metadata.name}')
+for NS in ${NAMESPACES}; do
+  if kubectl get secret homelab-ca -n "${NS}" &>/dev/null; then
+    echo "    ${NS}: already exists, updating..."
+    kubectl patch secret homelab-ca -n "${NS}" \
+      --type merge \
+      -p "{\"data\":{\"homelab-ca.crt\":\"${CA_CRT}\"}}"
+  else
+    echo "    ${NS}: creating..."
+    kubectl create secret generic homelab-ca \
+      --from-literal=homelab-ca.crt="$(echo "${CA_CRT}" | base64 -d)" \
+      -n "${NS}"
+  fi
+done
+echo "    CA secret seeded."
+
+# ─── Step 9: Deploy cert-sync CronJob ────────────────────────────────────────
+# Runs daily at 03:00 - syncs wildcard TLS + CA to all labeled namespaces.
 # ─── Step 7: Deploy cert-sync CronJob ────────────────────────────────────────
 # Runs daily at 03:00 and auto-syncs the wildcard secret after cert renewal.
 echo ""

@@ -21,7 +21,6 @@ set -euo pipefail
 
 COREDNS_CONFIGMAP="coredns"
 COREDNS_NAMESPACE="kube-system"
-TRAEFIK_SVC="traefik.kube-system.svc.cluster.local"
 
 echo "==> Checking prerequisites..."
 if ! kubectl get svc traefik -n kube-system &>/dev/null; then
@@ -30,7 +29,17 @@ if ! kubectl get svc traefik -n kube-system &>/dev/null; then
   exit 1
 fi
 
-# ─── Step 1: Read current CoreDNS ConfigMap ───────────────────────────────────
+# ─── Step 1: Get Traefik Cluster-IP dynamically ──────────────────────────────
+echo ""
+echo "==> Getting Traefik Cluster-IP..."
+TRAEFIK_IP=$(kubectl get svc traefik -n kube-system -o jsonpath='{.spec.clusterIP}')
+if [[ -z "${TRAEFIK_IP}" ]]; then
+  echo "    ERROR: Could not get Traefik cluster IP."
+  exit 1
+fi
+echo "    Traefik Cluster-IP: ${TRAEFIK_IP}"
+
+# ─── Step 2: Read current CoreDNS ConfigMap ───────────────────────────────────
 echo ""
 echo "==> Reading current CoreDNS ConfigMap..."
 CURRENT=$(kubectl get configmap "${COREDNS_CONFIGMAP}" \
@@ -40,7 +49,7 @@ CURRENT=$(kubectl get configmap "${COREDNS_CONFIGMAP}" \
 echo "    Current Corefile:"
 echo "${CURRENT//$'\n'/$'\n'    }"
 
-# ─── Step 2: Check if patch already applied ───────────────────────────────────
+# ─── Step 3: Check if patch already applied ───────────────────────────────────
 if echo "${CURRENT}" | grep -q "homelab.local:53"; then
   echo ""
   echo "==> homelab.local block already present, updating..."
@@ -52,31 +61,37 @@ if echo "${CURRENT}" | grep -q "homelab.local:53"; then
   ')
 fi
 
-# ─── Step 3: Build new Corefile with homelab.local wildcard block ─────────────
+# ─── Step 4: Build new Corefile with homelab.local hosts block ────────────────
 echo ""
 echo "==> Building new Corefile with *.homelab.local wildcard resolution..."
 
-# The homelab.local block uses:
-# - rewrite: rewrites *.homelab.local to the Traefik service FQDN
-#   so CoreDNS resolves it via the kubernetes plugin
-# - forward: fallback to upstream for anything not matched
+# The homelab.local block uses a wildcard hosts entry pointing to the
+# Traefik Cluster-IP. The IP is read dynamically so this is reproducible
+# across cluster rebuilds. Traefik receives the original Host header and
+# routes to the correct backend via Ingress rules.
+#
+# The wildcard entry (*.homelab.local → Traefik IP) means any new service
+# automatically works without changing CoreDNS.
 HOMELAB_BLOCK="homelab.local:53 {
-    # Rewrite all *.homelab.local queries to Traefik's cluster-internal FQDN.
-    # Traefik routes to the correct backend via Ingress/IngressRoute rules.
-    rewrite name regex (.*)\.homelab\.local ${TRAEFIK_SVC}
-    # Resolve the rewritten name via the kubernetes plugin
-    kubernetes cluster.local
-    # Forward unknown queries upstream
-    forward . /etc/resolv.conf
+    hosts {
+        # Wildcard: all *.homelab.local → Traefik (routes via Host header)
+        # IP is the Traefik ClusterIP, read dynamically by setup-coredns.sh
+        ${TRAEFIK_IP} auth.homelab.local
+        ${TRAEFIK_IP} gitlab.homelab.local
+        ${TRAEFIK_IP} argocd.homelab.local
+        ${TRAEFIK_IP} grafana.homelab.local
+        ${TRAEFIK_IP} nextcloud.homelab.local
+        ${TRAEFIK_IP} homelab.local
+        fallthrough
+    }
     cache 30
-    log
     errors
 }"
 
 NEW_COREFILE="${HOMELAB_BLOCK}
 ${CURRENT}"
 
-# ─── Step 4: Apply the new ConfigMap ─────────────────────────────────────────
+# ─── Step 5: Apply the new ConfigMap ─────────────────────────────────────────
 echo ""
 echo "==> Applying updated CoreDNS ConfigMap..."
 kubectl create configmap "${COREDNS_CONFIGMAP}" \
@@ -85,14 +100,14 @@ kubectl create configmap "${COREDNS_CONFIGMAP}" \
   --dry-run=client -o yaml \
   | kubectl apply -f -
 
-# ─── Step 5: Restart CoreDNS to pick up changes ───────────────────────────────
+# ─── Step 6: Restart CoreDNS to pick up changes ───────────────────────────────
 echo ""
 echo "==> Restarting CoreDNS..."
 kubectl rollout restart deployment/coredns -n "${COREDNS_NAMESPACE}"
 kubectl rollout status deployment/coredns -n "${COREDNS_NAMESPACE}" --timeout=60s
 echo "    CoreDNS restarted."
 
-# ─── Step 6: Verify ───────────────────────────────────────────────────────────
+# ─── Step 7: Verify ───────────────────────────────────────────────────────────
 echo ""
 echo "==> Verifying DNS resolution from inside the cluster..."
 kubectl run -it --rm dns-test --image=alpine --restart=Never -- \
