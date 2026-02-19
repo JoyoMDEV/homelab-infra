@@ -63,6 +63,24 @@ if ! kubectl get secret gitlab-secret -n gitlab &>/dev/null; then
     -n gitlab
 fi
 
+echo "==> Creating GitLab Rails secrets (encryption keys)..."
+if ! kubectl get secret gitlab-rails-secrets -n gitlab &>/dev/null; then
+  SECRET_KEY_BASE=$(openssl rand -hex 64)
+  DB_KEY_BASE=$(openssl rand -hex 64)
+  OTP_KEY_BASE=$(openssl rand -hex 64)
+  kubectl create secret generic gitlab-rails-secrets \
+    --from-literal=secret_key_base="$SECRET_KEY_BASE" \
+    --from-literal=db_key_base="$DB_KEY_BASE" \
+    --from-literal=otp_key_base="$OTP_KEY_BASE" \
+    -n gitlab
+  echo "    GitLab Rails secrets created"
+  echo "    IMPORTANT: These keys encrypt data in the database."
+  echo "    They are stored in the gitlab-rails-secrets Kubernetes secret."
+  echo "    Do NOT delete this secret or you will lose access to encrypted data!"
+else
+  echo "    GitLab Rails secrets already exist, skipping"
+fi
+
 echo ""
 echo "============================================"
 echo "  Secrets created!"

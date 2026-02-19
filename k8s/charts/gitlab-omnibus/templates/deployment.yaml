@@ -47,6 +47,9 @@ spec:
                 prometheus_monitoring['enable'] = false
                 puma['worker_processes'] = 2
                 sidekiq['max_concurrency'] = 10
+                gitlab_rails['secret_key_base'] = ENV['GITLAB_SECRET_KEY_BASE']
+                gitlab_rails['db_key_base'] = ENV['GITLAB_DB_KEY_BASE']
+                gitlab_rails['otp_key_base'] = ENV['GITLAB_OTP_KEY_BASE']
                 {{- if .Values.oidc.enabled }}
                 gitlab_rails['omniauth_enabled'] = true
                 gitlab_rails['omniauth_allow_single_sign_on'] = ['openid_connect']
@@ -69,6 +72,21 @@ spec:
                 secretKeyRef:
                   name: gitlab-secret
                   key: oidc-client-secret
+            - name: GITLAB_SECRET_KEY_BASE
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-rails-secrets
+                  key: secret_key_base
+            - name: GITLAB_DB_KEY_BASE
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-rails-secrets
+                  key: db_key_base
+            - name: GITLAB_OTP_KEY_BASE
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-rails-secrets
+                  key: otp_key_base
           ports:
             - name: http
               containerPort: 80
@@ -97,7 +115,6 @@ spec:
                 - http://127.0.0.1/-/liveness
             failureThreshold: 120
             periodSeconds: 10
-
           livenessProbe:
             exec:
               command:
@@ -107,7 +124,6 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 3
-
           readinessProbe:
             exec:
               command:
