@@ -90,25 +90,31 @@ spec:
             limits:
               memory: {{ .Values.resources.limits.memory }}
           startupProbe:
-            httpGet:
-              path: /-/liveness
-              port: 80
-            failureThreshold: 180
+            exec:
+              command:
+                - curl
+                - -sf
+                - http://127.0.0.1/-/liveness
+            failureThreshold: 120
             periodSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /-/readiness
-              port: 80
-            initialDelaySeconds: 0
-            periodSeconds: 15
+
+          livenessProbe:
+            exec:
+              command:
+                - curl
+                - -sf
+                - http://127.0.0.1/-/liveness
+            periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 3
-          livenessProbe:
-            httpGet:
-              path: /-/liveness
-              port: 80
-            initialDelaySeconds: 0
-            periodSeconds: 30
+
+          readinessProbe:
+            exec:
+              command:
+                - curl
+                - -sf
+                - http://127.0.0.1/-/readiness
+            periodSeconds: 15
             timeoutSeconds: 10
             failureThreshold: 3
       volumes:
