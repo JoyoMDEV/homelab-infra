@@ -1,0 +1,157 @@
+---
+# ServiceAccount for the cert-sync CronJob
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cert-sync
+  namespace: kube-system
+---
+# ClusterRole: read secret from infrastructure, write to kube-system
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cert-sync
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "patch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+# Role in kube-system: create/update the wildcard secret there
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cert-sync
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "patch", "update"]
+---
+# Role in infrastructure: read the issued wildcard secret
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cert-sync
+  namespace: infrastructure
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["homelab-wildcard-tls"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cert-sync
+  namespace: kube-system
+subjects:
+  - kind: ServiceAccount
+    name: cert-sync
+    namespace: kube-system
+roleRef:
+  kind: Role
+  apiGroup: rbac.authorization.k8s.io
+  name: cert-sync
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cert-sync
+  namespace: infrastructure
+subjects:
+  - kind: ServiceAccount
+    name: cert-sync
+    namespace: kube-system
+roleRef:
+  kind: Role
+  apiGroup: rbac.authorization.k8s.io
+  name: cert-sync
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cert-sync
+subjects:
+  - kind: ServiceAccount
+    name: cert-sync
+    namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  apiGroup: rbac.authorization.k8s.io
+  name: cert-sync
+---
+# CronJob: runs daily, syncs wildcard secret and restarts Traefik if changed
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cert-sync
+  namespace: kube-system
+spec:
+  schedule: "0 3 * * *"   # daily at 03:00
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: cert-sync
+          restartPolicy: OnFailure
+          containers:
+            - name: cert-sync
+              image: bitnami/kubectl:latest
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+
+                  SRC_NS="infrastructure"
+                  DST_NS="kube-system"
+                  SECRET="homelab-wildcard-tls"
+
+                  echo "==> Fetching source secret from ${SRC_NS}..."
+                  SRC_CRT=$(kubectl get secret "${SECRET}" -n "${SRC_NS}" -o jsonpath='{.data.tls\.crt}')
+                  SRC_KEY=$(kubectl get secret "${SECRET}" -n "${SRC_NS}" -o jsonpath='{.data.tls\.key}')
+
+                  if kubectl get secret "${SECRET}" -n "${DST_NS}" &>/dev/null; then
+                    DST_CRT=$(kubectl get secret "${SECRET}" -n "${DST_NS}" -o jsonpath='{.data.tls\.crt}')
+
+                    if [ "${SRC_CRT}" = "${DST_CRT}" ]; then
+                      echo "==> Secret is up to date, nothing to do."
+                      exit 0
+                    fi
+
+                    echo "==> Certificate has changed, updating secret in ${DST_NS}..."
+                    kubectl patch secret "${SECRET}" -n "${DST_NS}" \
+                      --type merge \
+                      -p "{\"data\":{\"tls.crt\":\"${SRC_CRT}\",\"tls.key\":\"${SRC_KEY}\"}}"
+                  else
+                    echo "==> Secret does not exist in ${DST_NS}, creating..."
+                    kubectl create secret tls "${SECRET}" \
+                      --cert=<(echo "${SRC_CRT}" | base64 -d) \
+                      --key=<(echo "${SRC_KEY}" | base64 -d) \
+                      -n "${DST_NS}"
+                  fi
+
+                  echo "==> Restarting Traefik to pick up new certificate..."
+                  OLD_POD=$(kubectl get pod -n "${DST_NS}" -l app.kubernetes.io/name=traefik \
+                    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+                  kubectl rollout restart deployment/traefik -n "${DST_NS}"
+                  if [ -n "${OLD_POD}" ]; then
+                    kubectl delete pod "${OLD_POD}" -n "${DST_NS}" --wait=false 2>/dev/null || true
+                  fi
+                  kubectl rollout status deployment/traefik -n "${DST_NS}" --timeout=180s || true
+
+                  echo "==> Done."
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  memory: 64Mi

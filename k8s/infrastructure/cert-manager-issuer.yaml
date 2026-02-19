@@ -1,0 +1,10 @@
+---
+# ClusterIssuer: uses the CA keypair created by bootstrap-certmanager.sh
+# The secret 'homelab-ca-keypair' is created by the script and NEVER committed to Git.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: homelab-ca-issuer
+spec:
+  ca:
+    secretName: homelab-ca-keypair

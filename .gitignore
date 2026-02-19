@@ -7,10 +7,16 @@ terraform/.terraform.lock.hcl
 # Secrets
 *.pem
 *.key
+*.p12
+*.pfx
 .env
 .env.*
 !.env.example
 secrets/
+
+# Certificates
+# certs/ directory contains CA cert for local device import - never commit
+certs/
 
 # Go
 .go/

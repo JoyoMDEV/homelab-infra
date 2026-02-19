@@ -1,0 +1,15 @@
+---
+# Traefik TLSStore: sets the default TLS certificate for all HTTPS routes.
+# The secret 'homelab-wildcard-tls' must exist in kube-system.
+# It is copied there by bootstrap-certmanager.sh (not managed by ArgoCD).
+#
+# 'default' is a reserved name in Traefik - it applies to all IngressRoutes
+# that don't explicitly specify a certificate.
+apiVersion: traefik.io/v1alpha1
+kind: TLSStore
+metadata:
+  name: default
+  namespace: kube-system
+spec:
+  defaultCertificate:
+    secretName: homelab-wildcard-tls

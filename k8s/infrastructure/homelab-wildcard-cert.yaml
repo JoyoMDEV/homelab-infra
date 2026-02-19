@@ -1,0 +1,25 @@
+---
+# Wildcard TLS certificate for *.homelab.local
+# Issued by homelab-ca-issuer (ClusterIssuer backed by the internal CA).
+# The resulting secret 'homelab-wildcard-tls' is referenced by Traefik.
+#
+# To add more SANs (e.g. homelab.local bare domain), add them to dnsNames below.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: homelab-wildcard
+  namespace: infrastructure
+spec:
+  secretName: homelab-wildcard-tls
+  issuerRef:
+    name: homelab-ca-issuer
+    kind: ClusterIssuer
+  duration: 8760h    # 1 year
+  renewBefore: 720h  # renew 30 days before expiry (cert-manager handles this automatically)
+  dnsNames:
+    - "*.homelab.local"
+    - "homelab.local"
+  privateKey:
+    algorithm: RSA
+    size: 4096
+    rotationPolicy: Always

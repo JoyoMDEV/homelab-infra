@@ -1,4 +1,4 @@
-.PHONY: help lint tf-init tf-plan tf-apply tf-destroy tf-output ansible-ping ansible-run ansible-check ansible-cluster ansible-samba bootstrap status pods apps vault-edit vault-view argocd-pw
+.PHONY: help lint tf-init tf-plan tf-apply tf-destroy tf-output ansible-ping ansible-run ansible-check ansible-cluster ansible-samba bootstrap bootstrap-certs status pods apps vault-edit vault-view argocd-pw cert-status cert-ca
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -57,11 +57,15 @@ vault-view: ## View Ansible Vault secrets
 # ========================
 # Kubernetes Bootstrap
 # ========================
-bootstrap: ## Bootstrap k8s services (one-time)
+bootstrap: ## Bootstrap k8s services (one-time: CNPG, Redis, ArgoCD)
 	chmod +x scripts/setup-databases.sh
 	./scripts/setup-databases.sh
 	chmod +x scripts/bootstrap-argocd.sh
 	./scripts/bootstrap-argocd.sh
+
+bootstrap-certs: ## Bootstrap cert-manager + internal CA (one-time)
+	chmod +x scripts/bootstrap-certmanager.sh
+	./scripts/bootstrap-certmanager.sh
 
 # ========================
 # Kubernetes Status
@@ -76,6 +80,9 @@ status: ## Full cluster status
 	@echo "=== PostgreSQL ==="
 	@kubectl get cluster -n infrastructure 2>/dev/null || echo "No PostgreSQL clusters"
 	@echo ""
+	@echo "=== Certificates ==="
+	@kubectl get certificate -A 2>/dev/null || echo "cert-manager not installed"
+	@echo ""
 	@echo "=== Resource Usage ==="
 	@kubectl top nodes 2>/dev/null || echo "metrics-server not installed"
 
@@ -87,3 +94,27 @@ apps: ## ArgoCD application status
 
 argocd-pw: ## Show ArgoCD admin password
 	@kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d && echo
+
+cert-status: ## Show all certificates and their status
+	@echo "=== Certificates ==="
+	@kubectl get certificate -A
+	@echo ""
+	@echo "=== CertificateRequests ==="
+	@kubectl get certificaterequest -A
+	@echo ""
+	@echo "=== ClusterIssuers ==="
+	@kubectl get clusterissuer
+
+cert-sync: ## Manually trigger cert sync to kube-system (after cert renewal)
+	kubectl create job "cert-sync-manual-$$(date +%s)" --from=cronjob/cert-sync -n kube-system
+
+cert-ca: ## Show the CA certificate (for importing into browsers/devices)
+	@if [ -f certs/homelab-ca.crt ]; then \
+		echo "CA certificate (import this into your devices):"; \
+		echo "  File: certs/homelab-ca.crt"; \
+		echo ""; \
+		openssl x509 -in certs/homelab-ca.crt -noout -subject -issuer -dates; \
+	else \
+		echo "CA cert not found locally. Extract from Kubernetes:"; \
+		echo "  kubectl get secret homelab-ca-keypair -n cert-manager -o jsonpath='{.data.tls\\.crt}' | base64 -d > certs/homelab-ca.crt"; \
+	fi
