@@ -18,24 +18,26 @@ spec:
         app: gitlab
     spec:
       initContainers:
-        # Copy the internal CA cert into the system trust store so GitLab
-        # can verify TLS connections to auth.homelab.local (Keycloak).
+        # GitLab Omnibus uses its own embedded OpenSSL which reads custom CAs
+        # from /etc/gitlab/trusted-certs/ (not the system trust store).
+        # This initContainer copies the homelab CA into that directory before
+        # GitLab starts, so OIDC connections to auth.homelab.local succeed.
         - name: install-ca
           image: alpine:3.19
           command:
             - sh
             - -c
             - |
-              cp /ca-certs/homelab-ca.crt /usr/local/share/ca-certificates/homelab-ca.crt
-              apk add --no-cache ca-certificates -q
-              update-ca-certificates
-              cp /etc/ssl/certs/ca-certificates.crt /shared-certs/ca-certificates.crt
+              mkdir -p /etc/gitlab/trusted-certs
+              cp /ca-certs/homelab-ca.crt /etc/gitlab/trusted-certs/homelab-ca.crt
+              echo "CA cert installed to /etc/gitlab/trusted-certs/"
+              ls -la /etc/gitlab/trusted-certs/
           volumeMounts:
             - name: homelab-ca
               mountPath: /ca-certs
               readOnly: true
-            - name: shared-certs
-              mountPath: /shared-certs
+            - name: config
+              mountPath: /etc/gitlab
       containers:
         - name: gitlab
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -110,9 +112,7 @@ spec:
                 secretKeyRef:
                   name: gitlab-rails-secrets
                   key: otp_key_base
-            # Tell Ruby/OpenSSL to use the updated CA bundle from the initContainer
-            - name: SSL_CERT_FILE
-              value: /etc/ssl/certs/ca-certificates.crt
+
           ports:
             - name: http
               containerPort: 80
@@ -127,9 +127,7 @@ spec:
               mountPath: /var/opt/gitlab
             - name: logs
               mountPath: /var/log/gitlab
-            - name: shared-certs
-              mountPath: /etc/ssl/certs
-              readOnly: true
+
           resources:
             requests:
               memory: {{ .Values.resources.requests.memory }}
@@ -175,5 +173,3 @@ spec:
         - name: homelab-ca
           secret:
             secretName: homelab-ca
-        - name: shared-certs
-          emptyDir: {}
