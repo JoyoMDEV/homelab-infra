@@ -99,18 +99,18 @@ spec:
             httpGet:
               path: /-/readiness
               port: 80
-            initialDelaySeconds: 300
+            initialDelaySeconds: 0
             periodSeconds: 15
             timeoutSeconds: 10
-            failureThreshold: 20
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /-/liveness
               port: 80
-            initialDelaySeconds: 900
+            initialDelaySeconds: 0
             periodSeconds: 30
             timeoutSeconds: 10
-            failureThreshold: 5
+            failureThreshold: 3
       volumes:
         - name: config
           persistentVolumeClaim:
