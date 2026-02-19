@@ -17,7 +17,9 @@ spec:
       values: |
         hostname: gitlab.homelab.local
         oidc:
-          enabled: false
+          enabled: true
+          issuer: https://auth.homelab.local/realms/homelab
+          clientId: gitlab
   destination:
     server: https://kubernetes.default.svc
     namespace: gitlab
