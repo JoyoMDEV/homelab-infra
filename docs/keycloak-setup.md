@@ -434,6 +434,39 @@ kubectl run -it --rm ldap-test --image=alpine --restart=Never -- \
 # dann: git commit + push, ArgoCD synct automatisch
 ```
 
+**GitLab Omnibus: "certificate verify failed" trotz CA-Secret**
+
+GitLab Omnibus hat ein eigenes eingebettetes OpenSSL das den System-Trust-Store
+und `SSL_CERT_FILE` komplett ignoriert. Custom CAs müssen in
+`/etc/gitlab/trusted-certs/` liegen **bevor** GitLab startet.
+
+Das GitLab Helm Chart löst das via initContainer der das `homelab-ca` Secret
+in das `/etc/gitlab` PVC schreibt:
+
+```yaml
+initContainers:
+  - name: install-ca
+    image: alpine:3.19
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /etc/gitlab/trusted-certs
+        cp /ca-certs/homelab-ca.crt /etc/gitlab/trusted-certs/homelab-ca.crt
+    volumeMounts:
+      - name: homelab-ca
+        mountPath: /ca-certs
+        readOnly: true
+      - name: config          # das /etc/gitlab PVC
+        mountPath: /etc/gitlab
+```
+
+GitLab liest `/etc/gitlab/trusted-certs/` automatisch beim Start –
+kein `gitlab-ctl reconfigure` nötig.
+
+> **Gilt für alle Services mit eingebetteten Runtimes** (z.B. andere Java/Ruby Apps).
+> Wenn `SSL_CERT_FILE` ignoriert wird → prüfen ob die App einen eigenen CA-Store hat.
+
 **OIDC-Redirect schlägt fehl**
 
 - Issuer-URL muss exakt stimmen: `https://auth.homelab.local/realms/homelab`
