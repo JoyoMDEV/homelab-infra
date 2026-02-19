@@ -89,10 +89,16 @@ spec:
               cpu: {{ .Values.resources.requests.cpu | quote }}
             limits:
               memory: {{ .Values.resources.limits.memory }}
+          startupProbe:
+            httpGet:
+              path: /-/liveness
+              port: 80
+            failureThreshold: 60
+            periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /-/readiness
-              port: 8080
+              port: 80
             initialDelaySeconds: 300
             periodSeconds: 15
             timeoutSeconds: 10
@@ -100,7 +106,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /-/liveness
-              port: 8080
+              port: 80
             initialDelaySeconds: 900
             periodSeconds: 30
             timeoutSeconds: 10
