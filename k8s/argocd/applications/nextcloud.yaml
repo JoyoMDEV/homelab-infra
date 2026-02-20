@@ -37,7 +37,13 @@ spec:
           #      schreibt nur nach /etc/ssl/certs/ und greift daher nicht für PHP.
           #   2. Nextcloud installieren falls noch nicht installiert
           #   3. trusted_domain setzen
-          #   4. oidc_login + files_external Apps aktivieren
+          #   4. Apps aktivieren:
+          #      - oidc_login    (Keycloak SSO)
+          #      - files_external (Storage Box via WebDAV)
+          #      - mail          (Webmailer für externen IMAP/SMTP)
+          #      - calendar      (CalDAV-Server)
+          #      - contacts      (CardDAV-Server)
+          #      - notes         (Markdown-Notizen)
           lifecycle:
             postStart:
               exec:
@@ -105,26 +111,29 @@ spec:
                     # ── 4. Apps aktivieren ────────────────────────────────────
                     echo "==> Aktiviere Apps..."
 
-                    if ! su -s /bin/sh www-data -c \
-                        "php /var/www/html/occ app:list --enabled 2>/dev/null" \
-                        | grep -q 'oidc_login'; then
-                      su -s /bin/sh www-data -c \
-                        "php /var/www/html/occ app:install oidc_login 2>/dev/null || \
-                         php /var/www/html/occ app:enable oidc_login 2>/dev/null" || true
-                      echo "    oidc_login aktiviert."
-                    else
-                      echo "    oidc_login bereits aktiv."
-                    fi
+                    activate_app() {
+                      APP=$1
+                      if ! su -s /bin/sh www-data -c \
+                          "php /var/www/html/occ app:list --enabled 2>/dev/null" \
+                          | grep -q "^  - ${APP}:"; then
+                        su -s /bin/sh www-data -c \
+                          "php /var/www/html/occ app:install ${APP} 2>/dev/null || \
+                           php /var/www/html/occ app:enable ${APP} 2>/dev/null" || true
+                        echo "    ${APP} aktiviert."
+                      else
+                        echo "    ${APP} bereits aktiv."
+                      fi
+                    }
 
-                    if ! su -s /bin/sh www-data -c \
-                        "php /var/www/html/occ app:list --enabled 2>/dev/null" \
-                        | grep -q 'files_external'; then
-                      su -s /bin/sh www-data -c \
-                        "php /var/www/html/occ app:enable files_external 2>/dev/null" || true
-                      echo "    files_external aktiviert."
-                    else
-                      echo "    files_external bereits aktiv."
-                    fi
+                    # Kern-Integrationen
+                    activate_app oidc_login
+                    activate_app files_external
+
+                    # Produktiv-Apps
+                    activate_app mail
+                    activate_app calendar
+                    activate_app contacts
+                    activate_app notes
 
                     echo "==> postStart abgeschlossen."
 
