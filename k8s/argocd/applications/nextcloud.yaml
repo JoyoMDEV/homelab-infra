@@ -11,7 +11,9 @@ spec:
   source:
     repoURL: https://nextcloud.github.io/helm
     chart: nextcloud
-    targetRevision: 6.*
+    # Chart 6.x hatte einen Bug: configs: + extraVolumeMounts erzeugten doppelte
+    # mountPaths → "must be unique" Fehler. Chart 8.x behebt das.
+    targetRevision: 8.*
     helm:
       values: |
         image:
@@ -34,8 +36,8 @@ spec:
                 secretKeyRef:
                   name: nextcloud-secret
                   key: redis-password
-            # OIDC Client Secret – wird in oidc.config.php via getenv() gelesen,
-            # kommt damit nie als Klartext in eine ConfigMap oder in Git
+            # OIDC Client Secret – wird in oidc.config.php via getenv() gelesen.
+            # Kommt damit nie als Klartext in Git oder eine ConfigMap.
             - name: OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -52,8 +54,9 @@ spec:
               pm.min_spare_servers = 3
               pm.max_spare_servers = 10
 
+          # configs: werden vom Chart als ConfigMap angelegt und nach
+          # /var/www/html/config/<name> gemountet. Keine eigenen VolumeMounts nötig.
           configs:
-            # Redis Session + Cache
             redis.config.php: |-
               <?php
               $CONFIG = array(
@@ -67,7 +70,6 @@ spec:
                 ),
               );
 
-            # Reverse Proxy / Traefik
             proxy.config.php: |-
               <?php
               $CONFIG = array(
@@ -77,7 +79,6 @@ spec:
                 'forwarded_for_headers' => ['HTTP_X_FORWARDED_FOR'],
               );
 
-            # Performance & Lokalisierung
             misc.config.php: |-
               <?php
               $CONFIG = array(
@@ -86,127 +87,44 @@ spec:
                 'loglevel' => 1,
               );
 
-            # OIDC Login via Keycloak (oidc_login App)
-            # Client Secret wird zur Laufzeit aus der Umgebungsvariable gelesen –
-            # steht damit nie im Klartext in Git oder in einer ConfigMap.
+            # OIDC Login via Keycloak (oidc_login App).
+            # Client Secret kommt aus Env-Variable – steht nie im Klartext in Git.
             oidc.config.php: |-
               <?php
               $CONFIG = array(
                 'oidc_login_provider_url'          => 'https://auth.homelab.local/realms/homelab',
                 'oidc_login_client_id'             => 'nextcloud',
                 'oidc_login_client_secret'         => getenv('OIDC_CLIENT_SECRET'),
-
-                // Login-Verhalten:
-                // false = Login-Seite zeigt OIDC-Button + lokales Formular
-                // true  = direkt zu Keycloak weiterleiten (kein lokaler Login)
                 'oidc_login_auto_redirect'         => false,
-
-                // Lokaler Admin-Login bleibt erreichbar (Notfall-Zugriff)
                 'oidc_login_hide_password_form'    => false,
-
-                // Keycloak Token-Claims → Nextcloud Attribute
                 'oidc_login_attributes'            => array(
                   'id'     => 'preferred_username',
                   'name'   => 'name',
                   'mail'   => 'email',
                   'groups' => 'groups',
                 ),
-
-                // Neue Benutzer werden beim ersten OIDC-Login automatisch angelegt
                 'oidc_login_create_user'           => true,
                 'oidc_login_default_quota'         => '',
-
-                // Gruppen aus Keycloak in Nextcloud übernehmen
                 'oidc_login_use_id_token'          => false,
-
-                // TLS-Verifikation gegen auth.homelab.local
-                // Das homelab-CA-Zertifikat wird via extraVolume gemountet
                 'oidc_login_tls_verify'            => true,
-
-                // Scopes die beim Authorization Request angefragt werden
                 'oidc_login_scope'                 => 'openid profile email groups',
-
-                // PKCE (Proof Key for Code Exchange)
                 'oidc_login_code_challenge_method' => 'S256',
-
-                // Beim Nextcloud-Logout auch bei Keycloak ausloggen
                 'oidc_login_logout_url'            => 'https://auth.homelab.local/realms/homelab/protocol/openid-connect/logout',
-
-                // Text des Login-Buttons
                 'oidc_login_button_text'           => 'Mit Keycloak anmelden',
               );
 
-          # Zusätzliche Volumes: homelab-CA für TLS-Verifikation gegen Keycloak
+          # homelab-CA für TLS-Verifikation gegen auth.homelab.local.
+          # Pfad: /etc/ssl/certs/ – wird vom Chart NICHT belegt, kein Konflikt möglich.
           extraVolumes:
             - name: homelab-ca
               secret:
                 secretName: homelab-ca
 
           extraVolumeMounts:
-            # CA-Zertifikat in System-Trust-Store mounten damit Nextcloud
-            # auth.homelab.local per TLS verifizieren kann.
-            # WICHTIG: /usr/local/share/ca-certificates/ – NICHT /var/www/html/config/
-            # da der Helm Chart configs: bereits dort hinmountet und mountPath unique sein muss.
             - name: homelab-ca
-              mountPath: /usr/local/share/ca-certificates/homelab-ca.crt
+              mountPath: /etc/ssl/certs/homelab-ca.pem
               subPath: homelab-ca.crt
               readOnly: true
-
-          # initContainer: CA registrieren + Apps installieren
-          # Läuft bei jedem Pod-Start, beide Schritte sind idempotent.
-          # WICHTIG: Das Nextcloud Helm Chart nennt den Haupt-PVC intern "nextcloud-data",
-          # im initContainer muss der Volume-Name exakt so referenziert werden.
-          initContainers:
-            - name: setup-nextcloud
-              image: nextcloud:fpm-alpine
-              command:
-                - sh
-                - -c
-                - |
-                  set -e
-
-                  # ── 1. CA im System-Trust-Store registrieren ──────────────
-                  # Muss VOR occ-Aufrufen passieren, damit occ HTTPS gegen
-                  # Keycloak verifizieren kann (z.B. beim App-Download).
-                  echo "==> Registriere homelab CA..."
-                  cp /tmp/homelab-ca/homelab-ca.crt \
-                     /usr/local/share/ca-certificates/homelab-ca.crt
-                  update-ca-certificates 2>/dev/null || true
-                  echo "    CA registriert."
-
-                  # ── 2. oidc_login App installieren (idempotent) ───────────
-                  echo "==> Prüfe oidc_login App..."
-                  if php /var/www/html/occ app:list --enabled 2>/dev/null \
-                      | grep -q 'oidc_login'; then
-                    echo "    oidc_login bereits aktiv, überspringe."
-                  else
-                    echo "    Installiere oidc_login..."
-                    php /var/www/html/occ app:install oidc_login 2>/dev/null || \
-                    php /var/www/html/occ app:enable  oidc_login
-                    echo "    oidc_login aktiviert."
-                  fi
-
-                  # ── 3. files_external App aktivieren (für Storage Box) ────
-                  echo "==> Prüfe files_external App..."
-                  if php /var/www/html/occ app:list --enabled 2>/dev/null \
-                      | grep -q 'files_external'; then
-                    echo "    files_external bereits aktiv, überspringe."
-                  else
-                    echo "    Aktiviere files_external..."
-                    php /var/www/html/occ app:enable files_external
-                    echo "    files_external aktiviert."
-                  fi
-
-                  echo "==> initContainer abgeschlossen."
-              volumeMounts:
-                # PVC-Name den das Nextcloud Helm Chart intern vergibt
-                - name: nextcloud-data
-                  mountPath: /var/www/html
-                # CA unter einem anderen Pfad mounten als im Hauptcontainer,
-                # damit es keine Kollision mit extraVolumeMounts gibt
-                - name: homelab-ca
-                  mountPath: /tmp/homelab-ca
-                  readOnly: true
 
         internalDatabase:
           enabled: false
@@ -256,11 +174,10 @@ spec:
               hosts:
                 - nextcloud.homelab.local
 
-        # Cronjob für Background Tasks (wichtig für Nextcloud)
         cronjob:
           enabled: true
 
-        # Startup dauert länger wegen initContainer + erster DB-Migration
+        # Startup dauert länger wegen DB-Initialisierung beim ersten Start
         startupProbe:
           enabled: true
           initialDelaySeconds: 30
@@ -274,6 +191,58 @@ spec:
         readinessProbe:
           enabled: true
           initialDelaySeconds: 30
+
+        # initContainers gehört in Chart 8.x auf Top-Level, NICHT unter nextcloud:
+        # Installiert oidc_login + files_external Apps idempotent bei jedem Pod-Start.
+        initContainers:
+          - name: setup-nextcloud-apps
+            image: nextcloud:fpm-alpine
+            command:
+              - sh
+              - -c
+              - |
+                set -e
+
+                # ── 1. homelab-CA im System-Trust-Store registrieren ──────────
+                # Muss vor occ-Aufrufen passieren damit HTTPS gegen Keycloak
+                # beim App-Download verifiziert werden kann.
+                echo "==> Registriere homelab CA..."
+                cp /etc/ssl/certs/homelab-ca.pem \
+                   /usr/local/share/ca-certificates/homelab-ca.crt
+                update-ca-certificates 2>/dev/null || true
+                echo "    CA registriert."
+
+                # ── 2. oidc_login App installieren (idempotent) ───────────────
+                echo "==> Prüfe oidc_login App..."
+                if php /var/www/html/occ app:list --enabled 2>/dev/null \
+                    | grep -q 'oidc_login'; then
+                  echo "    oidc_login bereits aktiv."
+                else
+                  echo "    Installiere oidc_login..."
+                  php /var/www/html/occ app:install oidc_login 2>/dev/null || \
+                  php /var/www/html/occ app:enable  oidc_login
+                  echo "    oidc_login aktiviert."
+                fi
+
+                # ── 3. files_external App aktivieren (für Storage Box) ────────
+                echo "==> Prüfe files_external App..."
+                if php /var/www/html/occ app:list --enabled 2>/dev/null \
+                    | grep -q 'files_external'; then
+                  echo "    files_external bereits aktiv."
+                else
+                  echo "    Aktiviere files_external..."
+                  php /var/www/html/occ app:enable files_external
+                  echo "    files_external aktiviert."
+                fi
+
+                echo "==> initContainer abgeschlossen."
+            volumeMounts:
+              - name: nextcloud-main
+                mountPath: /var/www/html
+              - name: homelab-ca
+                mountPath: /etc/ssl/certs/homelab-ca.pem
+                subPath: homelab-ca.crt
+                readOnly: true
 
   destination:
     server: https://kubernetes.default.svc
