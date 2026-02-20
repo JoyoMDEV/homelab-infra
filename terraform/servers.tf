@@ -64,7 +64,7 @@ resource "hcloud_server" "k3s_server" {
   name        = "k3s-server"
   server_type = "cx53"
   image       = "ubuntu-24.04"
-  location    = var.location
+  location    = var.server_location
   ssh_keys    = [hcloud_ssh_key.default.id]
 
   firewall_ids = [hcloud_firewall.k3s.id]
@@ -92,7 +92,7 @@ resource "hcloud_server" "k3s_server" {
 #   name        = "k3s-worker-03"
 #   server_type = "cx43"
 #   image       = "ubuntu-24.04"
-#   location    = var.location
+#   location    = var.server_location
 #   ssh_keys    = [hcloud_ssh_key.default.id]
 #
 #   firewall_ids = [hcloud_firewall.k3s.id]
@@ -114,3 +114,47 @@ resource "hcloud_server" "k3s_server" {
 #
 #   depends_on = [hcloud_network_subnet.k3s]
 # }
+
+# ─── Storage Box ──────────────────────────────────────────────────────────────
+# bx21: 1 TB, dual-purpose:
+#   /nextcloud/  → Nextcloud External Storage (Nutzerdateien via SFTP)
+#   /backups/    → Restic (PVC Snapshots) + Velero (Cluster State)
+#
+# WICHTIG: ssh_keys können nach der Erstellung nicht per API geändert werden.
+# Änderungen erzwingen Resource-Replacement (= Datenverlust!).
+# Keys nur über Hetzner Cloud Console ändern.
+# lifecycle.ignore_changes verhindert versehentlichen Replacement durch Terraform.
+
+resource "hcloud_storage_box" "main" {
+  name             = "homelab-storage"
+  storage_box_type = "bx11"
+  location         = var.storage_location
+  password         = var.storage_box_password
+
+  ssh_keys = [hcloud_ssh_key.default.public_key]
+
+  labels = {
+    managed = "terraform"
+    purpose = "nextcloud-and-backups"
+  }
+
+  access_settings = {
+    reachable_externally = true # Nextcloud Pod + Restic brauchen externen Zugriff
+    samba_enabled        = false
+    ssh_enabled          = true # primär: Nextcloud External Storage + Restic/Velero
+    webdav_enabled       = true # sekundär: manueller Zugriff / Debugging
+    zfs_enabled          = true # kostenlose ZFS Point-in-Time Snapshots
+  }
+
+  snapshot_plan = {
+    max_snapshots = 10 # ~10 Tage tägliche Snapshots
+    minute        = 30
+    hour          = 2 # 02:30 Uhr – nach dem Backup-Fenster
+    day_of_week   = 0 # täglich
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [ssh_keys]
+  }
+}
