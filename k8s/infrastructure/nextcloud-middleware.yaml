@@ -1,0 +1,30 @@
+---
+# Security Headers + WebDAV-Rewrites für Nextcloud
+# Ohne die Rewrites funktionieren CalDAV/CardDAV-Clients nicht korrekt.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: nextcloud-headers
+  namespace: productivity
+spec:
+  headers:
+    customRequestHeaders:
+      X-Forwarded-Proto: "https"
+    customResponseHeaders:
+      X-Robots-Tag: "noindex, nofollow"
+      X-Frame-Options: "SAMEORIGIN"
+      X-Content-Type-Options: "nosniff"
+      X-XSS-Protection: "1; mode=block"
+      Strict-Transport-Security: "max-age=31536000; includeSubDomains"
+---
+# /.well-known Redirects (CalDAV/CardDAV Discovery)
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: nextcloud-redirects
+  namespace: productivity
+spec:
+  redirectRegex:
+    permanent: true
+    regex: "https://nextcloud.homelab.local/.well-known/(card|cal)dav"
+    replacement: "https://nextcloud.homelab.local/remote.php/dav/"
