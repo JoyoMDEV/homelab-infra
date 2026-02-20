@@ -109,6 +109,7 @@ spec:
                   'id'     => 'preferred_username',
                   'name'   => 'name',
                   'mail'   => 'email',
+                  'groups' => 'groups',
                 ),
 
                 // Neue Benutzer werden beim ersten OIDC-Login automatisch angelegt
@@ -143,14 +144,18 @@ spec:
 
           extraVolumeMounts:
             # CA-Zertifikat in System-Trust-Store mounten damit Nextcloud
-            # auth.homelab.local per TLS verifizieren kann
+            # auth.homelab.local per TLS verifizieren kann.
+            # WICHTIG: /usr/local/share/ca-certificates/ – NICHT /var/www/html/config/
+            # da der Helm Chart configs: bereits dort hinmountet und mountPath unique sein muss.
             - name: homelab-ca
               mountPath: /usr/local/share/ca-certificates/homelab-ca.crt
               subPath: homelab-ca.crt
               readOnly: true
 
-          # initContainer: CA registrieren + oidc_login App installieren
+          # initContainer: CA registrieren + Apps installieren
           # Läuft bei jedem Pod-Start, beide Schritte sind idempotent.
+          # WICHTIG: Das Nextcloud Helm Chart nennt den Haupt-PVC intern "nextcloud-data",
+          # im initContainer muss der Volume-Name exakt so referenziert werden.
           initContainers:
             - name: setup-nextcloud
               image: nextcloud:fpm-alpine
@@ -161,12 +166,18 @@ spec:
                   set -e
 
                   # ── 1. CA im System-Trust-Store registrieren ──────────────
+                  # Muss VOR occ-Aufrufen passieren, damit occ HTTPS gegen
+                  # Keycloak verifizieren kann (z.B. beim App-Download).
                   echo "==> Registriere homelab CA..."
+                  cp /tmp/homelab-ca/homelab-ca.crt \
+                     /usr/local/share/ca-certificates/homelab-ca.crt
                   update-ca-certificates 2>/dev/null || true
+                  echo "    CA registriert."
 
                   # ── 2. oidc_login App installieren (idempotent) ───────────
                   echo "==> Prüfe oidc_login App..."
-                  if php /var/www/html/occ app:list --enabled 2>/dev/null | grep -q 'oidc_login'; then
+                  if php /var/www/html/occ app:list --enabled 2>/dev/null \
+                      | grep -q 'oidc_login'; then
                     echo "    oidc_login bereits aktiv, überspringe."
                   else
                     echo "    Installiere oidc_login..."
@@ -177,7 +188,8 @@ spec:
 
                   # ── 3. files_external App aktivieren (für Storage Box) ────
                   echo "==> Prüfe files_external App..."
-                  if php /var/www/html/occ app:list --enabled 2>/dev/null | grep -q 'files_external'; then
+                  if php /var/www/html/occ app:list --enabled 2>/dev/null \
+                      | grep -q 'files_external'; then
                     echo "    files_external bereits aktiv, überspringe."
                   else
                     echo "    Aktiviere files_external..."
@@ -187,11 +199,13 @@ spec:
 
                   echo "==> initContainer abgeschlossen."
               volumeMounts:
+                # PVC-Name den das Nextcloud Helm Chart intern vergibt
                 - name: nextcloud-data
                   mountPath: /var/www/html
+                # CA unter einem anderen Pfad mounten als im Hauptcontainer,
+                # damit es keine Kollision mit extraVolumeMounts gibt
                 - name: homelab-ca
-                  mountPath: /usr/local/share/ca-certificates/homelab-ca.crt
-                  subPath: homelab-ca.crt
+                  mountPath: /tmp/homelab-ca
                   readOnly: true
 
         internalDatabase:
