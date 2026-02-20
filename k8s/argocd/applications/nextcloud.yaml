@@ -143,6 +143,7 @@ spec:
                     activate_app calendar
                     activate_app contacts
                     activate_app notes
+                    activate_app deck
 
                     echo "==> postStart abgeschlossen."
 
