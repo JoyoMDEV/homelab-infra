@@ -32,15 +32,12 @@ spec:
 
           # postStart Hook – läuft nach Container-Start im selben Container-Kontext
           # wie Nextcloud selbst. Erledigt in einem Schritt:
-          #   1. homelab-CA im Alpine Trust Store registrieren (dauerhaft im laufenden Pod)
+          #   1. homelab-CA ans Alpine-Bundle anhängen (/etc/ssl/cert.pem)
+          #      PHP liest auf Alpine /etc/ssl/cert.pem – update-ca-certificates
+          #      schreibt nur nach /etc/ssl/certs/ und greift daher nicht für PHP.
           #   2. Nextcloud installieren falls noch nicht installiert
           #   3. trusted_domain setzen
           #   4. oidc_login + files_external Apps aktivieren
-          #
-          # CA-Registrierung muss hier (nicht nur im initContainer) passieren damit
-          # PHP/curl beim OIDC-Login gegen auth.homelab.local die CA verifizieren kann.
-          # App-Aktivierung muss hier passieren weil occ erst nach der Installation
-          # funktioniert – der initContainer läuft davor.
           lifecycle:
             postStart:
               exec:
@@ -50,12 +47,17 @@ spec:
                   - |
                     set -e
 
-                    # ── 1. homelab-CA registrieren ────────────────────────────
+                    # ── 1. homelab-CA ans Alpine PHP-Bundle anhängen ──────────
+                    # PHP sucht auf Alpine nach /etc/ssl/cert.pem (nicht /etc/ssl/certs/).
+                    # update-ca-certificates greift nicht – CA direkt anhängen.
                     echo "==> Registriere homelab CA..."
-                    cp /etc/ssl/certs/homelab-ca.pem \
-                       /usr/local/share/ca-certificates/homelab-ca.crt
-                    update-ca-certificates 2>/dev/null || true
-                    echo "    CA registriert."
+                    if ! grep -q "BEGIN CERTIFICATE" /etc/ssl/cert.pem 2>/dev/null || \
+                       ! grep -qF "$(head -2 /etc/ssl/certs/homelab-ca.pem)" /etc/ssl/cert.pem 2>/dev/null; then
+                      cat /etc/ssl/certs/homelab-ca.pem >> /etc/ssl/cert.pem
+                      echo "    CA angehängt."
+                    else
+                      echo "    CA bereits im Bundle."
+                    fi
 
                     # PHP-FPM braucht einen Moment zum Starten
                     sleep 10
@@ -203,6 +205,10 @@ spec:
             # automatisch im Token. Keycloak gibt "invalid_scope" zurück wenn groups
             # als expliziter Scope angefordert wird ohne ihn als Client Scope zu
             # registrieren.
+            #
+            # oidc_login_disable_registration: false – muss explizit gesetzt werden!
+            # Der Default in oidc_login 3.x ist true (invertierte Logik),
+            # was dazu führt dass neue User nicht angelegt werden können.
             oidc.config.php: |-
               <?php
               $CONFIG = array(
@@ -211,6 +217,7 @@ spec:
                 'oidc_login_client_secret'         => getenv('OIDC_CLIENT_SECRET'),
                 'oidc_login_auto_redirect'         => false,
                 'oidc_login_hide_password_form'    => false,
+                'oidc_login_disable_registration'  => false,
                 'oidc_login_attributes'            => array(
                   'id'     => 'preferred_username',
                   'name'   => 'name',
@@ -312,9 +319,7 @@ spec:
           initialDelaySeconds: 30
 
         # initContainers: nur noch für Volume-Vorbereitung zuständig.
-        # App-Aktivierung und CA-Registrierung sind in den postStart Hook gewandert
-        # weil occ-Befehle erst nach erfolgreicher Installation funktionieren
-        # und die CA im Hauptcontainer registriert werden muss.
+        # CA-Registrierung und App-Aktivierung sind in den postStart Hook gewandert.
         initContainers:
           - name: setup-nextcloud-apps
             image: nextcloud:fpm-alpine
