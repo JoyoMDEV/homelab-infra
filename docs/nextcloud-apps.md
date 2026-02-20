@@ -1,7 +1,7 @@
 # Nextcloud Apps – Produktiv-Setup
 
 Einrichtung der Produktiv-Apps in Nextcloud:
-**Mail** (Webmailer), **Kalender**, **Kontakte**, **Notes**.
+**Mail** (Webmailer), **Kalender**, **Kontakte**, **Notes**, **Deck** (Kanban).
 
 Alle Apps sind bereits aktiviert. Dieses Dokument beschreibt die
 Erstkonfiguration nach einem Neusetup sowie die Geräte-Anbindung.
@@ -15,7 +15,8 @@ Erstkonfiguration nach einem Neusetup sowie die Geräte-Anbindung.
 3. [Kalender – Einrichtung & CalDAV](#3-kalender)
 4. [Kontakte – Einrichtung & CardDAV](#4-kontakte)
 5. [Notes – Einrichtung](#5-notes)
-6. [Geräte verbinden](#6-geräte-verbinden)
+6. [Deck – Kanban Boards](#6-deck)
+7. [Geräte verbinden](#7-geräte-verbinden)
 
 ---
 
@@ -29,6 +30,7 @@ php /var/www/html/occ app:install mail
 php /var/www/html/occ app:install calendar
 php /var/www/html/occ app:install contacts
 php /var/www/html/occ app:install notes
+php /var/www/html/occ app:install deck
 ```
 
 Manuell prüfen:
@@ -39,7 +41,7 @@ POD=$(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
 
 kubectl exec -n productivity $POD -c nextcloud -- \
   su -s /bin/sh www-data -c "
-    php /var/www/html/occ app:list --enabled | grep -E 'mail|calendar|contacts|notes'
+    php /var/www/html/occ app:list --enabled | grep -E 'mail|calendar|contacts|notes|deck'
   "
 ```
 
@@ -47,6 +49,7 @@ Erwartete Ausgabe:
 ```
   - calendar: 6.x.x
   - contacts: 8.x.x
+  - deck: 1.x.x
   - mail: 5.x.x
   - notes: 4.x.x
 ```
@@ -104,8 +107,8 @@ SMTP
 
 ### Mehrere Konten
 
-Für jedes weitere Postfach einfach **"Weiteres Konto hinzufügen"** – alle
-Postfächer erscheinen dann in der linken Sidebar und können über eine
+Für jedes weitere Postfach **"Weiteres Konto hinzufügen"** – alle
+Postfächer erscheinen in der linken Sidebar und können über eine
 **Unified Inbox** zusammengefasst werden.
 
 ### Bekannte Einschränkungen
@@ -124,10 +127,9 @@ sich direkt verbinden.
 
 ### Erster Kalender anlegen
 
-1. Nextcloud → **Kalender** (linke Sidebar)
+1. Nextcloud → **Kalender**
 2. Linke Spalte → **"Neuer Kalender"**
 3. Namen vergeben (z.B. `Privat`, `Arbeit`)
-4. Fertig – der Kalender ist sofort per CalDAV erreichbar
 
 ### CalDAV-URL
 
@@ -135,15 +137,8 @@ sich direkt verbinden.
 https://nextcloud.homelab.local/remote.php/dav/calendars/<username>/
 ```
 
-Für den `admin` Account:
-```
-https://nextcloud.homelab.local/remote.php/dav/calendars/admin/
-```
-
-Einzelner Kalender (nach dem Anlegen in den Kalender-Einstellungen sichtbar):
-```
-https://nextcloud.homelab.local/remote.php/dav/calendars/admin/personal/
-```
+> Deck-Karten mit Fälligkeitsdatum erscheinen automatisch als eigener
+> **"Deck"** Kalender – keine zusätzliche Konfiguration nötig.
 
 ---
 
@@ -155,18 +150,12 @@ Nextcloud Kontakte ist ein vollwertiger **CardDAV-Server**.
 
 1. Nextcloud → **Kontakte**
 2. Linke Spalte → **"Neues Adressbuch"**
-3. Name vergeben (z.B. `Kontakte`)
-4. Kontakte können manuell angelegt oder per **vCard (.vcf) importiert** werden
+3. Name vergeben → Kontakte manuell anlegen oder per vCard (.vcf) importieren
 
 ### CardDAV-URL
 
 ```
 https://nextcloud.homelab.local/remote.php/dav/addressbooks/users/<username>/
-```
-
-Für den `admin` Account:
-```
-https://nextcloud.homelab.local/remote.php/dav/addressbooks/users/admin/
 ```
 
 ---
@@ -177,62 +166,135 @@ Nextcloud Notes ist ein einfacher **Markdown-Notizblock**.
 Notizen werden als `.md`-Dateien in `Nextcloud/Notes/` gespeichert
 und sind damit auch über die Dateien-App sichtbar.
 
-### Erste Notiz
-
-1. Nextcloud → **Notes** (linke Sidebar)
-2. **"+"** → Titel eingeben → Markdown schreiben
-3. Wird automatisch gespeichert
-
-### Sync mit Mobilgeräten
-
-- **iOS/Android:** Nextcloud Notes App aus dem App Store / Play Store
-- Verbindung: Nextcloud-Server-URL + Login-Credentials
-- Notizen sind offline verfügbar und werden bei Verbindung synchronisiert
+**Sync mit Mobilgeräten:** Nextcloud Notes App aus dem App Store / Play Store,
+Verbindung über Nextcloud-Server-URL + Credentials. Notizen sind offline
+verfügbar.
 
 ---
 
-## 6. Geräte verbinden
+## 6. Deck
 
-### iOS / macOS – Automatisch
+Nextcloud Deck ist ein **Kanban-Board** direkt in Nextcloud.
+Karten mit Fälligkeitsdatum erscheinen automatisch im Nextcloud Kalender.
 
-iOS und macOS können CalDAV und CardDAV automatisch erkennen wenn
-der Server korrekt konfiguriert ist.
+### Board-Struktur
 
-**iOS:** Einstellungen → Mail → Accounts → Account hinzufügen → **Andere**
+Es gibt 4 Boards mit jeweils identischen Listen:
 
-| Typ | Einstellung |
-|-----|-------------|
-| CalDAV Server | `nextcloud.homelab.local` |
-| CardDAV Server | `nextcloud.homelab.local` |
-| Benutzername | Nextcloud-Username |
-| Passwort | Nextcloud-Passwort |
+| Board | Farbe | Zweck |
+|-------|-------|-------|
+| `Karriere & Lernen` | Lila | Zertifizierungen, Portfolio, Netzwerk, Blog |
+| `Homelab` | Grün | Services, Wartung, Dokumentation |
+| `Persönlich` | Orange | Private Aufgaben, Haushalt, Finanzen |
 
-> Da `nextcloud.homelab.local` eine interne Domain ist, muss das Gerät
-> per **Tailscale** verbunden sein um Kalender und Kontakte zu synchronisieren.
-> Die Nextcloud iOS/Android App unterstützt direktes Login und synchronisiert
-> auch Notes und Dateien.
+> **Kein separates Overview-Board nötig** – Deck hat eine eingebaute
+> **"All boards"** Ansicht (oben links auf das Deck-Icon klicken) die
+> Karten aus allen Boards zusammen anzeigt.
+
+### Listen (in jedem Board gleich)
+
+| Reihenfolge | Liste | Zweck |
+|-------------|-------|-------|
+| 1 | `Ideen` | Ungefilterte Ideen, noch nicht bewertet |
+| 2 | `Backlog` | Bewertet, aber noch nicht geplant |
+| 3 | `Diese Woche` | Für die aktuelle Woche geplant |
+| 4 | `In Arbeit` | Aktiv in Bearbeitung |
+| 5 | `Warten` | Blockiert oder wartet auf externe Aktion |
+| 6 | `Erledigt` | Abgeschlossen |
+
+### Labels (pro Board)
+
+Labels werden pro Board angelegt:
+**Board → oben rechts "..." → "Edit board" → "Labels"**
+
+| Label | Farbe |
+|-------|-------|
+| `zertifizierung` | Blau |
+| `portfolio` | Lila |
+| `netzwerk` | Türkis |
+| `homelab` | Grün |
+| `persönlich` | Orange |
+| `finanzen` | Dunkelgrün |
+| `haushalt` | Hellblau |
+| `lernen` | Gold |
+
+> Deck hat kein globales Label-System – Labels müssen pro Board
+> separat angelegt werden.
+
+### Kalender-Integration
+
+Sobald eine Karte ein **Fälligkeitsdatum** hat erscheint sie automatisch
+im Nextcloud Kalender unter einem eigenen **"Deck"** Kalender.
+
+Fälligkeitsdatum setzen: Karte öffnen → **"Due date"** Feld → Datum wählen.
+
+### Workflow im Alltag
+
+1. Neue Aufgabe → als Karte in `Ideen` oder direkt `Backlog` anlegen
+2. Label setzen (Bereich) + Fälligkeitsdatum wenn relevant
+3. Wöchentlich: Karten aus `Backlog` nach `Diese Woche` ziehen
+4. Im Alltag: Karten zwischen Listen verschieben
+5. **"All boards"** Ansicht für den täglichen Überblick nutzen
+
+### Karriere & Lernen – Initiale Karten
+
+Empfohlene Startkarten im Board `Karriere & Lernen`:
+
+**Zertifizierungen (Backlog):**
+
+| Karte | Deadline | Label |
+|-------|----------|-------|
+| `AZ-104 bestehen` | Apr 2026 | `zertifizierung` |
+| `AWS SAA bestehen` | Jun 2026 | `zertifizierung` |
+| `AZ-400 bestehen` | Ende 2027 | `zertifizierung` |
+| `AWS SAP bestehen` | Frühjahr 2028 | `zertifizierung` |
+| `CKA bestehen` | offen | `zertifizierung` |
+
+**Portfolio (Backlog):**
+
+| Karte | Deadline | Label |
+|-------|----------|-------|
+| `GitHub Portfolio aufräumen` | Apr 2026 | `portfolio` |
+| `LinkedIn Profil optimieren` | Apr 2026 | `netzwerk` |
+| `IaC Projekt (Terraform Multi-Cloud)` | Ende 2026 | `portfolio` |
+| `K8s Projekt mit Helm + ArgoCD` | Ende 2026 | `portfolio` |
+| `Monitoring Stack dokumentieren` | Ende 2026 | `portfolio` |
+| `Ersten Blog-Artikel schreiben` | Ende 2026 | `netzwerk` |
+
+---
+
+## 7. Geräte verbinden
+
+### iOS / macOS
+
+**Einstellungen → Mail → Accounts → Account hinzufügen → Andere**
+
+| Typ | Server |
+|-----|--------|
+| CalDAV | `nextcloud.homelab.local` |
+| CardDAV | `nextcloud.homelab.local` |
+
+Benutzername + Passwort = Nextcloud-Credentials.
+
+> Gerät muss per **Tailscale** verbunden sein da `nextcloud.homelab.local`
+> eine interne Domain ist.
 
 ### Android
 
-**DAVx⁵** (kostenlos via F-Droid, ~4€ im Play Store) ist die empfohlene App
-für CalDAV/CardDAV-Sync auf Android:
+**DAVx⁵** (F-Droid kostenlos, Play Store ~4€):
 
-1. DAVx⁵ installieren
-2. **"Account hinzufügen"** → **"Mit URL und Benutzername anmelden"**
-3. URL: `https://nextcloud.homelab.local/remote.php/dav/`
-4. Benutzername + Passwort eingeben
-5. DAVx⁵ erkennt automatisch alle Kalender und Adressbücher
+1. Account hinzufügen → **"Mit URL und Benutzername"**
+2. URL: `https://nextcloud.homelab.local/remote.php/dav/`
+3. Credentials eingeben → DAVx⁵ erkennt Kalender und Adressbücher automatisch
 
-### Thunderbird
+### Nextcloud Mobile App
 
-Thunderbird hat seit Version 102 nativen CalDAV/CardDAV-Support:
+Die offizielle Nextcloud App (iOS/Android) synchronisiert:
+- Dateien
+- Notes (mit der Notes App)
+- Deck (mit der Deck App)
 
-1. **Kalender** → Neuer Kalender → **"Im Netzwerk"**
-2. Format: `CalDAV`
-3. URL: `https://nextcloud.homelab.local/remote.php/dav/calendars/admin/`
-4. Zugangsdaten eingeben
-
-Für Kontakte: **Adressbuch** → Neu → **"CardDAV-Adressbuch"**
+Verbindung: Server-URL `https://nextcloud.homelab.local` → Login via Keycloak.
 
 ---
 
@@ -244,33 +306,29 @@ Für Kontakte: **Adressbuch** → Neu → **"CardDAV-Adressbuch"**
 POD=$(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
   -o jsonpath='{.items[0].metadata.name}')
 
-# IMAP-Verbindung aus dem Cluster testen
 kubectl exec -n productivity $POD -c nextcloud -- \
   curl -v --ssl-reqd \
   imaps://mail.your-server.de:993 \
   --user "<adresse>@<domain>.de:<passwort>" 2>&1 | head -30
 ```
 
-Häufige Ursache: Falsches Passwort oder Hetzner hat die IP des Clusters
-temporär geblockt (zu viele Fehlversuche). Im Hetzner Panel unter
-**Webhosting → E-Mail → Postfächer** prüfen ob das Konto gesperrt ist.
+### CalDAV/CardDAV: Geräte synchronisieren nicht
 
-### CalDAV/CardDAV: Geräte können nicht synchronisieren
-
-Well-Known Redirect prüfen (muss 301 zurückgeben):
+Well-Known Redirect prüfen:
 
 ```bash
-curl -sv https://nextcloud.homelab.local/.well-known/caldav 2>&1 | grep -E "< HTTP|Location"
+curl -sv https://nextcloud.homelab.local/.well-known/caldav 2>&1 \
+  | grep -E "< HTTP|Location"
 # Erwartete Ausgabe: HTTP/2 301 + Location: .../remote.php/dav/
 ```
 
-Falls kein Redirect: `nextcloud-middleware.yaml` prüfen ob die
-Traefik Middleware korrekt deployed ist.
+### Deck Kalender erscheint nicht in Nextcloud Kalender
 
-### Notes App zeigt keine Notizen nach Login
+Karte öffnen und prüfen ob ein Fälligkeitsdatum gesetzt ist – ohne
+Datum erscheint die Karte nicht im Kalender. Danach Kalender-App
+neu laden (F5).
 
-Nextcloud Notes speichert Dateien in `Notes/` im Nextcloud-Dateisystem.
-Nach einem Neustart den Datei-Cache neu aufbauen:
+### Notes zeigt keine Notizen nach Pod-Neustart
 
 ```bash
 POD=$(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
