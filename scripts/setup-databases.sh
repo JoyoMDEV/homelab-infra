@@ -38,6 +38,35 @@ kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -d gitlab -c "
 "
 echo "    GitLab database created"
 
+# Nextcloud DB
+NEXTCLOUD_DB_PW=$(openssl rand -base64 24)
+kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "CREATE DATABASE nextcloud;"
+kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "
+  DO \$\$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'nextcloud') THEN
+      CREATE ROLE nextcloud WITH LOGIN PASSWORD '$NEXTCLOUD_DB_PW';
+    END IF;
+  END \$\$;
+  GRANT ALL PRIVILEGES ON DATABASE nextcloud TO nextcloud;
+  ALTER DATABASE nextcloud OWNER TO nextcloud;
+"
+
+# Nextcloud Admin + Secrets
+NEXTCLOUD_ADMIN_PW=$(openssl rand -base64 16)
+REDIS_PW=$(kubectl get secret redis-secret -n infrastructure -o jsonpath='{.data.redis-password}' | base64 -d)
+STORAGE_BOX_PW="<dein-storage-box-passwort>"  # aus terraform.tfvars
+
+kubectl create secret generic nextcloud-secret \
+  --from-literal=nextcloud-password="$NEXTCLOUD_ADMIN_PW" \
+  --from-literal=db-password="$NEXTCLOUD_DB_PW" \
+  --from-literal=redis-password="$REDIS_PW" \
+  --from-literal=storage-box-password="$STORAGE_BOX_PW" \
+  --from-literal=oidc-client-secret="REPLACE_AFTER_KEYCLOAK_SETUP" \
+  -n productivity
+
+echo "Nextcloud Admin: admin / $NEXTCLOUD_ADMIN_PW"
+echo "DB Password: $NEXTCLOUD_DB_PW"
+
 # Get Redis password
 REDIS_PW=$(kubectl get secret redis-secret -n infrastructure -o jsonpath='{.data.redis-password}' | base64 -d)
 

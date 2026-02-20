@@ -1,0 +1,272 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nextcloud
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://nextcloud.github.io/helm
+    chart: nextcloud
+    targetRevision: 6.*
+    helm:
+      values: |
+        image:
+          flavor: fpm-alpine
+
+        nextcloud:
+          host: nextcloud.homelab.local
+          username: admin
+          password: "" # gesetzt via existingSecret
+
+          existingSecret:
+            enabled: true
+            secretName: nextcloud-secret
+            usernameKey: nextcloud-username
+            passwordKey: nextcloud-password
+
+          extraEnv:
+            - name: REDIS_HOST_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nextcloud-secret
+                  key: redis-password
+            # OIDC Client Secret – wird in oidc.config.php via getenv() gelesen,
+            # kommt damit nie als Klartext in eine ConfigMap oder in Git
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: nextcloud-secret
+                  key: oidc-client-secret
+
+          # PHP-FPM Config für bessere Performance
+          phpConfigs:
+            www.conf: |
+              [www]
+              pm = dynamic
+              pm.max_children = 20
+              pm.start_servers = 5
+              pm.min_spare_servers = 3
+              pm.max_spare_servers = 10
+
+          configs:
+            # Redis Session + Cache
+            redis.config.php: |-
+              <?php
+              $CONFIG = array(
+                'memcache.local' => '\OC\Memcache\Redis',
+                'memcache.distributed' => '\OC\Memcache\Redis',
+                'memcache.locking' => '\OC\Memcache\Redis',
+                'redis' => array(
+                  'host' => 'redis-master.infrastructure.svc.cluster.local',
+                  'port' => 6379,
+                  'password' => getenv('REDIS_HOST_PASSWORD'),
+                ),
+              );
+
+            # Reverse Proxy / Traefik
+            proxy.config.php: |-
+              <?php
+              $CONFIG = array(
+                'trusted_proxies' => ['10.0.0.0/8'],
+                'overwriteprotocol' => 'https',
+                'overwrite.cli.url' => 'https://nextcloud.homelab.local',
+                'forwarded_for_headers' => ['HTTP_X_FORWARDED_FOR'],
+              );
+
+            # Performance & Lokalisierung
+            misc.config.php: |-
+              <?php
+              $CONFIG = array(
+                'default_phone_region' => 'DE',
+                'maintenance_window_start' => 2,
+                'loglevel' => 1,
+              );
+
+            # OIDC Login via Keycloak (oidc_login App)
+            # Client Secret wird zur Laufzeit aus der Umgebungsvariable gelesen –
+            # steht damit nie im Klartext in Git oder in einer ConfigMap.
+            oidc.config.php: |-
+              <?php
+              $CONFIG = array(
+                'oidc_login_provider_url'          => 'https://auth.homelab.local/realms/homelab',
+                'oidc_login_client_id'             => 'nextcloud',
+                'oidc_login_client_secret'         => getenv('OIDC_CLIENT_SECRET'),
+
+                // Login-Verhalten:
+                // false = Login-Seite zeigt OIDC-Button + lokales Formular
+                // true  = direkt zu Keycloak weiterleiten (kein lokaler Login)
+                'oidc_login_auto_redirect'         => false,
+
+                // Lokaler Admin-Login bleibt erreichbar (Notfall-Zugriff)
+                'oidc_login_hide_password_form'    => false,
+
+                // Keycloak Token-Claims → Nextcloud Attribute
+                'oidc_login_attributes'            => array(
+                  'id'     => 'preferred_username',
+                  'name'   => 'name',
+                  'mail'   => 'email',
+                ),
+
+                // Neue Benutzer werden beim ersten OIDC-Login automatisch angelegt
+                'oidc_login_create_user'           => true,
+                'oidc_login_default_quota'         => '',
+
+                // Gruppen aus Keycloak in Nextcloud übernehmen
+                'oidc_login_use_id_token'          => false,
+
+                // TLS-Verifikation gegen auth.homelab.local
+                // Das homelab-CA-Zertifikat wird via extraVolume gemountet
+                'oidc_login_tls_verify'            => true,
+
+                // Scopes die beim Authorization Request angefragt werden
+                'oidc_login_scope'                 => 'openid profile email groups',
+
+                // PKCE (Proof Key for Code Exchange)
+                'oidc_login_code_challenge_method' => 'S256',
+
+                // Beim Nextcloud-Logout auch bei Keycloak ausloggen
+                'oidc_login_logout_url'            => 'https://auth.homelab.local/realms/homelab/protocol/openid-connect/logout',
+
+                // Text des Login-Buttons
+                'oidc_login_button_text'           => 'Mit Keycloak anmelden',
+              );
+
+          # Zusätzliche Volumes: homelab-CA für TLS-Verifikation gegen Keycloak
+          extraVolumes:
+            - name: homelab-ca
+              secret:
+                secretName: homelab-ca
+
+          extraVolumeMounts:
+            # CA-Zertifikat in System-Trust-Store mounten damit Nextcloud
+            # auth.homelab.local per TLS verifizieren kann
+            - name: homelab-ca
+              mountPath: /usr/local/share/ca-certificates/homelab-ca.crt
+              subPath: homelab-ca.crt
+              readOnly: true
+
+          # initContainer: CA registrieren + oidc_login App installieren
+          # Läuft bei jedem Pod-Start, beide Schritte sind idempotent.
+          initContainers:
+            - name: setup-nextcloud
+              image: nextcloud:fpm-alpine
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+
+                  # ── 1. CA im System-Trust-Store registrieren ──────────────
+                  echo "==> Registriere homelab CA..."
+                  update-ca-certificates 2>/dev/null || true
+
+                  # ── 2. oidc_login App installieren (idempotent) ───────────
+                  echo "==> Prüfe oidc_login App..."
+                  if php /var/www/html/occ app:list --enabled 2>/dev/null | grep -q 'oidc_login'; then
+                    echo "    oidc_login bereits aktiv, überspringe."
+                  else
+                    echo "    Installiere oidc_login..."
+                    php /var/www/html/occ app:install oidc_login 2>/dev/null || \
+                    php /var/www/html/occ app:enable  oidc_login
+                    echo "    oidc_login aktiviert."
+                  fi
+
+                  # ── 3. files_external App aktivieren (für Storage Box) ────
+                  echo "==> Prüfe files_external App..."
+                  if php /var/www/html/occ app:list --enabled 2>/dev/null | grep -q 'files_external'; then
+                    echo "    files_external bereits aktiv, überspringe."
+                  else
+                    echo "    Aktiviere files_external..."
+                    php /var/www/html/occ app:enable files_external
+                    echo "    files_external aktiviert."
+                  fi
+
+                  echo "==> initContainer abgeschlossen."
+              volumeMounts:
+                - name: nextcloud-data
+                  mountPath: /var/www/html
+                - name: homelab-ca
+                  mountPath: /usr/local/share/ca-certificates/homelab-ca.crt
+                  subPath: homelab-ca.crt
+                  readOnly: true
+
+        internalDatabase:
+          enabled: false
+
+        externalDatabase:
+          enabled: true
+          type: postgresql
+          host: homelab-pg-rw.infrastructure.svc.cluster.local
+          port: 5432
+          database: nextcloud
+          user: nextcloud
+          existingSecret:
+            enabled: true
+            secretName: nextcloud-secret
+            passwordKey: db-password
+
+        redis:
+          enabled: false # wir nutzen den bestehenden Redis
+
+        # nginx Sidecar (required für fpm-alpine flavor)
+        nginx:
+          enabled: true
+
+        persistence:
+          enabled: true
+          size: 10Gi # für Config, Apps, Previews – Nutzerdateien via Storage Box
+
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 250m
+          limits:
+            memory: 1Gi
+
+        ingress:
+          enabled: true
+          className: traefik
+          annotations:
+            traefik.ingress.kubernetes.io/router.middlewares: productivity-nextcloud-headers@kubernetescrd
+          hosts:
+            - host: nextcloud.homelab.local
+              paths:
+                - path: /
+                  pathType: Prefix
+          tls:
+            - secretName: homelab-wildcard-tls
+              hosts:
+                - nextcloud.homelab.local
+
+        # Cronjob für Background Tasks (wichtig für Nextcloud)
+        cronjob:
+          enabled: true
+
+        # Startup dauert länger wegen initContainer + erster DB-Migration
+        startupProbe:
+          enabled: true
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 60
+
+        livenessProbe:
+          enabled: true
+          initialDelaySeconds: 30
+
+        readinessProbe:
+          enabled: true
+          initialDelaySeconds: 30
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: productivity
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
