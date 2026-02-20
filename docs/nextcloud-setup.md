@@ -36,10 +36,10 @@ kubectl wait --for=condition=Ready pod/homelab-pg-1 -n infrastructure --timeout=
 # Datenbank + User anlegen
 NEXTCLOUD_DB_PW=$(openssl rand -base64 24)
 
-kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c \
+kubectl exec homelab-pg-1 -n infrastructure -c postgres -- psql -U postgres -c \
   "CREATE DATABASE nextcloud;" 2>/dev/null || echo "Datenbank existiert bereits"
 
-kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "
+kubectl exec homelab-pg-1 -n infrastructure -c postgres -- psql -U postgres -c "
   DO \$\$ BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'nextcloud') THEN
       CREATE ROLE nextcloud WITH LOGIN PASSWORD '${NEXTCLOUD_DB_PW}';
@@ -86,7 +86,7 @@ echo "=========================================="
 ```
 
 > **Wichtig:** Das Secret `nextcloud-secret` muss im Namespace `productivity` existieren,
-> bevor ArgoCD Nextcloud deployt. ArgoCD wird sonst in einen Sync-Error laufen.
+> bevor ArgoCD Nextcloud deployt.
 
 ---
 
@@ -146,6 +146,11 @@ Damit Keycloak die Gruppen des Benutzers im Token mitschickt:
 
 → **Save**
 
+> **Hinweis:** `groups` wird **nicht** als expliziter Scope angefordert (`oidc_login_scope`
+> enthält nur `openid profile email`). Der Gruppen-Claim kommt automatisch über diesen
+> Mapper im Token. Keycloak würde `invalid_scope` zurückgeben wenn `groups` als Scope
+> angefordert wird ohne ihn als Client Scope zu registrieren.
+
 ### 2.5 Client Secret in Kubernetes eintragen
 
 1. Tab **"Credentials"** öffnen
@@ -162,48 +167,10 @@ kubectl patch secret nextcloud-secret -n productivity \
 
 ## 3. Traefik Middleware deployen
 
-Die Middleware sorgt für korrekte Security-Header und CalDAV/CardDAV-Redirects.
-Sie muss vor Nextcloud existieren, da der Ingress darauf referenziert.
-
-Erstelle `k8s/infrastructure/nextcloud-middleware.yaml`:
-
-```yaml
----
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: nextcloud-headers
-  namespace: productivity
-spec:
-  headers:
-    customRequestHeaders:
-      X-Forwarded-Proto: "https"
-    customResponseHeaders:
-      X-Robots-Tag: "noindex, nofollow"
-      X-Frame-Options: "SAMEORIGIN"
-      X-Content-Type-Options: "nosniff"
-      Strict-Transport-Security: "max-age=31536000; includeSubDomains"
----
-# CalDAV / CardDAV Discovery Redirect
-# Ohne diesen Redirect können Kalender/Kontakt-Apps (z.B. DAVx⁵) die
-# Endpunkte nicht automatisch finden.
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: nextcloud-redirects
-  namespace: productivity
-spec:
-  redirectRegex:
-    permanent: true
-    regex: "https://nextcloud.homelab.local/.well-known/(card|cal)dav"
-    replacement: "https://nextcloud.homelab.local/remote.php/dav/"
-```
-
 ```bash
-# Direkt anwenden (wird auch von ArgoCD infrastructure App gepickt)
 kubectl apply -f k8s/infrastructure/nextcloud-middleware.yaml
 
-# Oder committen und ArgoCD deployen lassen:
+# Oder via Git:
 git add k8s/infrastructure/nextcloud-middleware.yaml
 git commit -m "feat: add Nextcloud Traefik middleware"
 git push
@@ -224,34 +191,34 @@ git push
 ArgoCD synct automatisch. Den Fortschritt beobachten:
 
 ```bash
-# ArgoCD App Status
-kubectl get application nextcloud -n argocd
-
-# Pod Status (initContainer + Hauptcontainer)
+# Pod Status
 kubectl get pods -n productivity -w
 
-# Logs des initContainers (oidc_login + files_external Installation)
-kubectl logs -n productivity \
-  $(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
-    -o jsonpath='{.items[0].metadata.name}') \
-  -c setup-nextcloud --follow
-
-# Logs des Nextcloud Hauptcontainers
+# postStart Hook Logs (Installation + App-Aktivierung)
 kubectl logs -n productivity \
   $(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
     -o jsonpath='{.items[0].metadata.name}') \
   -c nextcloud --follow
 ```
 
-> Der erste Start dauert **3–5 Minuten**, da Nextcloud die Datenbank initialisiert
-> und alle Standard-Apps installiert. Der `startupProbe` gibt 60 Versuche à 10s = 10 Minuten.
+> Der postStart Hook übernimmt automatisch:
+> - homelab-CA ins Alpine PHP-Bundle eintragen (`/etc/ssl/cert.pem`)
+> - Nextcloud installieren falls noch nicht installiert
+> - `trusted_domains` setzen
+> - `oidc_login` und `files_external` Apps aktivieren
+
+> Der erste Start dauert **3–5 Minuten** wegen DB-Initialisierung.
 
 ### 4.2 Erster Login testen
 
 1. https://nextcloud.homelab.local öffnen
-2. Mit lokalem Admin-Account einloggen: `admin` / Passwort aus Schritt 1.2
-3. Prüfen ob der Button **"Mit Keycloak anmelden"** erscheint
-4. OIDC-Login mit einem AD-Benutzer testen (privates Fenster empfohlen)
+2. Button **"Mit Keycloak anmelden"** klicken
+3. AD-Credentials eingeben (privates Fenster empfohlen)
+
+> **Bekanntes Verhalten:** Beim allerersten Login-Versuch können kurz
+> `authentication_expired` oder `PKCE code verifier not specified` Fehler erscheinen.
+> Einfach nochmal auf **"Mit Keycloak anmelden"** klicken – beim zweiten Versuch
+> funktioniert es. Das ist ein Session-Timing-Problem zwischen Keycloak und oidc_login.
 
 ---
 
@@ -259,25 +226,25 @@ kubectl logs -n productivity \
 
 ### 5.1 Verzeichnis auf Storage Box anlegen
 
-Das Verzeichnis `/nextcloud` muss auf der Storage Box existieren, bevor es gemountet wird.
-
 ```bash
-# Storage Box Verbindungsdaten aus Terraform auslesen
 cd terraform
 STORAGE_HOST=$(terraform output -raw storage_box_host)
 STORAGE_USER=$(terraform output -raw storage_box_username)
 cd ..
 
-# Per SFTP verbinden und Verzeichnis anlegen
-# Port 23 (nicht 22!) – Hetzner Storage Box verwendet Port 23
-sftp -P 23 ${STORAGE_USER}@${STORAGE_HOST} <<EOF
+# Per SFTP verbinden (Port 23 für SFTP-Zugang)
+sftp -P 23 -o StrictHostKeyChecking=no ${STORAGE_USER}@${STORAGE_HOST} <<EOF
 mkdir nextcloud
 ls -la
 bye
 EOF
 ```
 
-### 5.2 External Storage Script ausführen
+### 5.2 WebDAV External Storage einrichten
+
+> **Wichtig:** Das Nextcloud `fpm-alpine` Image enthält keine `php-ssh2` Extension,
+> daher funktioniert SFTP-External-Storage nicht. Wir nutzen stattdessen **WebDAV**
+> (HTTPS Port 443) – die Storage Box unterstützt das out-of-the-box.
 
 ```bash
 chmod +x scripts/setup-nextcloud-storage.sh
@@ -286,13 +253,10 @@ chmod +x scripts/setup-nextcloud-storage.sh
 
 Das Script:
 - Prüft alle Voraussetzungen
-- Testet die SFTP-Verbindung aus dem Cluster
-- Aktiviert die `files_external` App (falls noch nicht durch initContainer geschehen)
-- Legt den SFTP-Mount zur Storage Box an
+- Testet die WebDAV-Verbindung aus dem Cluster
+- Aktiviert die `files_external` App (idempotent)
+- Legt den WebDAV-Mount zur Storage Box an
 - Gibt den Mount für alle Benutzer frei
-
-> Der initContainer in `nextcloud.yaml` aktiviert `files_external` bereits beim Pod-Start.
-> Das Script ist trotzdem idempotent und erkennt den Zustand korrekt.
 
 ### 5.3 Mount verifizieren
 
@@ -307,14 +271,14 @@ kubectl exec -n productivity ${POD} -- \
 Erwartete Ausgabe:
 
 ```
-+----+-------------+------+--------------------+----------+
-| ID | Mount Point | Type | Authentication     | Status   |
-+----+-------------+------+--------------------+----------+
-| 1  | /Storage Box| SFTP | password::password | ok       |
-+----+-------------+------+--------------------+----------+
++----------+-------------+---------+---------------------+------------------------------------------+
+| Mount ID | Mount Point | Storage | Authentication Type | Configuration                            |
++----------+-------------+---------+---------------------+------------------------------------------+
+| 1        | /StorageBox | WebDAV  | Login and password  | host: "https://u....your-storagebox.de"  |
++----------+-------------+---------+---------------------+------------------------------------------+
 ```
 
-In der Nextcloud-UI erscheint die Storage Box unter **Dateien → Storage Box**.
+In der Nextcloud-UI erscheint die Storage Box unter **Dateien → StorageBox**.
 
 ---
 
@@ -323,18 +287,18 @@ In der Nextcloud-UI erscheint die Storage Box unter **Dateien → Storage Box**.
 ### Nextcloud erreichbar
 
 ```bash
-curl -sv https://nextcloud.homelab.local/status.php | python3 -m json.tool
+curl -s https://nextcloud.homelab.local/status.php | python3 -m json.tool
 # Erwartete Ausgabe: {"installed":true,"maintenance":false,...}
 ```
 
 ### OIDC funktioniert
 
 ```bash
-# OIDC Discovery Endpoint von Nextcloud aus erreichbar?
 kubectl exec -n productivity \
   $(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
     -o jsonpath='{.items[0].metadata.name}') \
-  -- curl -sf https://auth.homelab.local/realms/homelab/.well-known/openid-configuration \
+  -c nextcloud -- \
+  curl -sf https://auth.homelab.local/realms/homelab/.well-known/openid-configuration \
   | python3 -m json.tool | grep issuer
 ```
 
@@ -359,7 +323,6 @@ kubectl get pods -n productivity
 ### CalDAV / CardDAV Redirect
 
 ```bash
-# Muss mit 301 auf /remote.php/dav/ weiterleiten
 curl -sv https://nextcloud.homelab.local/.well-known/caldav 2>&1 | grep -E "< HTTP|Location"
 ```
 
@@ -367,64 +330,107 @@ curl -sv https://nextcloud.homelab.local/.well-known/caldav 2>&1 | grep -E "< HT
 
 ## 7. Troubleshooting
 
-### OIDC-Login schlägt fehl: "SSL certificate problem"
-
-Der initContainer registriert die CA, aber manchmal greift `update-ca-certificates` nicht vollständig.
-
-```bash
-# CA im Pod prüfen
-POD=$(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
-  -o jsonpath='{.items[0].metadata.name}')
-
-kubectl exec -n productivity ${POD} -c nextcloud -- \
-  curl -sv https://auth.homelab.local/realms/homelab/.well-known/openid-configuration
-
-# Falls SSL-Fehler: CA manuell im laufenden Pod registrieren (temporär)
-kubectl exec -n productivity ${POD} -c nextcloud -- \
-  sh -c "update-ca-certificates && echo OK"
-```
-
-Dauerhafter Fix: Prüfen ob das `homelab-ca` Secret im Namespace `productivity` existiert:
-
-```bash
-kubectl get secret homelab-ca -n productivity
-# Falls nicht vorhanden: cert-sync manuell triggern
-make cert-sync
-```
-
-### OIDC-Login schlägt fehl: "Invalid redirect URI"
-
-Die Redirect URI in Keycloak muss exakt `https://nextcloud.homelab.local/apps/oidc_login/oidc` sein – kein trailing Slash, kein `http://`.
-
-```bash
-# Keycloak → Clients → nextcloud → Settings → Valid redirect URIs prüfen
-```
-
-### OIDC-Button erscheint nicht auf der Login-Seite
+### OIDC-Button erscheint nicht
 
 ```bash
 POD=$(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
   -o jsonpath='{.items[0].metadata.name}')
 
-# Ist oidc_login aktiv?
 kubectl exec -n productivity ${POD} -- \
   su -s /bin/sh www-data -c "php /var/www/html/occ app:list --enabled" | grep oidc
 
-# App manuell aktivieren falls nicht vorhanden
+# App manuell aktivieren
 kubectl exec -n productivity ${POD} -- \
   su -s /bin/sh www-data -c "php /var/www/html/occ app:enable oidc_login"
+```
+
+### OIDC-Login: "SSL certificate problem"
+
+Der postStart Hook hängt die homelab-CA an `/etc/ssl/cert.pem` an – das ist das
+Alpine PHP-Bundle. `update-ca-certificates` greift **nicht** für PHP auf Alpine
+(PHP liest `/etc/ssl/cert.pem`, nicht `/etc/ssl/certs/`).
+
+```bash
+POD=$(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
+  -o jsonpath='{.items[0].metadata.name}')
+
+# Ist die CA im PHP-Bundle?
+kubectl exec -n productivity ${POD} -c nextcloud -- \
+  grep -c "BEGIN CERTIFICATE" /etc/ssl/cert.pem
+
+# Manuell anhängen (temporär bis zum nächsten Neustart)
+kubectl exec -n productivity ${POD} -c nextcloud -- \
+  sh -c "cat /etc/ssl/certs/homelab-ca.pem >> /etc/ssl/cert.pem && echo OK"
+
+# Dauerhafter Fix: homelab-ca Secret vorhanden?
+kubectl get secret homelab-ca -n productivity
+# Falls nicht: make cert-sync
+```
+
+### OIDC-Login: "invalid_scope"
+
+`groups` darf nicht im `oidc_login_scope` stehen. In `oidc.config.php` muss stehen:
+
+```php
+'oidc_login_scope' => 'openid profile email',
+```
+
+### OIDC-Login: "Auto creating new users is disabled"
+
+`oidc_login_disable_registration` hat in oidc_login 3.x den Default `true` (invertierte
+Logik). Muss explizit auf `false` gesetzt werden – ist in `oidc.config.php` bereits so
+konfiguriert. Falls der Fehler trotzdem auftritt:
+
+```bash
+POD=$(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
+  -o jsonpath='{.items[0].metadata.name}')
+
+kubectl exec -n productivity ${POD} -- \
+  su -s /bin/sh www-data -c "
+    php /var/www/html/occ config:system:set \
+      oidc_login_disable_registration --value=false --type=boolean
+  "
+```
+
+### OIDC-Login: "authentication_expired" / "PKCE code verifier not specified"
+
+Bekanntes Session-Timing-Problem beim allerersten Login. Einfach nochmal auf
+**"Mit Keycloak anmelden"** klicken.
+
+### Storage Box: "Ordner nicht gefunden"
+
+Das `fpm-alpine` Image hat keine `php-ssh2` Extension → SFTP-Mounts funktionieren nicht.
+Nur **WebDAV** verwenden:
+
+```bash
+POD=$(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
+  -o jsonpath='{.items[0].metadata.name}')
+
+# SFTP-Mount löschen und als WebDAV neu anlegen
+./scripts/setup-nextcloud-storage.sh --reset
+```
+
+### Nextcloud-Installation schlägt fehl (config.php leer)
+
+Das Chart legt bei jedem Pod-Start eine leere `config.php` als Placeholder an.
+Der postStart Hook erkennt das und entfernt sie vor der Installation automatisch.
+Falls es trotzdem hängt:
+
+```bash
+POD=$(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
+  -o jsonpath='{.items[0].metadata.name}')
+
+# config.php manuell löschen
+kubectl exec -n productivity ${POD} -c nextcloud -- \
+  rm -f /var/www/html/config/config.php
+
+# Pod neu starten
+kubectl rollout restart deployment/nextcloud -n productivity
 ```
 
 ### Nextcloud startet nicht (CrashLoopBackOff)
 
 ```bash
-# initContainer Logs prüfen
-kubectl logs -n productivity \
-  $(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
-    -o jsonpath='{.items[0].metadata.name}') \
-  -c setup-nextcloud
-
-# Hauptcontainer Logs
 kubectl logs -n productivity \
   $(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
     -o jsonpath='{.items[0].metadata.name}') \
@@ -433,30 +439,7 @@ kubectl logs -n productivity \
 
 Häufige Ursachen: Secret fehlt, PostgreSQL nicht erreichbar, PVC nicht gebunden.
 
-### Storage Box nicht erreichbar (Status: "Network error")
-
-```bash
-# SFTP-Verbindung direkt aus dem Cluster testen
-kubectl run sftp-debug --image=alpine --restart=Never -it --rm -n productivity -- \
-  sh -c "apk add openssh-client sshpass -q && \
-    sshpass -p '<PASSWORT>' sftp -P 23 -o StrictHostKeyChecking=no \
-    <USER>@<HOST>"
-```
-
-Häufige Ursache: Storage Box Passwort im Secret falsch oder `/nextcloud`-Verzeichnis
-existiert noch nicht auf der Storage Box (→ Schritt 5.1 ausführen).
-
-### Nextcloud zeigt "Wartungsmodus"
-
-```bash
-POD=$(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
-  -o jsonpath='{.items[0].metadata.name}')
-
-kubectl exec -n productivity ${POD} -- \
-  su -s /bin/sh www-data -c "php /var/www/html/occ maintenance:mode --off"
-```
-
-### OOMKilled (Pod wird wegen Speichermangel beendet)
+### OOMKilled
 
 Memory Limit in `nextcloud.yaml` erhöhen:
 
