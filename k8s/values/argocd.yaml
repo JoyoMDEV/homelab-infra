@@ -1,6 +1,9 @@
 ## ArgoCD values for homelab
 ## Tailscale-only, single node, no HA
 
+global:
+  domain: argocd.homelab.local
+
 # Disable HA (single node)
 controller:
   replicas: 1
@@ -28,24 +31,33 @@ applicationSet:
 redis:
   enabled: true
 
-# Disable dex (we use Keycloak later)
+# Keycloak OIDC wird verwendet
 dex:
   enabled: false
 
 configs:
   params:
-    # Allow insecure connection from Traefik
     server.insecure: true
 
   cm:
-    # Admin is enabled by default
-    # Disable anonymous access
     users.anonymous.enabled: "false"
-
-    # Application sync timeout
     timeout.reconciliation: 180s
+    url: https://argocd.homelab.local
 
-    # Resource tracking
+    oidc.config: |
+      name: Keycloak
+      issuer: https://auth.homelab.local/realms/homelab
+      clientID: argocd
+      clientSecret: $oidc.keycloak.clientSecret
+      requestedScopes:
+        - openid
+        - profile
+        - email
+        - groups
+      requestedIDTokenClaims:
+        groups:
+          essential: true
+
     resource.customizations.health.argoproj.io_Application: |
       hs = {}
       hs.status = "Healthy"
@@ -59,3 +71,9 @@ configs:
         end
       end
       return hs
+
+  rbac:
+    policy.csv: |
+      g, argocd-admins, role:admin
+    policy.default: role:readonly
+    scopes: '[groups]'
