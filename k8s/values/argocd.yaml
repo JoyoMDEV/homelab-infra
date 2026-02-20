@@ -49,6 +49,10 @@ configs:
       issuer: https://auth.homelab.local/realms/homelab
       clientID: argocd
       clientSecret: $oidc.keycloak.clientSecret
+      # rootCA is stored in argocd-secret (not in Git) and injected here.
+      # To set it: kubectl patch secret argocd-secret -n argocd --type merge \
+      #   -p '{"stringData":{"oidc.keycloak.rootCA":"<CA_CERT>"}}'
+      rootCA: $oidc.keycloak.rootCA
       requestedScopes:
         - openid
         - profile
