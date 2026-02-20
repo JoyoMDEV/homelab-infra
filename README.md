@@ -68,20 +68,27 @@ homelab-infra/
 │   │       ├── cert-manager.yaml
 │   │       ├── keycloak.yaml
 │   │       ├── gitlab.yaml
+│   │       ├── nextcloud.yaml
 │   │       ├── redis.yaml
 │   │       └── infrastructure.yaml
 │   ├── infrastructure/
 │   │   ├── postgres-cluster.yaml
 │   │   ├── cert-manager-issuer.yaml    # ClusterIssuer (references secret, no key in git)
 │   │   ├── homelab-wildcard-cert.yaml  # Wildcard cert for *.homelab.local
-│   │   └── cert-sync-cronjob.yaml      # Daily sync of wildcard secret to kube-system
+│   │   ├── cert-sync-cronjob.yaml      # Daily sync of wildcard secret to kube-system
+│   │   └── nextcloud-middleware.yaml   # Traefik headers + CalDAV/CardDAV redirects
 │   └── charts/
 │       └── gitlab-omnibus/     #   GitLab CE custom Helm chart
 │
 ├── scripts/
-│   ├── bootstrap-argocd.sh     #   One-time: CNPG, Redis, ArgoCD
-│   ├── bootstrap-certmanager.sh#   One-time: cert-manager, internal CA, wildcard cert
-│   └── setup-databases.sh      #   One-time: PostgreSQL databases + secrets
+│   ├── bootstrap-argocd.sh         #   One-time: CNPG, Redis, ArgoCD
+│   ├── bootstrap-certmanager.sh    #   One-time: cert-manager, internal CA, wildcard cert
+│   ├── setup-databases.sh          #   One-time: PostgreSQL databases + secrets
+│   └── setup-nextcloud-storage.sh  #   One-time: Storage Box as WebDAV External Storage
+│
+├── docs/
+│   ├── keycloak-setup.md       #   Keycloak SSO setup runbook
+│   └── nextcloud-setup.md      #   Nextcloud setup runbook
 │
 ├── certs/                      # gitignored - local CA cert for device import
 │   └── homelab-ca.crt          #   Import into browsers/OS to trust *.homelab.local
@@ -157,6 +164,7 @@ curl -v https://argocd.homelab.local
 - Redis (Bitnami)
 - Keycloak (SSO, connected to Samba AD via LDAP)
 - GitLab CE (Omnibus)
+- Nextcloud (with Keycloak OIDC + Hetzner Storage Box via WebDAV)
 - All future services
 
 ## TLS / HTTPS
@@ -259,6 +267,7 @@ make vault-view    # View secrets
 | `keycloak-db-secret` | auth | `setup-databases.sh` |
 | `gitlab-secret` | gitlab | `setup-databases.sh` |
 | `gitlab-rails-secrets` | gitlab | `setup-databases.sh` |
+| `nextcloud-secret` | productivity | `setup-databases.sh` |
 
 ## DNS
 
@@ -271,8 +280,26 @@ Samba AD DC serves a wildcard A record pointing to the server's Tailscale IP.
 | Keycloak | https://auth.homelab.local |
 | GitLab | https://gitlab.homelab.local |
 | GitLab Registry | https://registry.homelab.local |
+| Nextcloud | https://nextcloud.homelab.local |
 | Future: Grafana | https://grafana.homelab.local |
-| Future: Nextcloud | https://nextcloud.homelab.local |
+
+## Implementation Notes
+
+### Nextcloud
+- **Installation:** Das Helm Chart legt bei jedem Pod-Start eine leere `config.php` an,
+  die den automatischen Installer blockiert. Ein `lifecycle.postStart` Hook erkennt
+  die leere Datei, entfernt sie, und führt `occ maintenance:install` idempotent aus.
+- **CA für OIDC:** PHP auf Alpine liest `/etc/ssl/cert.pem` (nicht `/etc/ssl/certs/`).
+  Der postStart Hook hängt die homelab-CA direkt an diese Datei an –
+  `update-ca-certificates` greift hier nicht.
+- **Storage Box:** Das `fpm-alpine` Image enthält keine `php-ssh2` Extension,
+  daher funktioniert SFTP-External-Storage nicht. Die Storage Box wird über
+  **WebDAV (HTTPS)** eingebunden – kein zusätzliches PHP-Modul nötig.
+- **OIDC Scope:** `groups` darf nicht im `oidc_login_scope` stehen – der Gruppen-Claim
+  kommt automatisch über den Group Membership Mapper im Token. Keycloak würde sonst
+  `invalid_scope` zurückgeben.
+- **User-Erstellung:** `oidc_login_disable_registration` hat in oidc_login 3.x den
+  Default `true` (invertierte Logik) – muss explizit auf `false` gesetzt werden.
 
 ## Progress
 
@@ -288,6 +315,7 @@ Samba AD DC serves a wildcard A record pointing to the server's Tailscale IP.
 - [x] GitLab CE (Omnibus)
 - [x] cert-manager + internal CA + wildcard TLS for *.homelab.local
 - [x] Keycloak SSO (LDAP → Samba AD, OIDC for GitLab + ArgoCD)
-- [ ] Remaining services (Nextcloud, Vaultwarden, Paperless, ...)
+- [x] Nextcloud (OIDC via Keycloak, Storage Box via WebDAV)
 - [ ] Monitoring stack (Prometheus, Grafana, Loki)
+- [ ] Remaining services (Vaultwarden, Paperless, ...)
 - [ ] Phase 2: Stalwart Mail, Portfolio, public access
