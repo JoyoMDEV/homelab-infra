@@ -30,6 +30,67 @@ spec:
             usernameKey: nextcloud-username
             passwordKey: nextcloud-password
 
+          # postStart: läuft nach Container-Start und installiert Nextcloud falls
+          # noch nicht installiert. Idempotent – sicher bei jedem Neustart.
+          # Nötig weil das Chart eine leere config.php via ConfigMap mountet,
+          # die den automatischen Installer im Entrypoint blockiert.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    # PHP-FPM braucht einen Moment zum Starten
+                    sleep 10
+
+                    # Bereits installiert? Dann nur trusted_domain sicherstellen.
+                    STATUS=$(su -s /bin/sh www-data -c \
+                      "php /var/www/html/occ status --output=json 2>/dev/null" \
+                      | grep -o '"installed":true' || true)
+
+                    if [ -n "$STATUS" ]; then
+                      echo "Nextcloud already installed, skipping install."
+                      su -s /bin/sh www-data -c \
+                        "php /var/www/html/occ config:system:set \
+                          trusted_domains 0 \
+                          --value=nextcloud.homelab.local 2>/dev/null" || true
+                      exit 0
+                    fi
+
+                    echo "Nextcloud not installed, starting installation..."
+
+                    # Leere config.php entfernen damit der Installer schreiben kann
+                    if [ -f /var/www/html/config/config.php ]; then
+                      SIZE=$(stat -c%s /var/www/html/config/config.php)
+                      if [ "$SIZE" -le 6 ]; then
+                        rm -f /var/www/html/config/config.php
+                      fi
+                    fi
+
+                    # Installation via occ (Env-Vars sind im Container gesetzt)
+                    su -s /bin/sh www-data -c "
+                      php /var/www/html/occ maintenance:install \
+                        --database=pgsql \
+                        --database-host=${POSTGRES_HOST} \
+                        --database-name=${POSTGRES_DB} \
+                        --database-user=${POSTGRES_USER} \
+                        --database-pass=${POSTGRES_PASSWORD} \
+                        --admin-user=${NEXTCLOUD_ADMIN_USER} \
+                        --admin-pass=${NEXTCLOUD_ADMIN_PASSWORD} \
+                        --data-dir=/var/www/html/data \
+                        2>&1
+                    "
+
+                    # Trusted Domain setzen
+                    su -s /bin/sh www-data -c "
+                      php /var/www/html/occ config:system:set \
+                        trusted_domains 0 \
+                        --value=nextcloud.homelab.local
+                    "
+
+                    echo "Nextcloud installation complete."
+
           extraEnv:
             - name: REDIS_HOST_PASSWORD
               valueFrom:
@@ -147,20 +208,16 @@ spec:
           host: homelab-pg-rw.infrastructure.svc.cluster.local
           port: 5432
           database: nextcloud
-          # user wird ignoriert wenn existingSecret.usernameKey gesetzt ist
           user: nextcloud
           existingSecret:
             enabled: true
             secretName: nextcloud-secret
             usernameKey: db-username
             passwordKey: db-password
-          # sslMode: disable – CNPG legt Client-Zertifikate unter /root/.postgresql/ ab,
-          # aber Nextcloud läuft als www-data (UID 82) und hat keinen Lesezugriff auf /root/.
-          # Innerhalb des Clusters (Pod → Service) ist SSL nicht notwendig.
           sslMode: disable
 
         redis:
-          enabled: false # wir nutzen den bestehenden Redis
+          enabled: false
 
         # nginx Sidecar (required für fpm-alpine flavor)
         nginx:
@@ -168,7 +225,7 @@ spec:
 
         persistence:
           enabled: true
-          size: 10Gi # für Config, Apps, Previews – Nutzerdateien via Storage Box
+          size: 10Gi
 
         resources:
           requests:
@@ -195,7 +252,6 @@ spec:
         cronjob:
           enabled: true
 
-        # Startup dauert länger wegen DB-Initialisierung beim ersten Start
         startupProbe:
           enabled: true
           initialDelaySeconds: 30
@@ -211,7 +267,6 @@ spec:
           initialDelaySeconds: 30
 
         # initContainers gehört in Chart 8.x auf Top-Level, NICHT unter nextcloud:
-        # Installiert oidc_login + files_external Apps idempotent bei jedem Pod-Start.
         initContainers:
           - name: setup-nextcloud-apps
             image: nextcloud:fpm-alpine
@@ -222,8 +277,6 @@ spec:
                 set -e
 
                 # ── 1. homelab-CA im System-Trust-Store registrieren ──────────
-                # Muss vor occ-Aufrufen passieren damit HTTPS gegen Keycloak
-                # beim App-Download verifiziert werden kann.
                 echo "==> Registriere homelab CA..."
                 cp /etc/ssl/certs/homelab-ca.pem \
                    /usr/local/share/ca-certificates/homelab-ca.crt

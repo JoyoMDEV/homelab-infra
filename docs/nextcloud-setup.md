@@ -71,6 +71,7 @@ STORAGE_BOX_PW="<DEIN_STORAGE_BOX_PASSWORT>"
 kubectl create secret generic nextcloud-secret \
   --from-literal=nextcloud-username="admin" \
   --from-literal=nextcloud-password="${NEXTCLOUD_ADMIN_PW}" \
+  --from-literal=db-username="nextcloud" \
   --from-literal=db-password="${NEXTCLOUD_DB_PW}" \
   --from-literal=redis-password="${REDIS_PW}" \
   --from-literal=storage-box-password="${STORAGE_BOX_PW}" \
