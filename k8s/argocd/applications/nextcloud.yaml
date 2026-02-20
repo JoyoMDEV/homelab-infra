@@ -51,19 +51,28 @@ spec:
                   - /bin/sh
                   - -c
                   - |
-                    set -e
+                    # set -e erst NACH dem CA-Block – grep gibt exit 1 zurück wenn
+                    # kein Match gefunden wird, was set -e vorzeitig abbrechen lässt.
 
                     # ── 1. homelab-CA ans Alpine PHP-Bundle anhängen ──────────
                     # PHP sucht auf Alpine nach /etc/ssl/cert.pem (nicht /etc/ssl/certs/).
                     # update-ca-certificates greift nicht – CA direkt anhängen.
+                    # Idempotenz: CA nur anhängen wenn sie noch nicht im Bundle ist.
+                    # Fingerprint-Vergleich statt grep -qF um set -e Probleme zu vermeiden.
                     echo "==> Registriere homelab CA..."
-                    if ! grep -q "BEGIN CERTIFICATE" /etc/ssl/cert.pem 2>/dev/null || \
-                       ! grep -qF "$(head -2 /etc/ssl/certs/homelab-ca.pem)" /etc/ssl/cert.pem 2>/dev/null; then
+                    CA_FINGERPRINT=$(openssl x509 -noout -fingerprint \
+                      -in /etc/ssl/certs/homelab-ca.pem 2>/dev/null | cut -d= -f2)
+                    BUNDLE_HAS_CA=$(openssl crl2pkcs7 -nocrl -certfile /etc/ssl/cert.pem 2>/dev/null \
+                      | openssl pkcs7 -print_certs -noout 2>/dev/null \
+                      | grep -c "$CA_FINGERPRINT" 2>/dev/null || echo "0")
+                    if [ "${BUNDLE_HAS_CA}" = "0" ]; then
                       cat /etc/ssl/certs/homelab-ca.pem >> /etc/ssl/cert.pem
                       echo "    CA angehängt."
                     else
                       echo "    CA bereits im Bundle."
                     fi
+
+                    set -e
 
                     # PHP-FPM braucht einen Moment zum Starten
                     sleep 10
