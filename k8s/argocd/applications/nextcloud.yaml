@@ -30,10 +30,17 @@ spec:
             usernameKey: nextcloud-username
             passwordKey: nextcloud-password
 
-          # postStart: läuft nach Container-Start und installiert Nextcloud falls
-          # noch nicht installiert. Idempotent – sicher bei jedem Neustart.
-          # Nötig weil das Chart eine leere config.php via ConfigMap mountet,
-          # die den automatischen Installer im Entrypoint blockiert.
+          # postStart Hook – läuft nach Container-Start im selben Container-Kontext
+          # wie Nextcloud selbst. Erledigt in einem Schritt:
+          #   1. homelab-CA im Alpine Trust Store registrieren (dauerhaft im laufenden Pod)
+          #   2. Nextcloud installieren falls noch nicht installiert
+          #   3. trusted_domain setzen
+          #   4. oidc_login + files_external Apps aktivieren
+          #
+          # CA-Registrierung muss hier (nicht nur im initContainer) passieren damit
+          # PHP/curl beim OIDC-Login gegen auth.homelab.local die CA verifizieren kann.
+          # App-Aktivierung muss hier passieren weil occ erst nach der Installation
+          # funktioniert – der initContainer läuft davor.
           lifecycle:
             postStart:
               exec:
@@ -41,55 +48,83 @@ spec:
                   - /bin/sh
                   - -c
                   - |
+                    set -e
+
+                    # ── 1. homelab-CA registrieren ────────────────────────────
+                    echo "==> Registriere homelab CA..."
+                    cp /etc/ssl/certs/homelab-ca.pem \
+                       /usr/local/share/ca-certificates/homelab-ca.crt
+                    update-ca-certificates 2>/dev/null || true
+                    echo "    CA registriert."
+
                     # PHP-FPM braucht einen Moment zum Starten
                     sleep 10
 
-                    # Bereits installiert? Dann nur trusted_domain sicherstellen.
+                    # ── 2. Installation falls nötig ───────────────────────────
                     STATUS=$(su -s /bin/sh www-data -c \
                       "php /var/www/html/occ status --output=json 2>/dev/null" \
                       | grep -o '"installed":true' || true)
 
-                    if [ -n "$STATUS" ]; then
-                      echo "Nextcloud already installed, skipping install."
-                      su -s /bin/sh www-data -c \
-                        "php /var/www/html/occ config:system:set \
-                          trusted_domains 0 \
-                          --value=nextcloud.homelab.local 2>/dev/null" || true
-                      exit 0
-                    fi
+                    if [ -z "$STATUS" ]; then
+                      echo "==> Installiere Nextcloud..."
 
-                    echo "Nextcloud not installed, starting installation..."
-
-                    # Leere config.php entfernen damit der Installer schreiben kann
-                    if [ -f /var/www/html/config/config.php ]; then
-                      SIZE=$(stat -c%s /var/www/html/config/config.php)
-                      if [ "$SIZE" -le 6 ]; then
-                        rm -f /var/www/html/config/config.php
+                      # Leere config.php entfernen (vom Chart als Placeholder angelegt)
+                      if [ -f /var/www/html/config/config.php ]; then
+                        SIZE=$(stat -c%s /var/www/html/config/config.php)
+                        if [ "$SIZE" -le 6 ]; then
+                          rm -f /var/www/html/config/config.php
+                        fi
                       fi
+
+                      su -s /bin/sh www-data -c "
+                        php /var/www/html/occ maintenance:install \
+                          --database=pgsql \
+                          --database-host=${POSTGRES_HOST} \
+                          --database-name=${POSTGRES_DB} \
+                          --database-user=${POSTGRES_USER} \
+                          --database-pass=${POSTGRES_PASSWORD} \
+                          --admin-user=${NEXTCLOUD_ADMIN_USER} \
+                          --admin-pass=${NEXTCLOUD_ADMIN_PASSWORD} \
+                          --data-dir=/var/www/html/data \
+                          2>&1
+                      "
+                      echo "==> Installation abgeschlossen."
+                    else
+                      echo "==> Nextcloud bereits installiert, überspringe Installation."
                     fi
 
-                    # Installation via occ (Env-Vars sind im Container gesetzt)
-                    su -s /bin/sh www-data -c "
-                      php /var/www/html/occ maintenance:install \
-                        --database=pgsql \
-                        --database-host=${POSTGRES_HOST} \
-                        --database-name=${POSTGRES_DB} \
-                        --database-user=${POSTGRES_USER} \
-                        --database-pass=${POSTGRES_PASSWORD} \
-                        --admin-user=${NEXTCLOUD_ADMIN_USER} \
-                        --admin-pass=${NEXTCLOUD_ADMIN_PASSWORD} \
-                        --data-dir=/var/www/html/data \
-                        2>&1
-                    "
-
-                    # Trusted Domain setzen
+                    # ── 3. trusted_domain sicherstellen ──────────────────────
                     su -s /bin/sh www-data -c "
                       php /var/www/html/occ config:system:set \
                         trusted_domains 0 \
-                        --value=nextcloud.homelab.local
-                    "
+                        --value=nextcloud.homelab.local 2>/dev/null
+                    " || true
 
-                    echo "Nextcloud installation complete."
+                    # ── 4. Apps aktivieren ────────────────────────────────────
+                    echo "==> Aktiviere Apps..."
+
+                    if ! su -s /bin/sh www-data -c \
+                        "php /var/www/html/occ app:list --enabled 2>/dev/null" \
+                        | grep -q 'oidc_login'; then
+                      su -s /bin/sh www-data -c \
+                        "php /var/www/html/occ app:install oidc_login 2>/dev/null || \
+                         php /var/www/html/occ app:enable oidc_login 2>/dev/null" || true
+                      echo "    oidc_login aktiviert."
+                    else
+                      echo "    oidc_login bereits aktiv."
+                    fi
+
+                    if ! su -s /bin/sh www-data -c \
+                        "php /var/www/html/occ app:list --enabled 2>/dev/null" \
+                        | grep -q 'files_external'; then
+                      su -s /bin/sh www-data -c \
+                        "php /var/www/html/occ app:enable files_external 2>/dev/null" || true
+                      echo "    files_external aktiviert."
+                    else
+                      echo "    files_external bereits aktiv."
+                    fi
+
+                    echo "==> postStart abgeschlossen."
 
           extraEnv:
             - name: REDIS_HOST_PASSWORD
@@ -162,6 +197,12 @@ spec:
 
             # OIDC Login via Keycloak (oidc_login App).
             # Client Secret kommt aus Env-Variable – steht nie im Klartext in Git.
+            #
+            # groups wird NICHT als Scope angefordert – der Gruppen-Claim kommt
+            # über den Group Membership Mapper im nextcloud-dedicated Client Scope
+            # automatisch im Token. Keycloak gibt "invalid_scope" zurück wenn groups
+            # als expliziter Scope angefordert wird ohne ihn als Client Scope zu
+            # registrieren.
             oidc.config.php: |-
               <?php
               $CONFIG = array(
@@ -180,7 +221,7 @@ spec:
                 'oidc_login_default_quota'         => '',
                 'oidc_login_use_id_token'          => false,
                 'oidc_login_tls_verify'            => true,
-                'oidc_login_scope'                 => 'openid profile email groups',
+                'oidc_login_scope'                 => 'openid profile email',
                 'oidc_login_code_challenge_method' => 'S256',
                 'oidc_login_logout_url'            => 'https://auth.homelab.local/realms/homelab/protocol/openid-connect/logout',
                 'oidc_login_button_text'           => 'Mit Keycloak anmelden',
@@ -214,10 +255,13 @@ spec:
             secretName: nextcloud-secret
             usernameKey: db-username
             passwordKey: db-password
+          # sslMode: disable – CNPG legt Client-Zertifikate unter /root/.postgresql/ ab,
+          # aber Nextcloud läuft als www-data (UID 82) und hat keinen Lesezugriff auf /root/.
+          # Innerhalb des Clusters (Pod → Service) ist SSL nicht notwendig.
           sslMode: disable
 
         redis:
-          enabled: false
+          enabled: false # wir nutzen den bestehenden Redis
 
         # nginx Sidecar (required für fpm-alpine flavor)
         nginx:
@@ -225,7 +269,7 @@ spec:
 
         persistence:
           enabled: true
-          size: 10Gi
+          size: 10Gi # für Config, Apps, Previews – Nutzerdateien via Storage Box
 
         resources:
           requests:
@@ -252,6 +296,7 @@ spec:
         cronjob:
           enabled: true
 
+        # Startup dauert länger wegen DB-Initialisierung beim ersten Start
         startupProbe:
           enabled: true
           initialDelaySeconds: 30
@@ -266,7 +311,10 @@ spec:
           enabled: true
           initialDelaySeconds: 30
 
-        # initContainers gehört in Chart 8.x auf Top-Level, NICHT unter nextcloud:
+        # initContainers: nur noch für Volume-Vorbereitung zuständig.
+        # App-Aktivierung und CA-Registrierung sind in den postStart Hook gewandert
+        # weil occ-Befehle erst nach erfolgreicher Installation funktionieren
+        # und die CA im Hauptcontainer registriert werden muss.
         initContainers:
           - name: setup-nextcloud-apps
             image: nextcloud:fpm-alpine
@@ -274,39 +322,8 @@ spec:
               - sh
               - -c
               - |
-                set -e
-
-                # ── 1. homelab-CA im System-Trust-Store registrieren ──────────
-                echo "==> Registriere homelab CA..."
-                cp /etc/ssl/certs/homelab-ca.pem \
-                   /usr/local/share/ca-certificates/homelab-ca.crt
-                update-ca-certificates 2>/dev/null || true
-                echo "    CA registriert."
-
-                # ── 2. oidc_login App installieren (idempotent) ───────────────
-                echo "==> Prüfe oidc_login App..."
-                if php /var/www/html/occ app:list --enabled 2>/dev/null \
-                    | grep -q 'oidc_login'; then
-                  echo "    oidc_login bereits aktiv."
-                else
-                  echo "    Installiere oidc_login..."
-                  php /var/www/html/occ app:install oidc_login 2>/dev/null || \
-                  php /var/www/html/occ app:enable  oidc_login
-                  echo "    oidc_login aktiviert."
-                fi
-
-                # ── 3. files_external App aktivieren (für Storage Box) ────────
-                echo "==> Prüfe files_external App..."
-                if php /var/www/html/occ app:list --enabled 2>/dev/null \
-                    | grep -q 'files_external'; then
-                  echo "    files_external bereits aktiv."
-                else
-                  echo "    Aktiviere files_external..."
-                  php /var/www/html/occ app:enable files_external
-                  echo "    files_external aktiviert."
-                fi
-
-                echo "==> initContainer abgeschlossen."
+                echo "==> initContainer: bereit."
+                echo "    CA-Registrierung und App-Aktivierung erfolgen im postStart Hook."
             volumeMounts:
               - name: nextcloud-main
                 mountPath: /var/www/html
