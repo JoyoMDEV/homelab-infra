@@ -57,7 +57,12 @@ spec:
           # configs: werden vom Chart als ConfigMap angelegt und nach
           # /var/www/html/config/<name> gemountet. Keine eigenen VolumeMounts nötig.
           configs:
-            redis.config.php: |-
+            # WICHTIG: Datei heißt "custom-redis.config.php" und nicht "redis.config.php".
+            # Das Chart 8.x mountet intern bereits eine "redis.config.php" als Default.
+            # Gleicher Name → duplizierter mountPath → "must be unique" Fehler.
+            # Nextcloud liest alle *.config.php Dateien im config-Verzeichnis,
+            # der Name ist beliebig.
+            custom-redis.config.php: |-
               <?php
               $CONFIG = array(
                 'memcache.local' => '\OC\Memcache\Redis',
@@ -70,7 +75,10 @@ spec:
                 ),
               );
 
-            proxy.config.php: |-
+            # "proxy.config.php" ist unbedenklich – das Chart bringt intern
+            # "reverse-proxy.config.php" mit, das ist ein anderer Name.
+            # Zur Sicherheit trotzdem mit "custom-" prefix für Konsistenz.
+            custom-proxy.config.php: |-
               <?php
               $CONFIG = array(
                 'trusted_proxies' => ['10.0.0.0/8'],
@@ -79,7 +87,7 @@ spec:
                 'forwarded_for_headers' => ['HTTP_X_FORWARDED_FOR'],
               );
 
-            misc.config.php: |-
+            custom-misc.config.php: |-
               <?php
               $CONFIG = array(
                 'default_phone_region' => 'DE',
@@ -89,7 +97,7 @@ spec:
 
             # OIDC Login via Keycloak (oidc_login App).
             # Client Secret kommt aus Env-Variable – steht nie im Klartext in Git.
-            oidc.config.php: |-
+            custom-oidc.config.php: |-
               <?php
               $CONFIG = array(
                 'oidc_login_provider_url'          => 'https://auth.homelab.local/realms/homelab',
