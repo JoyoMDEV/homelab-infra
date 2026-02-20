@@ -287,7 +287,7 @@ Samba AD DC serves a wildcard A record pointing to the server's Tailscale IP.
 - [x] Redis
 - [x] GitLab CE (Omnibus)
 - [x] cert-manager + internal CA + wildcard TLS for *.homelab.local
-- [ ] Keycloak SSO (LDAP → Samba AD, OIDC for GitLab)
+- [x] Keycloak SSO (LDAP → Samba AD, OIDC for GitLab + ArgoCD)
 - [ ] Remaining services (Nextcloud, Vaultwarden, Paperless, ...)
 - [ ] Monitoring stack (Prometheus, Grafana, Loki)
 - [ ] Phase 2: Stalwart Mail, Portfolio, public access
