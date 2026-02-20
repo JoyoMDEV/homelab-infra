@@ -142,11 +142,17 @@ spec:
           host: homelab-pg-rw.infrastructure.svc.cluster.local
           port: 5432
           database: nextcloud
+          # user wird ignoriert wenn existingSecret.usernameKey gesetzt ist
           user: nextcloud
           existingSecret:
             enabled: true
             secretName: nextcloud-secret
+            usernameKey: db-username
             passwordKey: db-password
+          # sslMode: disable – CNPG legt Client-Zertifikate unter /root/.postgresql/ ab,
+          # aber Nextcloud läuft als www-data (UID 82) und hat keinen Lesezugriff auf /root/.
+          # Innerhalb des Clusters (Pod → Service) ist SSL nicht notwendig.
+          sslMode: disable
 
         redis:
           enabled: false # wir nutzen den bestehenden Redis
