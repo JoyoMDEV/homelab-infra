@@ -18,10 +18,6 @@ spec:
         app: gitlab
     spec:
       initContainers:
-        # GitLab Omnibus uses its own embedded OpenSSL which reads custom CAs
-        # from /etc/gitlab/trusted-certs/ (not the system trust store).
-        # This initContainer copies the homelab CA into that directory before
-        # GitLab starts, so OIDC connections to auth.homelab.local succeed.
         - name: install-ca
           image: alpine:3.19
           command:
@@ -75,6 +71,7 @@ spec:
                 gitlab_rails['secret_key_base'] = ENV['GITLAB_SECRET_KEY_BASE']
                 gitlab_rails['db_key_base'] = ENV['GITLAB_DB_KEY_BASE']
                 gitlab_rails['otp_key_base'] = ENV['GITLAB_OTP_KEY_BASE']
+                gitlab_rails['gitlab_shell_ssh_port'] = 2222
                 {{- if .Values.oidc.enabled }}
                 gitlab_rails['omniauth_enabled'] = true
                 gitlab_rails['omniauth_allow_single_sign_on'] = ['openid_connect']
@@ -118,6 +115,7 @@ spec:
               containerPort: 80
             - name: ssh
               containerPort: 22
+              hostPort: 2222      # direkt auf dem Node lauschen, kein Traefik nötig
             - name: registry
               containerPort: 5050
           volumeMounts:

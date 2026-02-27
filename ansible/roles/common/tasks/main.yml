@@ -85,6 +85,15 @@
     - "80"
     - "443"
 
+- name: Allow GitLab SSH via Tailscale only (port 2222)
+  community.general.ufw:
+    rule: allow
+    interface: tailscale0
+    direction: in
+    port: "2222"
+    proto: tcp
+    comment: "GitLab SSH (Tailscale only)"
+
 - name: Enable UFW
   community.general.ufw:
     state: enabled
