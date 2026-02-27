@@ -16,4 +16,10 @@ go install golang.org/x/tools/cmd/goimports@latest
 # Pre-commit hooks
 pre-commit install
 
+# Install ansible collections
+cd ansible && ansible-galaxy install -r collections/requirements.yml
+
+# Install helm
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
 echo "==> Done!"
