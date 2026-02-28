@@ -32,6 +32,7 @@ spec:
               name = "k3s-instance-runner"
               executor = "kubernetes"
               tls-ca-file = "/home/gitlab-runner/.gitlab-runner/certs/homelab-ca.crt"
+              environment = ["GIT_SSL_CAINFO=/etc/ssl/certs/homelab-ca.crt"]
               tags = ["k8s"]
               run_untagged = true
               [runners.kubernetes]
