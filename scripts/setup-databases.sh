@@ -40,7 +40,7 @@ echo "    GitLab database created"
 
 # Nextcloud DB
 NEXTCLOUD_DB_PW=$(openssl rand -base64 24)
-kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "CREATE DATABASE nextcloud;"
+kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "CREATE DATABASE nextcloud;" 2>/dev/null || echo "    nextcloud database already exists"
 kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "
   DO \$\$ BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'nextcloud') THEN
@@ -57,18 +57,17 @@ REDIS_PW=$(kubectl get secret redis-secret -n infrastructure -o jsonpath='{.data
 STORAGE_BOX_PW="<dein-storage-box-passwort>"  # aus terraform.tfvars
 
 kubectl create secret generic nextcloud-secret \
+  --from-literal=nextcloud-username="admin" \
   --from-literal=nextcloud-password="$NEXTCLOUD_ADMIN_PW" \
+  --from-literal=db-username="nextcloud" \
   --from-literal=db-password="$NEXTCLOUD_DB_PW" \
   --from-literal=redis-password="$REDIS_PW" \
   --from-literal=storage-box-password="$STORAGE_BOX_PW" \
   --from-literal=oidc-client-secret="REPLACE_AFTER_KEYCLOAK_SETUP" \
-  -n productivity
+  -n productivity 2>/dev/null || echo "    nextcloud-secret already exists, skipping"
 
 echo "Nextcloud Admin: admin / $NEXTCLOUD_ADMIN_PW"
 echo "DB Password: $NEXTCLOUD_DB_PW"
-
-# Get Redis password
-REDIS_PW=$(kubectl get secret redis-secret -n infrastructure -o jsonpath='{.data.redis-password}' | base64 -d)
 
 echo "==> Creating Keycloak secrets..."
 KEYCLOAK_ADMIN_PW=$(openssl rand -base64 16)
@@ -97,10 +96,12 @@ if ! kubectl get secret gitlab-rails-secrets -n gitlab &>/dev/null; then
   SECRET_KEY_BASE=$(openssl rand -hex 64)
   DB_KEY_BASE=$(openssl rand -hex 64)
   OTP_KEY_BASE=$(openssl rand -hex 64)
+  CI_JOB_TOKEN_SIGNING_KEY=$(openssl rand -hex 32)
   kubectl create secret generic gitlab-rails-secrets \
     --from-literal=secret_key_base="$SECRET_KEY_BASE" \
     --from-literal=db_key_base="$DB_KEY_BASE" \
     --from-literal=otp_key_base="$OTP_KEY_BASE" \
+    --from-literal=ci_job_token_signing_key="$CI_JOB_TOKEN_SIGNING_KEY" \
     -n gitlab
   echo "    GitLab Rails secrets created"
   echo "    IMPORTANT: These keys encrypt data in the database."

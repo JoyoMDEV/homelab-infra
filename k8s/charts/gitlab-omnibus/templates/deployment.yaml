@@ -71,6 +71,7 @@ spec:
                 gitlab_rails['secret_key_base'] = ENV['GITLAB_SECRET_KEY_BASE']
                 gitlab_rails['db_key_base'] = ENV['GITLAB_DB_KEY_BASE']
                 gitlab_rails['otp_key_base'] = ENV['GITLAB_OTP_KEY_BASE']
+                gitlab_rails['ci_job_token_signing_key'] = ENV['GITLAB_CI_JOB_TOKEN_SIGNING_KEY']
                 gitlab_rails['gitlab_shell_ssh_port'] = 2222
                 {{- if .Values.oidc.enabled }}
                 gitlab_rails['omniauth_enabled'] = true
@@ -109,13 +110,18 @@ spec:
                 secretKeyRef:
                   name: gitlab-rails-secrets
                   key: otp_key_base
+            - name: GITLAB_CI_JOB_TOKEN_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gitlab-rails-secrets
+                  key: ci_job_token_signing_key
 
           ports:
             - name: http
               containerPort: 80
             - name: ssh
               containerPort: 22
-              hostPort: 2222      # direkt auf dem Node lauschen, kein Traefik nötig
+              hostPort: 2222
             - name: registry
               containerPort: 5050
           volumeMounts:
