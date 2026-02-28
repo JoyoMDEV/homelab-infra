@@ -98,20 +98,21 @@ kubectl get pods -n gitlab | grep runner
 # gitlab-runner-xxxx-yyyy   1/1   Running   0   2m
 ```
 
-### Runner in GitLab sichtbar
-
-```
-GitLab → Admin Area → CI/CD → Runners
-→ "k3s-instance-runner" mit grünem Kreis
-```
-
 ### Runner Logs prüfen
 
 ```bash
 kubectl logs -n gitlab -l app=gitlab-runner --tail=20
 # ...
-# Registering runner... succeeded
-# ...
+# Verifying runner... is valid
+# Runner registered successfully.
+# Starting multi-runner...
+```
+
+### Runner in GitLab sichtbar
+
+```
+GitLab → Admin Area → CI/CD → Runners
+→ "k3s-instance-runner" mit grünem Kreis
 ```
 
 ### Test-Pipeline manuell starten
@@ -192,18 +193,43 @@ GitLab → Repository → Settings → CI/CD → Variables
 
 ## 6. Troubleshooting
 
+### Token-Probleme (PANIC: registration-token needs to be entered)
+
+Tritt auf wenn das Secret nicht korrekt gemountet wird. Das Secret muss exakt
+diese zwei Keys enthalten:
+
+```bash
+kubectl delete secret gitlab-runner-secret -n gitlab
+kubectl create secret generic gitlab-runner-secret \
+  --from-literal=runner-registration-token="" \
+  --from-literal=runner-token="glrt-DEIN_TOKEN_HIER" \
+  -n gitlab
+kubectl rollout restart deployment/gitlab-runner -n gitlab
+```
+
+### TLS-Fehler (x509: certificate signed by unknown authority)
+
+Tritt auf wenn die homelab-CA dem Runner nicht bekannt ist. Der `tls-ca-file`-Eintrag
+in `runners.config` behebt das — sicherstellen dass er in der ArgoCD Application gesetzt ist:
+
+```toml
+[[runners]]
+  tls-ca-file = "/home/gitlab-runner/.gitlab-runner/certs/homelab-ca.crt"
+```
+
+Das `certsSecretName: homelab-ca` in den Helm Values mountet das CA-Secret nach
+`/home/gitlab-runner/.gitlab-runner/certs/homelab-ca.crt`.
+
 ### Runner registriert sich nicht
 
 ```bash
 # Logs prüfen
 kubectl logs -n gitlab -l app=gitlab-runner --tail=50
 
-# Häufige Ursachen:
-# 1. Token falsch → Secret neu anlegen: ./scripts/setup-gitlab-runner.sh
-# 2. TLS-Fehler → homelab-ca Secret prüfen:
+# homelab-ca Secret prüfen:
 kubectl get secret homelab-ca -n gitlab
 
-# 3. GitLab nicht erreichbar aus dem Cluster:
+# GitLab erreichbar aus dem Cluster?
 kubectl run -it --rm test --image=alpine --restart=Never -n gitlab -- \
   wget -qO- https://gitlab.homelab.local/-/health
 ```
