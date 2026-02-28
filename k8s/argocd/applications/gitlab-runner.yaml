@@ -15,14 +15,18 @@ spec:
     helm:
       values: |
         gitlabUrl: https://gitlab.homelab.local
-
-        # Token wird aus dem Secret gelesen
         existingSecret: gitlab-runner-secret
+
+        extraEnv:
+          - name: CI_SERVER_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: gitlab-runner-secret
+                key: runner-token
 
         rbac:
           create: true
 
-        # Instance Runner – kein projectID-Lock, alle Repos können ihn nutzen
         runners:
           config: |
             [[runners]]
@@ -46,7 +50,6 @@ spec:
           limits:
             memory: 256Mi
 
-        # homelab CA für TLS-Verifikation gegen gitlab.homelab.local
         certsSecretName: homelab-ca
 
   destination:
