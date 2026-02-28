@@ -33,7 +33,7 @@ spec:
               run_untagged = true
               [runners.kubernetes]
                 namespace = "gitlab"
-                image = "alpine:3.19"
+                image = "node:20-alpine"
                 pull_policy = "if-not-present"
                 [runners.kubernetes.volumes]
                   [[runners.kubernetes.volumes.empty_dir]]
