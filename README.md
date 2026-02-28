@@ -22,7 +22,21 @@ Hybrid Kubernetes cluster: 2 Home-Nodes + 2 Hetzner Cloud servers, managed with 
 DNS:     *.homelab.local → Samba AD DC (Tailscale Split DNS)
 Ingress: Traefik (hostPort 80/443) → Services
 TLS:     cert-manager internal CA → Wildcard *.homelab.local
+CI/CD:   GitLab Runner (k3s) → Job Pods → Deploy
 ```
+
+## CI/CD
+
+```
+git push
+  └── GitLab (gitlab.homelab.local)
+        └── GitLab Runner Pod (k3s, Namespace: gitlab)   ← läuft dauerhaft
+              └── Job Pod (image per Pipeline definiert)  ← startet pro Job
+                    └── build / test / deploy
+```
+
+Der Runner ist ein **Instance Runner** — ein Runner für alle Repos.
+Job-Images werden pro Pipeline definiert (`node:20-alpine`, `golang:1.22`, etc.)
 
 ## Project Structure
 
@@ -68,15 +82,16 @@ homelab-infra/
 │   │       ├── cert-manager.yaml
 │   │       ├── keycloak.yaml
 │   │       ├── gitlab.yaml
+│   │       ├── gitlab-runner.yaml  #   GitLab Instance Runner (k8s executor)
 │   │       ├── nextcloud.yaml
 │   │       ├── redis.yaml
 │   │       └── infrastructure.yaml
 │   ├── infrastructure/
 │   │   ├── postgres-cluster.yaml
-│   │   ├── cert-manager-issuer.yaml    # ClusterIssuer (references secret, no key in git)
-│   │   ├── homelab-wildcard-cert.yaml  # Wildcard cert for *.homelab.local
-│   │   ├── cert-sync-cronjob.yaml      # Daily sync of wildcard secret to kube-system
-│   │   └── nextcloud-middleware.yaml   # Traefik headers + CalDAV/CardDAV redirects
+│   │   ├── cert-manager-issuer.yaml
+│   │   ├── homelab-wildcard-cert.yaml
+│   │   ├── cert-sync-cronjob.yaml
+│   │   └── nextcloud-middleware.yaml
 │   └── charts/
 │       └── gitlab-omnibus/     #   GitLab CE custom Helm chart
 │
@@ -84,14 +99,16 @@ homelab-infra/
 │   ├── bootstrap-argocd.sh         #   One-time: CNPG, Redis, ArgoCD
 │   ├── bootstrap-certmanager.sh    #   One-time: cert-manager, internal CA, wildcard cert
 │   ├── setup-databases.sh          #   One-time: PostgreSQL databases + secrets
+│   ├── setup-gitlab-runner.sh      #   One-time: GitLab Runner Token + Secret
 │   └── setup-nextcloud-storage.sh  #   One-time: Storage Box as WebDAV External Storage
 │
 ├── docs/
+│   ├── gitlab-runner-setup.md  #   GitLab Runner Runbook + Pipeline-Beispiele
 │   ├── keycloak-setup.md       #   Keycloak SSO setup runbook
 │   └── nextcloud-setup.md      #   Nextcloud setup runbook
 │
 ├── certs/                      # gitignored - local CA cert for device import
-│   └── homelab-ca.crt          #   Import into browsers/OS to trust *.homelab.local
+│   └── homelab-ca.crt
 │
 ├── .pre-commit-config.yaml
 ├── .yamllint.yml
@@ -131,15 +148,17 @@ make bootstrap-certs  # cert-manager, internal CA, wildcard HTTPS
 make setup-coredns    # *.homelab.local DNS resolution inside the cluster
 
 # 7. Import CA certificate into your devices (once per device)
-# File: certs/homelab-ca.crt
-# Ubuntu: sudo cp certs/homelab-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates
-# macOS:  open certs/homelab-ca.crt → Keychain: System → Always Trust
-# Windows: certmgr.msc → Trusted Root CAs → Import
+make cert-ca
 
-# 8. Verify
+# 8. Setup GitLab Runner
+# GitLab → Admin Area → CI/CD → Runners → New instance runner
+# Tags: k8s, Run untagged jobs: ✅ → Token kopieren
+make runner-setup     # Token wird interaktiv abgefragt
+
+# 9. Verify
 make status
 make apps
-curl -v https://argocd.homelab.local
+make runner-status
 ```
 
 ## What Gets Deployed
@@ -157,30 +176,36 @@ curl -v https://argocd.homelab.local
 - ArgoCD + root App-of-Apps
 - cert-manager + internal CA + wildcard TLS certificate
 - cert-sync CronJob (daily auto-renewal sync)
-- CoreDNS wildcard config for `*.homelab.local` (pods can reach each other by hostname)
+- CoreDNS wildcard config for `*.homelab.local`
+- GitLab Runner Secret + Instance Runner Registration
 
 ### Via ArgoCD (GitOps)
 - cert-manager (Helm upgrades)
 - Redis (Bitnami)
 - Keycloak (SSO, connected to Samba AD via LDAP)
-- GitLab CE (Omnibus)
+- GitLab CE (Omnibus) + GitLab Runner (k8s executor)
 - Nextcloud (with Keycloak OIDC + Hetzner Storage Box via WebDAV)
 - All future services
 
 ## TLS / HTTPS
 
 All `*.homelab.local` services are served over HTTPS using an internal CA managed by cert-manager.
+See `make cert-ca` for device import instructions.
 
-**How it works:**
-1. `bootstrap-certmanager.sh` generates a CA keypair locally
-2. The CA key is pushed to a Kubernetes Secret and **immediately deleted from disk** (never touches Git)
-3. cert-manager issues a wildcard certificate for `*.homelab.local`
-4. A CronJob syncs the wildcard secret to `kube-system` daily (required for Traefik)
-5. Traefik uses the wildcard cert as the default for all Ingress routes
+## GitLab SSH
 
-**Secret management:** The CA private key lives only in the `homelab-ca-keypair` Kubernetes Secret. The `certs/` directory (gitignored) holds only `homelab-ca.crt` for device import.
+GitLab SSH läuft auf Port **2222** (Tailscale only):
 
-**Certificate renewal** is fully automatic: cert-manager renews 30 days before expiry, the daily CronJob syncs the new cert to Traefik.
+```bash
+# ~/.ssh/config (wird automatisch vom Devcontainer post-create.sh gesetzt)
+Host gitlab.homelab.local
+    Port 2222
+    User git
+    IdentityFile ~/.ssh/id_ed25519
+
+# Clone
+git clone ssh://git@gitlab.homelab.local:2222/jmoseler/my-repo.git
+```
 
 ## Adding a New Service
 
@@ -239,7 +264,10 @@ spec:
 | `make vault-view` | View Ansible Vault secrets |
 | `make bootstrap` | Bootstrap k8s services (CNPG, Redis, ArgoCD) |
 | `make bootstrap-certs` | Bootstrap cert-manager + internal CA |
-| `make setup-coredns` | Configure CoreDNS for `*.homelab.local` cluster-internal resolution |
+| `make setup-coredns` | Configure CoreDNS for `*.homelab.local` |
+| `make runner-setup` | Setup GitLab instance runner (one-time) |
+| `make runner-status` | Show Runner Pod + active jobs |
+| `make runner-logs` | Tail Runner logs |
 | `make status` | Cluster overview (nodes, pods, certs, resources) |
 | `make pods` | List all pods |
 | `make apps` | ArgoCD application status |
@@ -251,10 +279,6 @@ spec:
 ## Secrets Management
 
 **Ansible:** Encrypted with `ansible-vault`. Password in `ansible/.vault_password` (never committed).
-```bash
-make vault-edit    # Edit secrets
-make vault-view    # View secrets
-```
 
 **Kubernetes:** Created by bootstrap scripts or operators. Never committed to Git.
 
@@ -267,39 +291,21 @@ make vault-view    # View secrets
 | `keycloak-db-secret` | auth | `setup-databases.sh` |
 | `gitlab-secret` | gitlab | `setup-databases.sh` |
 | `gitlab-rails-secrets` | gitlab | `setup-databases.sh` |
+| `gitlab-runner-secret` | gitlab | `setup-gitlab-runner.sh` |
 | `nextcloud-secret` | productivity | `setup-databases.sh` |
 
 ## DNS
 
 All services accessible via `*.homelab.local` through Tailscale Split DNS.
-Samba AD DC serves a wildcard A record pointing to the server's Tailscale IP.
 
 | Service | URL |
 |---------|-----|
 | ArgoCD | https://argocd.homelab.local |
 | Keycloak | https://auth.homelab.local |
-| GitLab | https://gitlab.homelab.local |
+| GitLab | https://gitlab.homelab.local (SSH: Port 2222) |
 | GitLab Registry | https://registry.homelab.local |
 | Nextcloud | https://nextcloud.homelab.local |
 | Future: Grafana | https://grafana.homelab.local |
-
-## Implementation Notes
-
-### Nextcloud
-- **Installation:** Das Helm Chart legt bei jedem Pod-Start eine leere `config.php` an,
-  die den automatischen Installer blockiert. Ein `lifecycle.postStart` Hook erkennt
-  die leere Datei, entfernt sie, und führt `occ maintenance:install` idempotent aus.
-- **CA für OIDC:** PHP auf Alpine liest `/etc/ssl/cert.pem` (nicht `/etc/ssl/certs/`).
-  Der postStart Hook hängt die homelab-CA direkt an diese Datei an –
-  `update-ca-certificates` greift hier nicht.
-- **Storage Box:** Das `fpm-alpine` Image enthält keine `php-ssh2` Extension,
-  daher funktioniert SFTP-External-Storage nicht. Die Storage Box wird über
-  **WebDAV (HTTPS)** eingebunden – kein zusätzliches PHP-Modul nötig.
-- **OIDC Scope:** `groups` darf nicht im `oidc_login_scope` stehen – der Gruppen-Claim
-  kommt automatisch über den Group Membership Mapper im Token. Keycloak würde sonst
-  `invalid_scope` zurückgeben.
-- **User-Erstellung:** `oidc_login_disable_registration` hat in oidc_login 3.x den
-  Default `true` (invertierte Logik) – muss explizit auf `false` gesetzt werden.
 
 ## Progress
 
@@ -312,10 +318,12 @@ Samba AD DC serves a wildcard A record pointing to the server's Tailscale IP.
 - [x] ArgoCD bootstrap + App-of-Apps
 - [x] CloudNativePG + PostgreSQL cluster
 - [x] Redis
-- [x] GitLab CE (Omnibus)
+- [x] GitLab CE (Omnibus) + SSH on Port 2222 (Tailscale only)
+- [x] GitLab Runner (k8s executor, instance runner)
 - [x] cert-manager + internal CA + wildcard TLS for *.homelab.local
 - [x] Keycloak SSO (LDAP → Samba AD, OIDC for GitLab + ArgoCD)
 - [x] Nextcloud (OIDC via Keycloak, Storage Box via WebDAV)
+- [ ] Portfolio CI/CD Pipeline (build → deploy to Hetzner Webhosting)
 - [ ] Monitoring stack (Prometheus, Grafana, Loki)
 - [ ] Remaining services (Vaultwarden, Paperless, ...)
-- [ ] Phase 2: Stalwart Mail, Portfolio, public access
+- [ ] Phase 2: Stalwart Mail, public access
