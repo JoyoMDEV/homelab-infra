@@ -96,7 +96,8 @@ if ! kubectl get secret gitlab-rails-secrets -n gitlab &>/dev/null; then
   SECRET_KEY_BASE=$(openssl rand -hex 64)
   DB_KEY_BASE=$(openssl rand -hex 64)
   OTP_KEY_BASE=$(openssl rand -hex 64)
-  CI_JOB_TOKEN_SIGNING_KEY=$(openssl rand -hex 32)
+  # CI job token signing key must be an RSA 2048 private key in PEM format
+  CI_JOB_TOKEN_SIGNING_KEY=$(openssl genrsa 2048 2>/dev/null)
   kubectl create secret generic gitlab-rails-secrets \
     --from-literal=secret_key_base="$SECRET_KEY_BASE" \
     --from-literal=db_key_base="$DB_KEY_BASE" \

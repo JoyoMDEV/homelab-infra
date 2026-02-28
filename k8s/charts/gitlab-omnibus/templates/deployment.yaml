@@ -71,7 +71,7 @@ spec:
                 gitlab_rails['secret_key_base'] = ENV['GITLAB_SECRET_KEY_BASE']
                 gitlab_rails['db_key_base'] = ENV['GITLAB_DB_KEY_BASE']
                 gitlab_rails['otp_key_base'] = ENV['GITLAB_OTP_KEY_BASE']
-                gitlab_rails['ci_job_token_signing_key'] = ENV['GITLAB_CI_JOB_TOKEN_SIGNING_KEY']
+                gitlab_rails['ci_job_token_signing_key'] = File.read('/etc/gitlab/ci_job_token_signing_key.pem') rescue nil
                 gitlab_rails['gitlab_shell_ssh_port'] = 2222
                 {{- if .Values.oidc.enabled }}
                 gitlab_rails['omniauth_enabled'] = true
@@ -110,12 +110,6 @@ spec:
                 secretKeyRef:
                   name: gitlab-rails-secrets
                   key: otp_key_base
-            - name: GITLAB_CI_JOB_TOKEN_SIGNING_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: gitlab-rails-secrets
-                  key: ci_job_token_signing_key
-
           ports:
             - name: http
               containerPort: 80
@@ -131,6 +125,9 @@ spec:
               mountPath: /var/opt/gitlab
             - name: logs
               mountPath: /var/log/gitlab
+            - name: ci-job-token-signing-key
+              mountPath: /etc/gitlab/ci_job_token_signing_key.pem
+              subPath: ci_job_token_signing_key
 
           resources:
             requests:
@@ -177,3 +174,9 @@ spec:
         - name: homelab-ca
           secret:
             secretName: homelab-ca
+        - name: ci-job-token-signing-key
+          secret:
+            secretName: gitlab-rails-secrets
+            items:
+              - key: ci_job_token_signing_key
+                path: ci_job_token_signing_key

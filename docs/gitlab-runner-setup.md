@@ -28,7 +28,7 @@ git push
         └── GitLab Runner Pod (k3s, Namespace: gitlab)   ← läuft dauerhaft
               └── Job Pod (node:20-alpine)                ← startet pro Pipeline
                     └── npm run build
-                          └── scp dist/ → Hetzner Webhosting
+                          └── lftp → Hetzner Webhosting
 ```
 
 **Runner Pod** läuft dauerhaft im Cluster und wartet auf Jobs (~20 MB RAM im Idle).
@@ -103,9 +103,7 @@ kubectl get pods -n gitlab | grep runner
 ```bash
 kubectl logs -n gitlab -l app=gitlab-runner --tail=20
 # ...
-# Verifying runner... is valid
-# Runner registered successfully.
-# Starting multi-runner...
+# Checking for jobs... received
 ```
 
 ### Runner in GitLab sichtbar
@@ -115,58 +113,78 @@ GitLab → Admin Area → CI/CD → Runners
 → "k3s-instance-runner" mit grünem Kreis
 ```
 
-### Test-Pipeline manuell starten
+### Test-Pipeline starten
 
-```
-GitLab → Repository → CI/CD → Pipelines → "Run pipeline"
-→ Branch: main → "Run pipeline"
+```bash
+# Im Repository-Verzeichnis
+git commit --allow-empty -m "ci: test pipeline"
+git push
 ```
 
 ---
 
 ## 5. Pipeline einrichten
 
-Jedes Repo das den Runner nutzen soll braucht eine `.gitlab-ci.yml`.
-
-### Minimales Beispiel (Portfolio)
+Jedes Repo braucht eine `.gitlab-ci.yml`. Beispiel für das Portfolio-Projekt
+(Node.js Build + Deploy via lftp auf Hetzner Webhosting):
 
 ```yaml
 stages:
   - build
   - deploy
 
+variables:
+  NODE_VERSION: "20"
+
 build:
   stage: build
-  image: node:20-alpine
+  image: node:${NODE_VERSION}-alpine
   tags:
     - k8s
+  cache:
+    key:
+      files:
+        - portfolio/package-lock.json
+    paths:
+      - portfolio/node_modules/
   script:
+    - cd portfolio
     - npm ci
     - npm run build
   artifacts:
     paths:
-      - dist/
+      - portfolio/dist/
     expire_in: 1 hour
-  only:
-    - main
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 deploy:
   stage: deploy
-  image: alpine:3.19
+  image: alpine:latest
   tags:
     - k8s
+  needs: [build]
   before_script:
-    - apk add --no-cache openssh-client rsync
-    - eval $(ssh-agent -s)
-    - echo "$HETZNER_SSH_KEY" | tr -d '\r' | ssh-add -
-    - mkdir -p ~/.ssh
-    - ssh-keyscan -H $HETZNER_HOST >> ~/.ssh/known_hosts
+    - apk add --no-cache lftp
   script:
-    - rsync -avz --delete dist/ $HETZNER_USER@$HETZNER_HOST:$HETZNER_PATH
-  only:
-    - main
-  needs:
-    - build
+    - |
+      mkdir -p ~/.lftp
+      cat > ~/.lftp/rc << EOF
+      set sftp:auto-confirm yes
+      set net:timeout 30
+      set net:max-retries 3
+      set net:reconnect-interval-base 5
+      EOF
+    - |
+      lftp -u "${DEPLOY_USER},${DEPLOY_PASSWORD}" sftp://${DEPLOY_HOST} -e "
+        mirror --reverse --delete --verbose portfolio/dist/ /public_html/;
+        bye
+      "
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  environment:
+    name: production
+    url: https://johannesmoseler.de
 ```
 
 ### CI/CD Variablen setzen
@@ -177,17 +195,11 @@ GitLab → Repository → Settings → CI/CD → Variables
 
 | Variable | Wert | Protected | Masked |
 |----------|------|-----------|--------|
-| `HETZNER_SSH_KEY` | Private Key (Inhalt von `~/.ssh/id_ed25519`) | ✅ | ✅ |
-| `HETZNER_HOST` | SSH Host des Webhostings | ✅ | ❌ |
-| `HETZNER_USER` | SSH Username des Webhostings | ✅ | ❌ |
-| `HETZNER_PATH` | Zielpfad z.B. `/home/www/html/` | ✅ | ❌ |
+| `DEPLOY_USER` | Hetzner FTP Username | ✅ | ❌ |
+| `DEPLOY_PASSWORD` | Hetzner FTP Passwort | ✅ | ✅ |
+| `DEPLOY_HOST` | Hetzner SFTP Host | ✅ | ❌ |
 
-> **SSH Key:** Einen **dedizierten Deploy Key** anlegen, nicht den persönlichen Key verwenden:
-> ```bash
-> ssh-keygen -t ed25519 -C "gitlab-ci-deploy" -f ~/.ssh/id_ed25519_deploy -N ""
-> # Public Key im Hetzner Panel hinterlegen
-> # Private Key als HETZNER_SSH_KEY Variable in GitLab
-> ```
+> Deploy-Pfad ist `/public_html/` — per sftp verifiziert.
 
 ---
 
@@ -195,8 +207,7 @@ GitLab → Repository → Settings → CI/CD → Variables
 
 ### Token-Probleme (PANIC: registration-token needs to be entered)
 
-Tritt auf wenn das Secret nicht korrekt gemountet wird. Das Secret muss exakt
-diese zwei Keys enthalten:
+Das Secret muss exakt diese zwei Keys enthalten:
 
 ```bash
 kubectl delete secret gitlab-runner-secret -n gitlab
@@ -209,56 +220,107 @@ kubectl rollout restart deployment/gitlab-runner -n gitlab
 
 ### TLS-Fehler (x509: certificate signed by unknown authority)
 
-Tritt auf wenn die homelab-CA dem Runner nicht bekannt ist. Der `tls-ca-file`-Eintrag
-in `runners.config` behebt das — sicherstellen dass er in der ArgoCD Application gesetzt ist:
+`tls-ca-file` in der ArgoCD Application muss gesetzt sein:
 
 ```toml
 [[runners]]
   tls-ca-file = "/home/gitlab-runner/.gitlab-runner/certs/homelab-ca.crt"
 ```
 
-Das `certsSecretName: homelab-ca` in den Helm Values mountet das CA-Secret nach
-`/home/gitlab-runner/.gitlab-runner/certs/homelab-ca.crt`.
+Das `certsSecretName: homelab-ca` mountet das CA-Secret automatisch an diesen Pfad.
 
-### Runner registriert sich nicht
+### Git Clone schlägt fehl (HTTP 500)
 
+Ursache ist meistens `CI job token signing key is not set` in GitLab Rails.
+
+**Diagnose:**
 ```bash
-# Logs prüfen
-kubectl logs -n gitlab -l app=gitlab-runner --tail=50
-
-# homelab-ca Secret prüfen:
-kubectl get secret homelab-ca -n gitlab
-
-# GitLab erreichbar aus dem Cluster?
-kubectl run -it --rm test --image=alpine --restart=Never -n gitlab -- \
-  wget -qO- https://gitlab.homelab.local/-/health
+kubectl exec -n gitlab $(kubectl get pod -n gitlab -l app=gitlab \
+  -o jsonpath='{.items[0].metadata.name}') -- \
+  grep "CI job token" /var/log/gitlab/gitlab-rails/production.log | tail -3
 ```
 
-### Job Pod startet nicht
-
+**Fix 1:** Prüfen ob der Key als File gemountet ist:
 ```bash
-# Runner Pod Events prüfen
-kubectl describe pod -n gitlab -l app=gitlab-runner
-
-# RBAC prüfen (Runner braucht Rechte um Pods zu erstellen)
-kubectl get rolebinding -n gitlab | grep runner
+kubectl exec -n gitlab $(kubectl get pod -n gitlab -l app=gitlab \
+  -o jsonpath='{.items[0].metadata.name}') -- \
+  ls -la /etc/gitlab/ci_job_token_signing_key.pem
 ```
 
-### Pipeline schlägt bei SSH/rsync fehl
+**Fix 2:** Key einmalig in die Datenbank schreiben:
+```bash
+kubectl exec -n gitlab $(kubectl get pod -n gitlab -l app=gitlab \
+  -o jsonpath='{.items[0].metadata.name}') -- \
+  gitlab-rails runner "
+    require 'openssl'
+    key = File.read('/etc/gitlab/ci_job_token_signing_key.pem')
+    ApplicationSetting.current.update!(ci_job_token_signing_key: key)
+    puts 'Key set: ' + ApplicationSetting.current.ci_job_token_signing_key.present?.to_s
+  "
+```
+
+> **Warum ist dieser Fix nötig?**
+> GitLab 17.x liest `ci_job_token_signing_key` bevorzugt aus `application_settings`
+> in der Datenbank — nicht direkt aus der Omnibus-Konfiguration. Beim Erstsetup
+> muss der Key einmalig manuell in die DB geschrieben werden. Danach reicht der
+> File-Mount für Neustarts.
+
+**Fix 3:** gitlab-ctl reconfigure:
+```bash
+kubectl exec -n gitlab $(kubectl get pod -n gitlab -l app=gitlab \
+  -o jsonpath='{.items[0].metadata.name}') -- \
+  gitlab-ctl reconfigure
+```
+
+### ci_job_token_signing_key: "is not a valid RSA key"
+
+Der Key muss ein RSA 2048 Private Key im PEM-Format sein — kein hex String.
+`setup-databases.sh` generiert ihn korrekt mit `openssl genrsa 2048`.
+
+Falls das Secret noch einen alten hex Key enthält:
 
 ```bash
-# SSH Key Format prüfen – muss exakt so beginnen:
-# -----BEGIN OPENSSH PRIVATE KEY-----
-# Kein trailing Whitespace, keine Windows-Zeilenenden (CRLF)
+# Bestehende Keys auslesen (NICHT löschen — sie verschlüsseln DB-Daten!)
+SECRET_KEY=$(kubectl get secret gitlab-rails-secrets -n gitlab \
+  -o jsonpath='{.data.secret_key_base}' | base64 -d)
+DB_KEY=$(kubectl get secret gitlab-rails-secrets -n gitlab \
+  -o jsonpath='{.data.db_key_base}' | base64 -d)
+OTP_KEY=$(kubectl get secret gitlab-rails-secrets -n gitlab \
+  -o jsonpath='{.data.otp_key_base}' | base64 -d)
 
-# Known Hosts Problem → ssh-keyscan im before_script:
-ssh-keyscan -H $HETZNER_HOST >> ~/.ssh/known_hosts
+# Nur ci_job_token_signing_key patchen
+CI_KEY=$(openssl genrsa 2048 2>/dev/null)
+kubectl patch secret gitlab-rails-secrets -n gitlab \
+  --type merge \
+  -p "{\"stringData\":{\"ci_job_token_signing_key\":\"${CI_KEY}\"}}"
+
+# Dann Key in DB schreiben (siehe Fix 2 oben)
 ```
+
+> **ACHTUNG:** `secret_key_base`, `db_key_base` und `otp_key_base` dürfen NICHT
+> geändert werden — sie verschlüsseln Daten in der Datenbank!
 
 ### Runner erscheint als offline in GitLab
 
 ```bash
-# Runner Pod neu starten
 kubectl rollout restart deployment/gitlab-runner -n gitlab
 kubectl rollout status deployment/gitlab-runner -n gitlab
 ```
+
+### Job Pod startet nicht / stirbt sofort
+
+```bash
+# Runner Pod Events
+kubectl describe pod -n gitlab -l app=gitlab-runner
+
+# GitLab Rails Logs
+kubectl exec -n gitlab $(kubectl get pod -n gitlab -l app=gitlab \
+  -o jsonpath='{.items[0].metadata.name}') -- \
+  grep -i "error\|500\|exception" \
+  /var/log/gitlab/gitlab-rails/production.log | tail -20
+```
+
+### WARNING: Appending trace to coordinator... failed code=500
+
+Cosmetic Issue — tritt auf wenn GitLab Job-Logs nicht sofort schreiben kann.
+Jobs laufen trotzdem durch. Kann ignoriert werden wenn die Pipeline erfolgreich ist.
