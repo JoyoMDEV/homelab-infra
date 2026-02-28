@@ -17,12 +17,11 @@ spec:
         gitlabUrl: https://gitlab.homelab.local
         existingSecret: gitlab-runner-secret
 
-        extraEnv:
-          - name: CI_SERVER_TOKEN
-            valueFrom:
-              secretKeyRef:
-                name: gitlab-runner-secret
-                key: runner-token
+        extraEnvFrom:
+          CI_SERVER_TOKEN:
+            secretKeyRef:
+              name: gitlab-runner-secret
+              key: runner-token
 
         rbac:
           create: true
