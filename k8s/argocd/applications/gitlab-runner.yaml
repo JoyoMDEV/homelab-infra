@@ -27,7 +27,6 @@ spec:
           config: |
             [[runners]]
               name = "k3s-instance-runner"
-              url = "https://gitlab.homelab.local"
               executor = "kubernetes"
               tags = ["k8s"]
               run_untagged = true
