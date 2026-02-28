@@ -1,4 +1,3 @@
----
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -15,6 +14,7 @@ spec:
     helm:
       values: |
         gitlabUrl: https://gitlab.homelab.local
+
         existingSecret: gitlab-runner-secret
 
         extraEnvFrom:
@@ -31,6 +31,7 @@ spec:
             [[runners]]
               name = "k3s-instance-runner"
               executor = "kubernetes"
+              tls-ca-file = "/home/gitlab-runner/.gitlab-runner/certs/homelab-ca.crt"
               tags = ["k8s"]
               run_untagged = true
               [runners.kubernetes]
