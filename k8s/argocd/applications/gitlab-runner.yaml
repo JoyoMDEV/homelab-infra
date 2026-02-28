@@ -1,0 +1,61 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gitlab-runner
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.gitlab.io
+    chart: gitlab-runner
+    targetRevision: 0.*
+    helm:
+      values: |
+        gitlabUrl: https://gitlab.homelab.local
+
+        # Token wird aus dem Secret gelesen
+        existingSecret: gitlab-runner-secret
+
+        rbac:
+          create: true
+
+        # Instance Runner – kein projectID-Lock, alle Repos können ihn nutzen
+        runners:
+          config: |
+            [[runners]]
+              name = "k3s-instance-runner"
+              url = "https://gitlab.homelab.local"
+              executor = "kubernetes"
+              tags = ["k8s"]
+              run_untagged = true
+              [runners.kubernetes]
+                namespace = "gitlab"
+                image = "alpine:3.19"
+                pull_policy = "if-not-present"
+                [runners.kubernetes.volumes]
+                  [[runners.kubernetes.volumes.empty_dir]]
+                    name = "repo"
+                    mount_path = "/builds"
+
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 100m
+          limits:
+            memory: 256Mi
+
+        # homelab CA für TLS-Verifikation gegen gitlab.homelab.local
+        certsSecretName: homelab-ca
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gitlab
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
