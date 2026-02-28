@@ -38,10 +38,13 @@ spec:
                 namespace = "gitlab"
                 image = "node:20-alpine"
                 pull_policy = "if-not-present"
-                [runners.kubernetes.volumes]
-                  [[runners.kubernetes.volumes.empty_dir]]
-                    name = "repo"
-                    mount_path = "/builds"
+                [[runners.kubernetes.volumes.secret]]
+                  name = "homelab-ca"
+                  mount_path = "/etc/ssl/certs/homelab-ca.crt"
+                  sub_path = "homelab-ca.crt"
+                [[runners.kubernetes.volumes.empty_dir]]
+                  name = "repo"
+                  mount_path = "/builds"
 
         resources:
           requests:
