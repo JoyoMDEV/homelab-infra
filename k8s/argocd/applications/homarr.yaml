@@ -10,7 +10,7 @@ spec:
   sources:
     - repoURL: https://homarr-labs.github.io/charts
       chart: homarr
-      targetRevision: "1.4.0"
+      targetRevision: "8.*"
       helm:
         values: |
           env:
