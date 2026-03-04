@@ -13,24 +13,23 @@ spec:
     targetRevision: 1.*
     helm:
       values: |
-        image:
-          tag: latest
-
         env:
           AUTH_PROVIDER: "oidc"
           AUTH_OIDC_ISSUER: "https://auth.homelab.local/realms/homelab"
           AUTH_OIDC_CLIENT_ID: "homarr"
           AUTH_OIDC_CLIENT_NAME: "Keycloak"
-          AUTH_OIDC_ADMIN_GROUP: "argocd-admins"
-          AUTH_OIDC_OWNER_GROUP: "argocd-admins"
           AUTH_OIDC_AUTO_LOGIN: "true"
+          TZ: "Europe/Berlin"
 
         envFrom:
           - secretRef:
               name: homarr-secret
 
         persistence:
-          data:
+          database:
+            enabled: true
+            size: 1Gi
+          images:
             enabled: true
             size: 1Gi
 
