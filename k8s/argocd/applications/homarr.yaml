@@ -8,9 +8,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://oben01.github.io/charts
+    repoURL: https://homarr-labs.github.io/charts
     chart: homarr
-    targetRevision: 0.*
+    targetRevision: 1.*
     helm:
       values: |
         image:
