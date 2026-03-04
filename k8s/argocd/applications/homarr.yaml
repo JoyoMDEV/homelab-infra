@@ -7,51 +7,47 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
-  source:
-    repoURL: https://homarr-labs.github.io/charts
-    chart: homarr
-    targetRevision: 1.*
-    helm:
-      values: |
-        env:
-          AUTH_PROVIDER: "oidc"
-          AUTH_OIDC_ISSUER: "https://auth.homelab.local/realms/homelab"
-          AUTH_OIDC_CLIENT_ID: "homarr"
-          AUTH_OIDC_CLIENT_NAME: "Keycloak"
-          AUTH_OIDC_AUTO_LOGIN: "true"
-          TZ: "Europe/Berlin"
+  sources:
+    - repoURL: https://homarr-labs.github.io/charts
+      chart: homarr
+      targetRevision: "1.4.0"
+      helm:
+        values: |
+          env:
+            AUTH_PROVIDER: "oidc"
+            AUTH_OIDC_ISSUER: "https://auth.homelab.local/realms/homelab"
+            AUTH_OIDC_CLIENT_ID: "homarr"
+            AUTH_OIDC_CLIENT_NAME: "Keycloak"
+            AUTH_OIDC_AUTO_LOGIN: "true"
+            TZ: "Europe/Berlin"
 
-        envFrom:
-          - secretRef:
-              name: homarr-secret
+          envFrom:
+            - secretRef:
+                name: homarr-secret
 
-        persistence:
-          database:
+          ingress:
             enabled: true
-            size: 1Gi
-          images:
-            enabled: true
-            size: 1Gi
+            ingressClassName: traefik
+            hosts:
+              - host: homarr.homelab.local
+                paths:
+                  - path: /
+                    pathType: Prefix
+            tls:
+              - secretName: homelab-wildcard-tls
+                hosts:
+                  - homarr.homelab.local
 
-        ingress:
-          enabled: true
-          ingressClassName: traefik
-          hosts:
-            - host: homarr.homelab.local
-              paths:
-                - path: /
-                  pathType: Prefix
-          tls:
-            - secretName: homelab-wildcard-tls
-              hosts:
-                - homarr.homelab.local
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
 
-        resources:
-          requests:
-            memory: 256Mi
-            cpu: 100m
-          limits:
-            memory: 512Mi
+    - repoURL: https://github.com/JoyoMDEV/homelab-infra.git
+      targetRevision: main
+      path: k8s/dashboard
 
   destination:
     server: https://kubernetes.default.svc
