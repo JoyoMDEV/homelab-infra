@@ -112,6 +112,27 @@ else
   echo "    GitLab Rails secrets already exist, skipping"
 fi
 
+echo "==> Creating Homarr secrets..."
+if ! kubectl get secret homarr-secret -n dashboard &>/dev/null; then
+  kubectl create secret generic homarr-secret \
+    --from-literal=AUTH_OIDC_CLIENT_SECRET="REPLACE_AFTER_KEYCLOAK_SETUP" \
+    --from-literal=SECRET_ENCRYPTION_KEY="$(openssl rand -hex 32)" \
+    -n dashboard
+  echo "    Homarr secret created"
+else
+  echo "    Homarr secret already exists, skipping"
+fi
+
+echo "==> Creating Homarr secrets..."
+if ! kubectl get secret db-encryption -n dashboard &>/dev/null; then
+  kubectl create secret generic db-encryption \
+    --from-literal=db-encryption-key="$(openssl rand -hex 32)" \
+    -n dashboard
+  echo "    Homarr db-encryption secret created"
+else
+  echo "    Homarr db-encryption secret already exists, skipping"
+fi
+
 echo ""
 echo "============================================"
 echo "  Secrets created!"
