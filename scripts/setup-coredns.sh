@@ -82,6 +82,7 @@ data:
             ${TRAEFIK_IP} argocd.homelab.local
             ${TRAEFIK_IP} grafana.homelab.local
             ${TRAEFIK_IP} nextcloud.homelab.local
+            ${TRAEFIK_IP} homarr.homelab.local
             ${TRAEFIK_IP} homelab.local
             fallthrough
         }
@@ -121,6 +122,7 @@ else
         ${TRAEFIK_IP} argocd.homelab.local
         ${TRAEFIK_IP} grafana.homelab.local
         ${TRAEFIK_IP} nextcloud.homelab.local
+        ${TRAEFIK_IP} homarr.homelab.local
         ${TRAEFIK_IP} homelab.local
         fallthrough
     }
