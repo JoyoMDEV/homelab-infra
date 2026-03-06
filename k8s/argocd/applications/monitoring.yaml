@@ -1,0 +1,241 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 82.*
+    helm:
+      values: |
+        # Seit Chart 68.x: CRD-Upgrades automatisch via Job statt manuell per kubectl.
+        # Relevant wenn ArgoCD von 82.x auf 83.x+ bumpt – kein manuelles kubectl apply nötig.
+        crds:
+          upgradeJob:
+            enabled: true
+
+        # ── Grafana ──────────────────────────────────────────────────────────
+        grafana:
+          adminPassword: ""  # wird nicht verwendet – Login via Keycloak OIDC
+
+          # Keycloak OIDC
+          grafana.ini:
+            server:
+              root_url: https://grafana.homelab.local
+              domain: grafana.homelab.local
+            auth:
+              disable_login_form: false   # Fallback falls OIDC nicht geht
+              oauth_auto_login: true
+            auth.generic_oauth:
+              enabled: true
+              name: Keycloak
+              allow_sign_up: true
+              client_id: grafana
+              client_secret: ${GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
+              scopes: openid profile email
+              auth_url: https://auth.homelab.local/realms/homelab/protocol/openid-connect/auth
+              token_url: https://auth.homelab.local/realms/homelab/protocol/openid-connect/token
+              api_url: https://auth.homelab.local/realms/homelab/protocol/openid-connect/userinfo
+              role_attribute_path: >-
+                contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
+              tls_skip_verify_insecure: false
+              # Interne CA für auth.homelab.local
+              tls_client_cert: ""
+              tls_client_key: ""
+            analytics:
+              reporting_enabled: false
+              check_for_updates: false
+
+          envFromSecrets:
+            - name: grafana-keycloak-secret
+
+          persistence:
+            enabled: true
+            size: 5Gi
+
+          ingress:
+            enabled: true
+            ingressClassName: traefik
+            hosts:
+              - grafana.homelab.local
+            tls:
+              - secretName: homelab-wildcard-tls
+                hosts:
+                  - grafana.homelab.local
+
+          # homelab-CA für OIDC-Calls gegen auth.homelab.local
+          extraVolumes:
+            - name: homelab-ca
+              secret:
+                secretName: homelab-ca
+          extraVolumeMounts:
+            - name: homelab-ca
+              mountPath: /etc/ssl/certs/homelab-ca.crt
+              subPath: homelab-ca.crt
+              readOnly: true
+
+          # CA in Grafana-Container bekannt machen (Alpine-basiert)
+          initContainers:
+            - name: install-ca
+              image: alpine:3.19
+              command:
+                - sh
+                - -c
+                - |
+                  cp /ca-certs/homelab-ca.crt /etc/ssl/certs/homelab-ca.crt
+                  echo "CA installed."
+              volumeMounts:
+                - name: homelab-ca
+                  mountPath: /ca-certs
+                  readOnly: true
+                - name: sc-dashboard-volume
+                  mountPath: /etc/ssl/certs
+
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+
+          # Loki als zusätzliche Datasource
+          additionalDataSources:
+            - name: Loki
+              type: loki
+              url: http://loki.monitoring.svc.cluster.local:3100
+              access: proxy
+              isDefault: false
+
+          # Sinnvolle Default-Dashboards aktivieren
+          defaultDashboardsEnabled: true
+
+        # ── Prometheus ───────────────────────────────────────────────────────
+        prometheus:
+          prometheusSpec:
+            retention: 30d
+            retentionSize: "15GB"
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 20Gi
+            resources:
+              requests:
+                memory: 512Mi
+                cpu: 250m
+              limits:
+                memory: 2Gi
+            # Alle ServiceMonitors und PodMonitors im Cluster einsammeln
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+
+        # ── Alertmanager ─────────────────────────────────────────────────────
+        alertmanager:
+          alertmanagerSpec:
+            storage:
+              volumeClaimTemplate:
+                spec:
+                  accessModes: ["ReadWriteOnce"]
+                  resources:
+                    requests:
+                      storage: 2Gi
+            resources:
+              requests:
+                memory: 64Mi
+                cpu: 10m
+              limits:
+                memory: 128Mi
+
+          config:
+            global:
+              resolve_timeout: 5m
+
+            route:
+              receiver: "discord"
+              group_by: ["alertname", "namespace"]
+              group_wait: 30s
+              group_interval: 5m
+              repeat_interval: 12h
+              routes:
+                # Kritische Alerts sofort senden
+                - receiver: "discord"
+                  match:
+                    severity: critical
+                  repeat_interval: 1h
+                # Watchdog (immer aktiver Alert zum Testen)
+                - receiver: "null"
+                  match:
+                    alertname: Watchdog
+
+            receivers:
+              - name: "null"
+              - name: "discord"
+                webhook_configs:
+                  # Discord Webhook URL kommt aus grafana-keycloak-secret
+                  # Key: ALERTMANAGER_DISCORD_WEBHOOK_URL
+                  - url_file: /etc/alertmanager/secrets/grafana-keycloak-secret/ALERTMANAGER_DISCORD_WEBHOOK_URL
+                    send_resolved: true
+                    http_config:
+                      follow_redirects: true
+
+            inhibit_rules:
+              - source_match:
+                  severity: "critical"
+                target_match:
+                  severity: "warning"
+                equal: ["alertname", "namespace"]
+
+          # Secret mit Discord Webhook URL in Alertmanager mounten
+          extraSecrets:
+            - name: grafana-keycloak-secret
+
+        # ── Node Exporter ────────────────────────────────────────────────────
+        nodeExporter:
+          enabled: true
+
+        # ── kube-state-metrics ───────────────────────────────────────────────
+        kubeStateMetrics:
+          enabled: true
+
+        # ── Default Rules ────────────────────────────────────────────────────
+        defaultRules:
+          create: true
+          rules:
+            alertmanager: true
+            etcd: false         # k3s nutzt embedded etcd
+            configReloaders: true
+            general: true
+            kubeApiserverAvailability: true
+            kubeApiserverBurnrate: true
+            kubeApiserverHistogram: true
+            kubeApiserverSlos: true
+            kubeControllerManager: false  # k3s interne Komponenten
+            kubelet: true
+            kubeProxy: false             # k3s kein kube-proxy
+            kubeSchedulerAlerting: false
+            kubeSchedulerRecording: false
+            kubeStateMetrics: true
+            network: true
+            node: true
+            nodeExporterAlerting: true
+            nodeExporterRecording: true
+            prometheus: true
+            prometheusOperator: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true   # nötig wegen CRD-Größe bei kube-prometheus-stack
