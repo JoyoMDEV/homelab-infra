@@ -44,9 +44,7 @@ spec:
               role_attribute_path: >-
                 contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
               tls_skip_verify_insecure: false
-              # Interne CA für auth.homelab.local
-              tls_client_cert: ""
-              tls_client_key: ""
+              tls_ca_cert: /etc/ssl/certs/homelab-ca.crt
             analytics:
               reporting_enabled: false
               check_for_updates: false
