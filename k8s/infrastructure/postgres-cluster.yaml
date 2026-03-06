@@ -29,4 +29,7 @@ spec:
       owner: homelab
 
   monitoring:
-    enablePodMonitor: false
+    # PodMonitor aktiviert – Prometheus sammelt CNPG-Metriken automatisch ein.
+    # Voraussetzung: kube-prometheus-stack muss im Cluster laufen.
+    # Dashboard-Import: Grafana → Import → ID 20417 (CloudNativePG)
+    enablePodMonitor: true
