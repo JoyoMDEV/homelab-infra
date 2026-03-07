@@ -52,6 +52,14 @@ spec:
           envFromSecrets:
             - name: grafana-keycloak-secret
 
+          # homelab-CA für OIDC-Calls gegen auth.homelab.local
+          # extraSecretMounts ist der korrekte Key im Grafana-Subchart für Secret-Mounts
+          extraSecretMounts:
+            - name: homelab-ca
+              secretName: homelab-ca
+              mountPath: /etc/grafana/certs
+              readOnly: true
+
           persistence:
             enabled: true
             size: 5Gi
@@ -65,17 +73,6 @@ spec:
               - secretName: homelab-wildcard-tls
                 hosts:
                   - grafana.homelab.local
-
-          # homelab-CA für OIDC-Calls gegen auth.homelab.local
-          volumes:
-            - name: homelab-ca
-              secret:
-                secretName: homelab-ca
-          volumeMounts:
-            - name: homelab-ca
-              mountPath: /etc/grafana/certs
-              readOnly: true
-
 
           resources:
             requests:
