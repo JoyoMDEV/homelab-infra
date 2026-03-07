@@ -1,0 +1,70 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vaultwarden
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://guerzon.github.io/vaultwarden
+    chart: vaultwarden
+    targetRevision: 0.*
+    helm:
+      values: |
+        domain: "https://vault.homelab.local"
+
+        adminToken:
+          existingSecret: "vaultwarden-secret"
+          existingSecretKey: "admin-token"
+
+        signupsAllowed: false
+
+        storage:
+          data:
+            name: vaultwarden-data
+            size: 1Gi
+            class: ""
+            accessMode: ReadWriteOnce
+            path: /data
+
+        resources:
+          requests:
+            memory: 64Mi
+            cpu: 50m
+          limits:
+            memory: 256Mi
+
+        ingress:
+          enabled: true
+          class: "traefik"
+          hostname: vault.homelab.local
+          tlsSecret: homelab-wildcard-tls
+          additionalAnnotations: {}
+
+        # Das Chart schreibt SMTP-Credentials in sein eigenes Secret 'vaultwarden'
+        # mit Keys in Großbuchstaben (SMTP_USERNAME, SMTP_PASSWORD).
+        smtp:
+          host: mail.your-server.de
+          from: contact@johannesmoseler.de
+          fromName: "Vaultwarden"
+          security: starttls
+          port: 587
+          existingSecret: "vaultwarden"
+          username:
+            existingSecretKey: "SMTP_USERNAME"
+          password:
+            existingSecretKey: "SMTP_PASSWORD"
+
+        timezone: "Europe/Berlin"
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: security
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
