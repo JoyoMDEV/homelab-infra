@@ -73,8 +73,7 @@ spec:
                 secretName: homelab-ca
           extraVolumeMounts:
             - name: homelab-ca
-              mountPath: /etc/grafana/certs/homelab-ca.crt
-              subPath: homelab-ca.crt
+              mountPath: /etc/grafana/certs
               readOnly: true
 
 
