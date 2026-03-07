@@ -1,4 +1,4 @@
-.PHONY: help lint tf-init tf-plan tf-apply tf-destroy tf-output ansible-ping ansible-run ansible-check ansible-cluster ansible-samba bootstrap bootstrap-certs setup-coredns status pods apps vault-edit vault-view argocd-pw cert-status cert-ca cert-sync runner-setup runner-status runner-logs
+.PHONY: help lint tf-init tf-plan tf-apply tf-destroy tf-output ansible-ping ansible-run ansible-check ansible-cluster ansible-samba bootstrap bootstrap-certs setup-coredns setup-monitoring status pods apps vault-edit vault-view argocd-pw cert-status cert-ca cert-sync runner-setup runner-status runner-logs
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -70,6 +70,10 @@ bootstrap-certs: ## Bootstrap cert-manager + internal CA (one-time)
 setup-coredns: ## Configure CoreDNS for *.homelab.local resolution inside the cluster
 	chmod +x scripts/setup-coredns.sh
 	./scripts/setup-coredns.sh
+
+setup-monitoring: ## Setup monitoring stack secrets (Grafana OIDC + Alertmanager Discord)
+	chmod +x scripts/setup-monitoring.sh
+	./scripts/setup-monitoring.sh
 
 # ========================
 # GitLab Runner

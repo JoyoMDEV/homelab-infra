@@ -85,6 +85,8 @@ homelab-infra/
 │   │       ├── gitlab-runner.yaml  #   GitLab Instance Runner (k8s executor)
 │   │       ├── nextcloud.yaml
 │   │       ├── redis.yaml
+│   │       ├── monitoring.yaml     #   Prometheus + Grafana + Alertmanager
+│   │       ├── loki.yaml           #   Loki + Alloy (log aggregation)
 │   │       └── infrastructure.yaml
 │   ├── infrastructure/
 │   │   ├── postgres-cluster.yaml
@@ -100,11 +102,13 @@ homelab-infra/
 │   ├── bootstrap-certmanager.sh    #   One-time: cert-manager, internal CA, wildcard cert
 │   ├── setup-databases.sh          #   One-time: PostgreSQL databases + secrets
 │   ├── setup-gitlab-runner.sh      #   One-time: GitLab Runner Token + Secret
+│   ├── setup-monitoring.sh         #   One-time: Grafana OIDC + Alertmanager secrets
 │   └── setup-nextcloud-storage.sh  #   One-time: Storage Box as WebDAV External Storage
 │
 ├── docs/
 │   ├── gitlab-runner-setup.md  #   GitLab Runner Runbook + Pipeline-Beispiele
 │   ├── keycloak-setup.md       #   Keycloak SSO setup runbook
+│   ├── monitoring-setup.md     #   Monitoring stack runbook (Prometheus, Grafana, Loki)
 │   └── nextcloud-setup.md      #   Nextcloud setup runbook
 │
 ├── certs/                      # gitignored - local CA cert for device import
@@ -155,7 +159,12 @@ make cert-ca
 # Tags: k8s, Run untagged jobs: ✅ → Token kopieren
 make runner-setup     # Token wird interaktiv abgefragt
 
-# 9. Verify
+# 9. Setup Monitoring
+# Keycloak → Realm homelab → Clients → grafana → Credentials → Client Secret kopieren
+# Discord → Server → Kanal-Einstellungen → Integrationen → Webhook URL kopieren (optional)
+make setup-monitoring # OIDC Secret + Discord Webhook werden interaktiv abgefragt
+
+# 10. Verify
 make status
 make apps
 make runner-status
@@ -178,6 +187,7 @@ make runner-status
 - cert-sync CronJob (daily auto-renewal sync)
 - CoreDNS wildcard config for `*.homelab.local`
 - GitLab Runner Secret + Instance Runner Registration
+- Grafana OIDC Secret + Alertmanager Discord Webhook
 
 ### Via ArgoCD (GitOps)
 - cert-manager (Helm upgrades)
@@ -185,6 +195,8 @@ make runner-status
 - Keycloak (SSO, connected to Samba AD via LDAP)
 - GitLab CE (Omnibus) + GitLab Runner (k8s executor)
 - Nextcloud (with Keycloak OIDC + Hetzner Storage Box via WebDAV)
+- Prometheus + Grafana + Alertmanager (kube-prometheus-stack)
+- Loki + Alloy (log aggregation, Promtail-Nachfolger)
 - All future services
 
 ## TLS / HTTPS
@@ -265,6 +277,7 @@ spec:
 | `make bootstrap` | Bootstrap k8s services (CNPG, Redis, ArgoCD) |
 | `make bootstrap-certs` | Bootstrap cert-manager + internal CA |
 | `make setup-coredns` | Configure CoreDNS for `*.homelab.local` |
+| `make setup-monitoring` | Setup Grafana OIDC + Alertmanager secrets |
 | `make runner-setup` | Setup GitLab instance runner (one-time) |
 | `make runner-status` | Show Runner Pod + active jobs |
 | `make runner-logs` | Tail Runner logs |
@@ -293,6 +306,8 @@ spec:
 | `gitlab-rails-secrets` | gitlab | `setup-databases.sh` |
 | `gitlab-runner-secret` | gitlab | `setup-gitlab-runner.sh` |
 | `nextcloud-secret` | productivity | `setup-databases.sh` |
+| `grafana-keycloak-secret` | monitoring | `setup-monitoring.sh` |
+| `homelab-ca` | monitoring | `setup-monitoring.sh` |
 
 ## DNS
 
@@ -305,7 +320,7 @@ All services accessible via `*.homelab.local` through Tailscale Split DNS.
 | GitLab | https://gitlab.homelab.local (SSH: Port 2222) |
 | GitLab Registry | https://registry.homelab.local |
 | Nextcloud | https://nextcloud.homelab.local |
-| Future: Grafana | https://grafana.homelab.local |
+| Grafana | https://grafana.homelab.local |
 
 ## Progress
 
@@ -323,7 +338,7 @@ All services accessible via `*.homelab.local` through Tailscale Split DNS.
 - [x] cert-manager + internal CA + wildcard TLS for *.homelab.local
 - [x] Keycloak SSO (LDAP → Samba AD, OIDC for GitLab + ArgoCD)
 - [x] Nextcloud (OIDC via Keycloak, Storage Box via WebDAV)
-- [ ] Portfolio CI/CD Pipeline (build → deploy to Hetzner Webhosting)
-- [ ] Monitoring stack (Prometheus, Grafana, Loki)
+- [x] Monitoring stack (Prometheus, Grafana, Loki, Alertmanager)
+- [x] Portfolio CI/CD Pipeline (build → deploy to Hetzner Webhosting)
 - [ ] Remaining services (Vaultwarden, Paperless, ...)
 - [ ] Phase 2: Stalwart Mail, public access
