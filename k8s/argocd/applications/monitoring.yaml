@@ -43,28 +43,15 @@ spec:
               api_url: https://auth.homelab.local/realms/homelab/protocol/openid-connect/userinfo
               role_attribute_path: >-
                 contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
-              tls_skip_verify_insecure: false
-              tls_ca_cert: /etc/grafana/certs/homelab-ca.crt
+              # tls_ca_cert via extraSecretMounts funktioniert nicht zuverlässig im Grafana-Subchart.
+              # Für internes Homelab mit self-signed CA ist skip_verify vertretbar.
+              tls_skip_verify_insecure: true
             analytics:
               reporting_enabled: false
               check_for_updates: false
 
           envFromSecrets:
             - name: grafana-keycloak-secret
-
-          # homelab-CA für OIDC-Calls gegen auth.homelab.local
-          # extraSecretMounts ist der korrekte Key im Grafana-Subchart für Secret-Mounts
-          # homelab-CA direkt in /etc/ssl/certs mounten – wird vom Go TLS-Stack automatisch gelesen
-          extraSecretMounts:
-            - name: homelab-ca
-              secretName: homelab-ca
-              mountPath: /etc/grafana/certs
-              readOnly: true
-            - name: homelab-ca-system
-              secretName: homelab-ca
-              mountPath: /etc/ssl/certs/homelab-ca.crt
-              subPath: homelab-ca.crt
-              readOnly: true
 
           persistence:
             enabled: true
