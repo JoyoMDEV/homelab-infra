@@ -44,7 +44,7 @@ spec:
               role_attribute_path: >-
                 contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
               tls_skip_verify_insecure: false
-              tls_ca_cert: /etc/ssl/certs/homelab-ca.crt
+              tls_ca_cert: /etc/grafana/certs/homelab-ca.crt
             analytics:
               reporting_enabled: false
               check_for_updates: false
@@ -73,26 +73,10 @@ spec:
                 secretName: homelab-ca
           extraVolumeMounts:
             - name: homelab-ca
-              mountPath: /etc/ssl/certs/homelab-ca.crt
+              mountPath: /etc/grafana/certs/homelab-ca.crt
               subPath: homelab-ca.crt
               readOnly: true
 
-          # CA in Grafana-Container bekannt machen (Alpine-basiert)
-          initContainers:
-            - name: install-ca
-              image: alpine:3.19
-              command:
-                - sh
-                - -c
-                - |
-                  cp /ca-certs/homelab-ca.crt /etc/ssl/certs/homelab-ca.crt
-                  echo "CA installed."
-              volumeMounts:
-                - name: homelab-ca
-                  mountPath: /ca-certs
-                  readOnly: true
-                - name: sc-dashboard-volume
-                  mountPath: /etc/ssl/certs
 
           resources:
             requests:
