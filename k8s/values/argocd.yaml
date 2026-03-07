@@ -75,6 +75,12 @@ configs:
       end
       return hs
 
+    resource.customizations.health.networking.k8s.io_Ingress: |
+      hs = {}
+      hs.status = "Healthy"
+      hs.message = "Ingress is healthy"
+      return hs
+
   rbac:
     policy.csv: |
       g, argocd-admins, role:admin
