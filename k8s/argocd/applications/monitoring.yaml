@@ -67,11 +67,11 @@ spec:
                   - grafana.homelab.local
 
           # homelab-CA für OIDC-Calls gegen auth.homelab.local
-          extraVolumes:
+          volumes:
             - name: homelab-ca
               secret:
                 secretName: homelab-ca
-          extraVolumeMounts:
+          volumeMounts:
             - name: homelab-ca
               mountPath: /etc/grafana/certs
               readOnly: true
