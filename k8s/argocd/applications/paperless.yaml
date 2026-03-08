@@ -1,0 +1,200 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: paperless
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.gabe565.com
+    chart: paperless-ngx
+    targetRevision: 0.*
+    helm:
+      values: |
+        image:
+          repository: ghcr.io/paperless-ngx/paperless-ngx
+          tag: latest
+          pullPolicy: IfNotPresent
+
+        # Eingebauten Redis-Subchart deaktivieren → externen Redis nutzen
+        redis:
+          enabled: false
+
+        env:
+          # ── Database ──────────────────────────────────────────────────────
+          PAPERLESS_DBENGINE: postgresql
+          PAPERLESS_DBHOST: homelab-pg-rw.infrastructure.svc.cluster.local
+          PAPERLESS_DBPORT: "5432"
+          PAPERLESS_DBNAME: paperless
+          PAPERLESS_DBUSER:
+            valueFrom:
+              secretKeyRef:
+                name: paperless-secret
+                key: db-username
+          PAPERLESS_DBPASS:
+            valueFrom:
+              secretKeyRef:
+                name: paperless-secret
+                key: db-password
+
+          # ── Redis ─────────────────────────────────────────────────────────
+          PAPERLESS_REDIS:
+            valueFrom:
+              secretKeyRef:
+                name: paperless-secret
+                key: redis-url
+
+          # ── Application ───────────────────────────────────────────────────
+          PAPERLESS_URL: https://paperless.homelab.local
+          PAPERLESS_ALLOWED_HOSTS: paperless.homelab.local
+          PAPERLESS_CSRF_TRUSTED_ORIGINS: https://paperless.homelab.local
+          PAPERLESS_TRUSTED_PROXIES: 10.0.0.0/8
+          PAPERLESS_SECRET_KEY:
+            valueFrom:
+              secretKeyRef:
+                name: paperless-secret
+                key: secret-key
+
+          # ── OCR ───────────────────────────────────────────────────────────
+          PAPERLESS_OCR_LANGUAGE: deu+eng
+          PAPERLESS_TIKA_ENABLED: "1"
+          PAPERLESS_TIKA_ENDPOINT: http://localhost:9998
+          PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://localhost:3000
+
+          # ── Timezone ──────────────────────────────────────────────────────
+          PAPERLESS_TIME_ZONE: Europe/Berlin
+
+          # ── SSO via Keycloak OIDC ─────────────────────────────────────────
+          PAPERLESS_APPS: allauth.socialaccount.providers.openid_connect
+          PAPERLESS_SOCIALACCOUNT_PROVIDERS: '{"openid_connect":{"OAUTH_PKCE_ENABLED":true,"APPS":[{"provider_id":"keycloak","name":"Keycloak","client_id":"paperless","secret":"$(OIDC_CLIENT_SECRET)","settings":{"server_url":"https://auth.homelab.local/realms/homelab/.well-known/openid-configuration"}}]}}'
+          OIDC_CLIENT_SECRET:
+            valueFrom:
+              secretKeyRef:
+                name: paperless-secret
+                key: oidc-client-secret
+
+          # ── Consumption ───────────────────────────────────────────────────
+          PAPERLESS_CONSUMPTION_DIR: /data/consume
+          PAPERLESS_DATA_DIR: /data/data
+          PAPERLESS_MEDIA_ROOT: /data/media
+          PAPERLESS_EXPORT_DIR: /data/export
+
+        # ── Tika + Gotenberg Sidecars (bjw-s: Map, nicht Liste!) ──────────
+        sidecars:
+          gotenberg:
+            image: gotenberg/gotenberg:8
+            ports:
+              - containerPort: 3000
+                name: gotenberg
+            resources:
+              requests:
+                memory: 256Mi
+                cpu: 100m
+              limits:
+                memory: 512Mi
+            command:
+              - gotenberg
+              - --chromium-disable-javascript=true
+              - --chromium-allow-list=file:///tmp/.*
+
+          tika:
+            image: apache/tika:latest
+            ports:
+              - containerPort: 9998
+                name: tika
+            resources:
+              requests:
+                memory: 256Mi
+                cpu: 100m
+              limits:
+                memory: 512Mi
+
+        # ── homelab CA ────────────────────────────────────────────────────
+        persistence:
+          data:
+            enabled: true
+            size: 20Gi
+            accessMode: ReadWriteOnce
+            mountPath: /data/data
+          media:
+            enabled: true
+            size: 50Gi
+            accessMode: ReadWriteOnce
+            mountPath: /data/media
+          export:
+            enabled: true
+            size: 5Gi
+            accessMode: ReadWriteOnce
+            mountPath: /data/export
+          consume:
+            enabled: true
+            size: 5Gi
+            accessMode: ReadWriteOnce
+            mountPath: /data/consume
+          homelab-ca:
+            enabled: true
+            type: secret
+            name: homelab-ca
+            mountPath: /usr/local/share/ca-certificates/homelab-ca.crt
+            subPath: homelab-ca.crt
+            readOnly: true
+
+        # ── Ingress ───────────────────────────────────────────────────────
+        ingress:
+          main:
+            enabled: true
+            className: traefik
+            hosts:
+              - host: paperless.homelab.local
+                paths:
+                  - path: /
+                    pathType: Prefix
+            tls:
+              - secretName: homelab-wildcard-tls
+                hosts:
+                  - paperless.homelab.local
+
+        # ── Resources ─────────────────────────────────────────────────────
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 250m
+          limits:
+            memory: 2Gi
+
+        # ── Probes ────────────────────────────────────────────────────────
+        startupProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 60
+
+        livenessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          failureThreshold: 3
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: productivity
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

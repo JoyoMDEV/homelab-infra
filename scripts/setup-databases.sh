@@ -69,6 +69,34 @@ kubectl create secret generic nextcloud-secret \
 echo "Nextcloud Admin: admin / $NEXTCLOUD_ADMIN_PW"
 echo "DB Password: $NEXTCLOUD_DB_PW"
 
+# Paperless DB
+PAPERLESS_DB_PW=$(openssl rand -base64 24)
+kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "CREATE DATABASE paperless;" 2>/dev/null || echo "    paperless database already exists"
+kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "
+  DO \$\$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'paperless') THEN
+      CREATE ROLE paperless WITH LOGIN PASSWORD '$PAPERLESS_DB_PW';
+    END IF;
+  END \$\$;
+  GRANT ALL PRIVILEGES ON DATABASE paperless TO paperless;
+  ALTER DATABASE paperless OWNER TO paperless;
+"
+echo "    Paperless database created"
+
+# Paperless Secrets
+PAPERLESS_SECRET_KEY=$(openssl rand -base64 48)
+
+kubectl create secret generic paperless-secret \
+  --from-literal=db-username="paperless" \
+  --from-literal=db-password="$PAPERLESS_DB_PW" \
+  --from-literal=redis-password="$REDIS_PW" \
+  --from-literal=secret-key="$PAPERLESS_SECRET_KEY" \
+  --from-literal=oidc-client-secret="REPLACE_AFTER_KEYCLOAK_SETUP" \
+  -n productivity 2>/dev/null || echo "    paperless-secret already exists, skipping"
+
+echo "Paperless DB Password: $PAPERLESS_DB_PW"
+echo "    → In Ansible Vault sichern!"
+
 echo "==> Creating Keycloak secrets..."
 KEYCLOAK_ADMIN_PW=$(openssl rand -base64 16)
 if ! kubectl get secret keycloak-secret -n auth &>/dev/null; then
