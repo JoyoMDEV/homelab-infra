@@ -84,6 +84,7 @@ data:
             ${TRAEFIK_IP} nextcloud.homelab.local
             ${TRAEFIK_IP} homarr.homelab.local
             ${TRAEFIK_IP} vault.homelab.local
+            ${TRAEFIK_IP} paperless.homelab.local
             ${TRAEFIK_IP} homelab.local
             fallthrough
         }
@@ -125,6 +126,7 @@ else
         ${TRAEFIK_IP} nextcloud.homelab.local
         ${TRAEFIK_IP} homarr.homelab.local
         ${TRAEFIK_IP} vault.homelab.local
+        ${TRAEFIK_IP} paperless.homelab.local
         ${TRAEFIK_IP} homelab.local
         fallthrough
     }
