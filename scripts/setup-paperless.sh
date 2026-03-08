@@ -9,6 +9,7 @@ set -euo pipefail
 #  - kubectl konfiguriert und Cluster erreichbar
 #  - PostgreSQL (CNPG) läuft: kubectl get cluster -n infrastructure
 #  - Redis läuft: kubectl get pods -n infrastructure | grep redis
+#  - Vaultwarden läuft: kubectl get secret vaultwarden -n security
 #  - Keycloak Client 'paperless' angelegt (siehe docs/paperless-setup.md)
 #
 #  USAGE:
@@ -29,17 +30,22 @@ echo "==> Prüfe Voraussetzungen..."
 
 if ! kubectl get pod homelab-pg-1 -n infrastructure &>/dev/null; then
   echo "    FEHLER: PostgreSQL Pod 'homelab-pg-1' nicht gefunden."
-  echo "    Stelle sicher dass der CNPG Cluster läuft: kubectl get cluster -n infrastructure"
   exit 1
 fi
 echo "    PostgreSQL: OK"
 
 if ! kubectl get svc redis-master -n infrastructure &>/dev/null; then
   echo "    FEHLER: Redis Service nicht gefunden."
-  echo "    Stelle sicher dass Redis läuft: kubectl get pods -n infrastructure"
   exit 1
 fi
 echo "    Redis: OK"
+
+if ! kubectl get secret vaultwarden -n security &>/dev/null; then
+  echo "    FEHLER: Secret 'vaultwarden' in Namespace 'security' nicht gefunden."
+  echo "    SMTP-Credentials können nicht gelesen werden."
+  exit 1
+fi
+echo "    Vaultwarden Secret: OK"
 
 kubectl get namespace "${NAMESPACE}" &>/dev/null || kubectl create namespace "${NAMESPACE}"
 echo "    Namespace '${NAMESPACE}': OK"
@@ -75,20 +81,29 @@ kubectl exec homelab-pg-1 -n infrastructure -c postgres -- psql -U postgres -c "
 "
 echo "    Berechtigungen gesetzt."
 
-# ─── Redis Passwort aus bestehendem Secret lesen und URL-encoden ──────────────
+# ─── Redis Passwort lesen und URL-encoden ─────────────────────────────────────
 echo ""
 echo "==> Lese Redis Passwort und baue Redis URL..."
 REDIS_PW=$(kubectl get secret redis-secret -n infrastructure \
   -o jsonpath='{.data.redis-password}' | base64 -d)
 
-# URL-encode: Sonderzeichen wie / müssen als %2F kodiert werden
-# sonst parst Python die URL falsch (Port-Parsing-Fehler)
+# URL-encode: Sonderzeichen wie / → %2F, sonst parst Python die URL falsch
 REDIS_PW_ENCODED=$(python3 -c \
   "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read().strip(), safe=''))" \
   <<< "${REDIS_PW}")
 
 REDIS_URL="redis://:${REDIS_PW_ENCODED}@redis-master.infrastructure.svc.cluster.local:6379"
 echo "    Redis URL gebaut."
+
+# ─── SMTP Credentials aus Vaultwarden Secret lesen ───────────────────────────
+echo ""
+echo "==> Lese SMTP Credentials aus vaultwarden-Secret..."
+SMTP_USER=$(kubectl get secret vaultwarden -n security \
+  -o jsonpath='{.data.SMTP_USERNAME}' | base64 -d)
+SMTP_PW=$(kubectl get secret vaultwarden -n security \
+  -o jsonpath='{.data.SMTP_PASSWORD}' | base64 -d)
+echo "    SMTP User: ${SMTP_USER}"
+echo "    SMTP Passwort: gelesen."
 
 # ─── Keycloak OIDC Client Secret abfragen ────────────────────────────────────
 echo ""
@@ -121,7 +136,9 @@ if kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" &>/dev/null; then
     -p "{\"stringData\":{
       \"oidc-client-secret\":\"${OIDC_SECRET}\",
       \"redis-password\":\"${REDIS_PW}\",
-      \"redis-url\":\"${REDIS_URL}\"
+      \"redis-url\":\"${REDIS_URL}\",
+      \"smtp-username\":\"${SMTP_USER}\",
+      \"smtp-password\":\"${SMTP_PW}\"
     }}"
   echo "    Secret aktualisiert."
 else
@@ -132,6 +149,8 @@ else
     --from-literal=redis-url="${REDIS_URL}" \
     --from-literal=secret-key="${SECRET_KEY}" \
     --from-literal=oidc-client-secret="${OIDC_SECRET}" \
+    --from-literal=smtp-username="${SMTP_USER}" \
+    --from-literal=smtp-password="${SMTP_PW}" \
     -n "${NAMESPACE}"
   echo "    Secret erstellt."
 fi
@@ -148,6 +167,10 @@ if [[ -n "${PAPERLESS_DB_PW:-}" ]]; then
   echo "    Passwort:  ${PAPERLESS_DB_PW}"
   echo "    → In Ansible Vault sichern!"
 fi
+echo ""
+echo "  SMTP:"
+echo "    User: ${SMTP_USER}"
+echo "    Host: mail.your-server.de:587"
 echo ""
 echo "  Nächste Schritte:"
 echo ""

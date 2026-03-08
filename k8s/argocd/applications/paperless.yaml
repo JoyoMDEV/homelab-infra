@@ -75,6 +75,28 @@ spec:
                 name: paperless-secret
                 key: oidc-client-secret
 
+          # ── SMTP ──────────────────────────────────────────────────────────
+          PAPERLESS_EMAIL_HOST: mail.your-server.de
+          PAPERLESS_EMAIL_PORT: "587"
+          PAPERLESS_EMAIL_USE_TLS: "true"
+          PAPERLESS_EMAIL_FROM: contact@johannesmoseler.de
+          PAPERLESS_EMAIL_HOST_USER:
+            valueFrom:
+              secretKeyRef:
+                name: paperless-secret
+                key: smtp-username
+          PAPERLESS_EMAIL_HOST_PASSWORD:
+            valueFrom:
+              secretKeyRef:
+                name: paperless-secret
+                key: smtp-password
+
+          # ── SSL ───────────────────────────────────────────────────────────
+          # Homelab-CA wird gemountet aber update-ca-certificates läuft nicht
+          # automatisch → OIDC-Requests würden fehlschlagen
+          PAPERLESS_SOCIAL_AUTO_SIGNUP: true
+          REQUESTS_CA_BUNDLE: /usr/local/share/ca-certificates/homelab-ca.crt
+
           # ── Consumption ───────────────────────────────────────────────────
           PAPERLESS_CONSUMPTION_DIR: /data/consume
           PAPERLESS_DATA_DIR: /data/data
