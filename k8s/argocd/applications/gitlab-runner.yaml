@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://charts.gitlab.io
     chart: gitlab-runner
-    targetRevision: 0.74.0
+    targetRevision: "0.74.0"
     helm:
       values: |
         gitlabUrl: https://gitlab.homelab.local
@@ -35,6 +35,8 @@ spec:
               environment = ["GIT_SSL_CAINFO=/etc/ssl/certs/homelab-ca.crt"]
               tags = ["k8s"]
               run_untagged = true
+              [runners.custom_build_dir]
+                enabled = true
               [runners.kubernetes]
                 namespace = "gitlab"
                 image = "node:20-alpine"
