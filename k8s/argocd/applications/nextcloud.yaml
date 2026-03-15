@@ -137,6 +137,8 @@ spec:
 
           # PHP-FPM Config für bessere Performance
           phpConfigs:
+            zz-homelab-ca.ini: |
+              openssl.cafile = /etc/ssl/certs/homelab-ca.pem
             www.conf: |
               [www]
               user = www-data
