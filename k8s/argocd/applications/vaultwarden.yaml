@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://guerzon.github.io/vaultwarden
     chart: vaultwarden
-    targetRevision: 0.*
+    targetRevision: 0.33.0
     helm:
       values: |
         domain: "https://vault.homelab.local"
