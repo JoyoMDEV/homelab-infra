@@ -13,7 +13,7 @@ spec:
     chart: nextcloud
     # Chart 6.x hatte einen Bug: configs: + extraVolumeMounts erzeugten doppelte
     # mountPaths → "must be unique" Fehler. Chart 8.x behebt das.
-    targetRevision: 8.9.1
+    targetRevision: "8.9.1"
     helm:
       values: |
         image:
@@ -32,18 +32,13 @@ spec:
 
           # postStart Hook – läuft nach Container-Start im selben Container-Kontext
           # wie Nextcloud selbst. Erledigt in einem Schritt:
-          #   1. homelab-CA ans Alpine-Bundle anhängen (/etc/ssl/cert.pem)
-          #      PHP liest auf Alpine /etc/ssl/cert.pem – update-ca-certificates
-          #      schreibt nur nach /etc/ssl/certs/ und greift daher nicht für PHP.
-          #   2. Nextcloud installieren falls noch nicht installiert
-          #   3. trusted_domain setzen
-          #   4. Apps aktivieren:
-          #      - oidc_login    (Keycloak SSO)
-          #      - files_external (Storage Box via WebDAV)
-          #      - mail          (Webmailer für externen IMAP/SMTP)
-          #      - calendar      (CalDAV-Server)
-          #      - contacts      (CardDAV-Server)
-          #      - notes         (Markdown-Notizen)
+          #   1. Nextcloud installieren falls noch nicht installiert
+          #   2. trusted_domain setzen
+          #   3. Apps aktivieren
+          #
+          # HINWEIS: CA-Injektion wurde in den before-starting Hook verschoben
+          # (inject-ca.sh via nextcloud-ca-hook ConfigMap), da der postStart Hook
+          # zu früh lief und die CA nicht zuverlässig angehängt wurde.
           lifecycle:
             postStart:
               exec:
@@ -51,24 +46,12 @@ spec:
                   - /bin/sh
                   - -c
                   - |
-                    # set -e erst NACH dem CA-Block – grep gibt exit 1 zurück wenn
-                    # kein Match gefunden wird, was set -e vorzeitig abbrechen lässt.
-
-                    # ── 1. homelab-CA ans Alpine PHP-Bundle anhängen ──────────
-                    echo "==> Registriere homelab CA..."
-                    if grep -q "Homelab Internal CA" /etc/ssl/cert.pem 2>/dev/null; then
-                      echo "    CA bereits im Bundle."
-                    else
-                      cat /etc/ssl/certs/homelab-ca.pem >> /etc/ssl/cert.pem
-                      echo "    CA angehängt."
-                    fi
-
                     set -e
 
                     # PHP-FPM braucht einen Moment zum Starten
                     sleep 10
 
-                    # ── 2. Installation falls nötig ───────────────────────────
+                    # ── 1. Installation falls nötig ───────────────────────────
                     STATUS=$(su -s /bin/sh www-data -c \
                       "php /var/www/html/occ status --output=json 2>/dev/null" \
                       | grep -o '"installed":true' || true)
@@ -101,14 +84,14 @@ spec:
                       echo "==> Nextcloud bereits installiert, überspringe Installation."
                     fi
 
-                    # ── 3. trusted_domain sicherstellen ──────────────────────
+                    # ── 2. trusted_domain sicherstellen ──────────────────────
                     su -s /bin/sh www-data -c "
                       php /var/www/html/occ config:system:set \
                         trusted_domains 0 \
                         --value=nextcloud.homelab.local 2>/dev/null
                     " || true
 
-                    # ── 4. Apps aktivieren ────────────────────────────────────
+                    # ── 3. Apps aktivieren ────────────────────────────────────
                     echo "==> Aktiviere Apps..."
 
                     activate_app() {
@@ -245,17 +228,25 @@ spec:
               );
 
           # homelab-CA für TLS-Verifikation gegen auth.homelab.local.
-          # Pfad: /etc/ssl/certs/ – wird vom Chart NICHT belegt, kein Konflikt möglich.
+          # CA wird über den before-starting Hook (inject-ca.sh) injiziert –
+          # zuverlässiger als postStart, da der Hook vor PHP-FPM läuft.
           extraVolumes:
             - name: homelab-ca
               secret:
                 secretName: homelab-ca
+            - name: ca-hook
+              configMap:
+                name: nextcloud-ca-hook
+                defaultMode: 0755
 
           extraVolumeMounts:
             - name: homelab-ca
               mountPath: /etc/ssl/certs/homelab-ca.pem
               subPath: homelab-ca.crt
               readOnly: true
+            - name: ca-hook
+              mountPath: /docker-entrypoint-hooks.d/before-starting/inject-ca.sh
+              subPath: inject-ca.sh
 
         internalDatabase:
           enabled: false
@@ -329,7 +320,8 @@ spec:
           initialDelaySeconds: 30
 
         # initContainers: nur noch für Volume-Vorbereitung zuständig.
-        # CA-Registrierung und App-Aktivierung sind in den postStart Hook gewandert.
+        # CA-Registrierung erfolgt via before-starting Hook (inject-ca.sh).
+        # App-Aktivierung erfolgt im postStart Hook.
         initContainers:
           - name: setup-nextcloud-apps
             image: nextcloud:fpm-alpine
@@ -338,7 +330,8 @@ spec:
               - -c
               - |
                 echo "==> initContainer: bereit."
-                echo "    CA-Registrierung und App-Aktivierung erfolgen im postStart Hook."
+                echo "    CA-Injektion erfolgt via before-starting Hook."
+                echo "    App-Aktivierung erfolgt im postStart Hook."
             volumeMounts:
               - name: nextcloud-main
                 mountPath: /var/www/html
