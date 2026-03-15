@@ -1,0 +1,67 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "gitAuthor": "Renovate Bot <renovate@homelab.local>",
+  "labels": ["dependencies"],
+  "assignees": ["JoyoMDEV"],
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 10,
+  "separateMajorMinor": true,
+  "separateMinorPatch": false,
+  "platformAutomerge": false,
+
+  "argocd": {
+    "enabled": true,
+    "managerFilePatterns": [
+      "/k8s/argocd/applications/.*\\.ya?ml$/"
+    ]
+  },
+
+  "helm-values": {
+    "enabled": true,
+    "managerFilePatterns": [
+      "/k8s/argocd/applications/.*\\.ya?ml$/",
+      "/k8s/charts/.*/values\\.ya?ml$/"
+    ]
+  },
+
+  "terraform": {
+    "enabled": true
+  },
+
+  "ansible": {
+    "enabled": true
+  },
+
+  "packageRules": [
+    {
+      "description": "Separate PR for each Helm chart update",
+      "matchManagers": ["argocd", "helm-values"],
+      "separateMultipleMajor": true
+    },
+    {
+      "description": "Add helm label to ArgoCD chart PRs",
+      "matchManagers": ["argocd"],
+      "labels": ["dependencies", "helm"]
+    },
+    {
+      "description": "Add terraform label",
+      "matchManagers": ["terraform"],
+      "labels": ["dependencies", "terraform"]
+    },
+    {
+      "description": "Disable major updates for kube-prometheus-stack (breaking changes)",
+      "matchPackageNames": ["kube-prometheus-stack"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    },
+    {
+      "description": "Disable major updates for GitLab (requires DB migrations)",
+      "matchPackageNames": ["gitlab/gitlab-ce"],
+      "matchUpdateTypes": ["major"],
+      "enabled": false
+    }
+  ]
+}
