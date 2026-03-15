@@ -1,0 +1,51 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: renovate
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://docs.renovatebot.com/helm-charts
+    chart: renovate
+    targetRevision: "46.64.0"
+    helm:
+      values: |
+        cronjob:
+          schedule: "0 6 * * *"
+          successfulJobsHistoryLimit: 3
+          failedJobsHistoryLimit: 3
+
+        # existingSecret ist ein TOP-LEVEL Wert, NICHT unter renovate:
+        # Das Secret wird als envFrom.secretRef in den Pod gemountet.
+        # Key im Secret muss RENOVATE_TOKEN heißen.
+        existingSecret: renovate-secret
+
+        renovate:
+          config: |
+            {
+              "platform": "github",
+              "repositories": ["JoyoMDEV/homelab-infra"],
+              "autodiscover": false,
+              "onboarding": false,
+              "requireConfig": "optional"
+            }
+
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+          limits:
+            memory: 1Gi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: automation
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
