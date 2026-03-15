@@ -13,7 +13,7 @@ spec:
     chart: nextcloud
     # Chart 6.x hatte einen Bug: configs: + extraVolumeMounts erzeugten doppelte
     # mountPaths → "must be unique" Fehler. Chart 8.x behebt das.
-    targetRevision: 8.0.1
+    targetRevision: 8.9.1
     helm:
       values: |
         image:

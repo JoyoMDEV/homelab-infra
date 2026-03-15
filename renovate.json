@@ -62,6 +62,13 @@
       "matchPackageNames": ["gitlab/gitlab-ce"],
       "matchUpdateTypes": ["major"],
       "enabled": false
+    },
+    {
+      "description": "Ignore Nextcloud initContainer image – must stay in sync mit Chart",
+      "matchPackageNames": ["nextcloud"],
+      "matchManagers": ["helm-values"],
+      "matchPaths": ["k8s/argocd/applications/nextcloud.yaml"],
+      "enabled": false
     }
   ]
 }
