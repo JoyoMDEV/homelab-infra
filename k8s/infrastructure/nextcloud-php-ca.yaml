@@ -5,4 +5,7 @@ metadata:
   namespace: productivity
 data:
   zz-homelab-ca.ini: |
-    openssl.cafile = /etc/ssl/certs/homelab-ca.pem
+    ; Kombinierter CA-Bundle: Standard-CAs + homelab interne CA
+    ; Enthält alle öffentlichen CAs (Hetzner, Let's Encrypt, etc.) + homelab CA
+    ; Wird via initContainer oder manuell als ConfigMap nextcloud-combined-ca gebaut
+    openssl.cafile = /etc/ssl/certs/combined-ca.crt

@@ -193,9 +193,10 @@ spec:
                 'oidc_login_button_text'           => 'Mit Keycloak anmelden',
               );
 
-          # homelab-CA wird via php.ini direkt in PHP eingebunden
-          # (nextcloud-php-ca ConfigMap → /usr/local/etc/php/conf.d/zz-homelab-ca.ini)
-          # Das ist zuverlässiger als cert.pem zu modifizieren.
+          # CA-Lösung:
+          # - combined-ca.crt = Standard-CA-Bundle + homelab CA (als ConfigMap)
+          # - php.ini setzt openssl.cafile auf combined-ca.crt
+          # - PHP vertraut damit sowohl öffentlichen CAs (Hetzner, etc.) als auch homelab CA
           extraVolumes:
             - name: homelab-ca
               secret:
@@ -203,6 +204,9 @@ spec:
             - name: php-ca-ini
               configMap:
                 name: nextcloud-php-ca
+            - name: combined-ca
+              configMap:
+                name: nextcloud-combined-ca
 
           extraVolumeMounts:
             - name: homelab-ca
@@ -212,6 +216,10 @@ spec:
             - name: php-ca-ini
               mountPath: /usr/local/etc/php/conf.d/zz-homelab-ca.ini
               subPath: zz-homelab-ca.ini
+              readOnly: true
+            - name: combined-ca
+              mountPath: /etc/ssl/certs/combined-ca.crt
+              subPath: combined-ca.crt
               readOnly: true
 
         internalDatabase:
