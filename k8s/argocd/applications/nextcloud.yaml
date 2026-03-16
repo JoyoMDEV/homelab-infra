@@ -30,15 +30,6 @@ spec:
             usernameKey: nextcloud-username
             passwordKey: nextcloud-password
 
-          # postStart Hook – läuft nach Container-Start im selben Container-Kontext
-          # wie Nextcloud selbst. Erledigt in einem Schritt:
-          #   1. Nextcloud installieren falls noch nicht installiert
-          #   2. trusted_domain setzen
-          #   3. Apps aktivieren
-          #
-          # HINWEIS: CA-Injektion wurde in den before-starting Hook verschoben
-          # (inject-ca.sh via nextcloud-ca-hook ConfigMap), da der postStart Hook
-          # zu früh lief und die CA nicht zuverlässig angehängt wurde.
           lifecycle:
             postStart:
               exec:
@@ -59,7 +50,6 @@ spec:
                     if [ -z "$STATUS" ]; then
                       echo "==> Installiere Nextcloud..."
 
-                      # Leere config.php entfernen (vom Chart als Placeholder angelegt)
                       if [ -f /var/www/html/config/config.php ]; then
                         SIZE=$(stat -c%s /var/www/html/config/config.php)
                         if [ "$SIZE" -le 6 ]; then
@@ -108,11 +98,8 @@ spec:
                       fi
                     }
 
-                    # Kern-Integrationen
                     activate_app oidc_login
                     activate_app files_external
-
-                    # Produktiv-Apps
                     activate_app mail
                     activate_app calendar
                     activate_app contacts
@@ -127,18 +114,13 @@ spec:
                 secretKeyRef:
                   name: nextcloud-secret
                   key: redis-password
-            # OIDC Client Secret – wird in oidc.config.php via getenv() gelesen.
-            # Kommt damit nie als Klartext in Git oder eine ConfigMap.
             - name: OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: nextcloud-secret
                   key: oidc-client-secret
 
-          # PHP-FPM Config für bessere Performance
           phpConfigs:
-            zz-homelab-ca.ini: |
-              openssl.cafile = /etc/ssl/certs/homelab-ca.pem
             www.conf: |
               [www]
               user = www-data
@@ -152,15 +134,9 @@ spec:
               pm.max_requests = 500
               clear_env = no
 
-          # defaultConfigs steuert welche Chart-internen Default-Configs gemountet werden.
-          # redis.config.php: false verhindert den Chart-internen Mount.
-          # Ohne diesen Eintrag würde das Chart redis.config.php zweimal mounten
-          # (einmal intern, einmal aus configs:) → "must be unique" Fehler.
           defaultConfigs:
             redis.config.php: false
 
-          # configs: werden vom Chart als ConfigMap angelegt und nach
-          # /var/www/html/config/<n> gemountet. Keine eigenen VolumeMounts nötig.
           configs:
             redis.config.php: |-
               <?php
@@ -192,18 +168,6 @@ spec:
                 'loglevel' => 1,
               );
 
-            # OIDC Login via Keycloak (oidc_login App).
-            # Client Secret kommt aus Env-Variable – steht nie im Klartext in Git.
-            #
-            # groups wird NICHT als Scope angefordert – der Gruppen-Claim kommt
-            # über den Group Membership Mapper im nextcloud-dedicated Client Scope
-            # automatisch im Token. Keycloak gibt "invalid_scope" zurück wenn groups
-            # als expliziter Scope angefordert wird ohne ihn als Client Scope zu
-            # registrieren.
-            #
-            # oidc_login_disable_registration: false – muss explizit gesetzt werden!
-            # Der Default in oidc_login 3.x ist true (invertierte Logik),
-            # was dazu führt dass neue User nicht angelegt werden können.
             oidc.config.php: |-
               <?php
               $CONFIG = array(
@@ -229,26 +193,26 @@ spec:
                 'oidc_login_button_text'           => 'Mit Keycloak anmelden',
               );
 
-          # homelab-CA für TLS-Verifikation gegen auth.homelab.local.
-          # CA wird über den before-starting Hook (inject-ca.sh) injiziert –
-          # zuverlässiger als postStart, da der Hook vor PHP-FPM läuft.
+          # homelab-CA wird via php.ini direkt in PHP eingebunden
+          # (nextcloud-php-ca ConfigMap → /usr/local/etc/php/conf.d/zz-homelab-ca.ini)
+          # Das ist zuverlässiger als cert.pem zu modifizieren.
           extraVolumes:
             - name: homelab-ca
               secret:
                 secretName: homelab-ca
-            - name: ca-hook
+            - name: php-ca-ini
               configMap:
-                name: nextcloud-ca-hook
-                defaultMode: 0755
+                name: nextcloud-php-ca
 
           extraVolumeMounts:
             - name: homelab-ca
               mountPath: /etc/ssl/certs/homelab-ca.pem
               subPath: homelab-ca.crt
               readOnly: true
-            - name: ca-hook
-              mountPath: /docker-entrypoint-hooks.d/before-starting/inject-ca.sh
-              subPath: inject-ca.sh
+            - name: php-ca-ini
+              mountPath: /usr/local/etc/php/conf.d/zz-homelab-ca.ini
+              subPath: zz-homelab-ca.ini
+              readOnly: true
 
         internalDatabase:
           enabled: false
@@ -265,21 +229,17 @@ spec:
             secretName: nextcloud-secret
             usernameKey: db-username
             passwordKey: db-password
-          # sslMode: disable – CNPG legt Client-Zertifikate unter /root/.postgresql/ ab,
-          # aber Nextcloud läuft als www-data (UID 82) und hat keinen Lesezugriff auf /root/.
-          # Innerhalb des Clusters (Pod → Service) ist SSL nicht notwendig.
           sslMode: disable
 
         redis:
-          enabled: false # wir nutzen den bestehenden Redis
+          enabled: false
 
-        # nginx Sidecar (required für fpm-alpine flavor)
         nginx:
           enabled: true
 
         persistence:
           enabled: true
-          size: 10Gi # für Config, Apps, Previews – Nutzerdateien via Storage Box
+          size: 10Gi
 
         resources:
           requests:
@@ -306,7 +266,6 @@ spec:
         cronjob:
           enabled: true
 
-        # Startup dauert länger wegen DB-Initialisierung beim ersten Start
         startupProbe:
           enabled: true
           initialDelaySeconds: 30
@@ -321,9 +280,6 @@ spec:
           enabled: true
           initialDelaySeconds: 30
 
-        # initContainers: nur noch für Volume-Vorbereitung zuständig.
-        # CA-Registrierung erfolgt via before-starting Hook (inject-ca.sh).
-        # App-Aktivierung erfolgt im postStart Hook.
         initContainers:
           - name: setup-nextcloud-apps
             image: nextcloud:fpm-alpine
@@ -332,8 +288,6 @@ spec:
               - -c
               - |
                 echo "==> initContainer: bereit."
-                echo "    CA-Injektion erfolgt via before-starting Hook."
-                echo "    App-Aktivierung erfolgt im postStart Hook."
             volumeMounts:
               - name: nextcloud-main
                 mountPath: /var/www/html

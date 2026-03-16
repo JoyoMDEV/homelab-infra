@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nextcloud-php-ca
+  namespace: productivity
+data:
+  zz-homelab-ca.ini: |
+    openssl.cafile = /etc/ssl/certs/homelab-ca.pem
