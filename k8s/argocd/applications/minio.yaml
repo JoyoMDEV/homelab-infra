@@ -1,0 +1,63 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minio
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.min.io
+    chart: minio
+    targetRevision: "5.4.0"
+    helm:
+      values: |
+        # MinIO läuft als Single-Node – für Homelab ausreichend
+        mode: standalone
+
+        # Credentials kommen aus dem Secret
+        existingSecret: minio-secret
+
+        # Persistenz auf einem PVC – MinIO selbst cached nur,
+        # echter Storage ist die Storage Box via WebDAV-PVC
+        persistence:
+          enabled: true
+          size: 10Gi
+
+        # Buckets werden beim Start automatisch angelegt
+        buckets:
+          - name: cnpg-backups
+            policy: none
+            purge: false
+          - name: velero-backups
+            policy: none
+            purge: false
+
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+          limits:
+            memory: 1Gi
+
+        # Kein Ingress nötig – CNPG redet intern mit MinIO
+        ingress:
+          enabled: false
+
+        # Metrics für Prometheus
+        metrics:
+          serviceMonitor:
+            enabled: true
+            additionalLabels:
+              release: monitoring
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: infrastructure
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false  # Namespace existiert bereits
