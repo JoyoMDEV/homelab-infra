@@ -3,11 +3,12 @@ set -euo pipefail
 
 # =============================================================================
 #  setup-minio.sh
-#  Erstellt das Kubernetes Secret für MinIO mit sicheren Credentials.
+#  Erstellt das Kubernetes Secret für MinIO mit Credentials und
+#  Storage Box Passwort für den Restic-Backup-CronJob.
 #
 #  VORAUSSETZUNGEN:
 #  - kubectl konfiguriert und Cluster erreichbar
-#  - Namespace 'infrastructure' existiert: kubectl get ns infrastructure
+#  - Namespace 'infrastructure' existiert
 #
 #  USAGE:
 #    ./scripts/setup-minio.sh
@@ -22,10 +23,10 @@ echo "  MinIO – Secret Setup"
 echo "============================================"
 echo ""
 
-# ─── Credentials abfragen ────────────────────────────────────────────────────
+# ─── MinIO Credentials ───────────────────────────────────────────────────────
 echo "==> MinIO Root Credentials"
-echo "    Diese Credentials werden für den MinIO Admin-Zugang"
-echo "    und für CNPG Barman verwendet."
+echo "    Werden für MinIO Admin-Zugang und CNPG Barman verwendet."
+echo "    Außerdem als Restic-Repository-Passwort für die Storage Box."
 echo ""
 read -rp    "    Root Username (z.B. minioadmin): " MINIO_USER
 read -rsp   "    Root Password (mind. 8 Zeichen, wird nicht angezeigt): " MINIO_PASSWORD
@@ -41,6 +42,20 @@ if [[ ${#MINIO_PASSWORD} -lt 8 ]]; then
   exit 1
 fi
 
+# ─── Storage Box Passwort ────────────────────────────────────────────────────
+echo ""
+echo "==> Hetzner Storage Box Passwort"
+echo "    Wird vom Restic CronJob für den Offsite-Backup verwendet."
+echo "    Storage Box: u549610.your-storagebox.de"
+echo ""
+read -rsp "    Storage Box Passwort (wird nicht angezeigt): " STORAGE_BOX_PASSWORD
+echo ""
+
+if [[ -z "${STORAGE_BOX_PASSWORD}" ]]; then
+  echo "    FEHLER: Storage Box Passwort leer. Abbruch."
+  exit 1
+fi
+
 # ─── Secret anlegen oder aktualisieren ───────────────────────────────────────
 echo ""
 echo "==> Erstelle Secret '${SECRET_NAME}' in Namespace '${NAMESPACE}'..."
@@ -53,9 +68,10 @@ fi
 kubectl create secret generic "${SECRET_NAME}" \
   --from-literal=rootUser="${MINIO_USER}" \
   --from-literal=rootPassword="${MINIO_PASSWORD}" \
+  --from-literal=storage-box-password="${STORAGE_BOX_PASSWORD}" \
   -n "${NAMESPACE}"
 
-echo "    Secret erstellt."
+echo "    Secret erstellt mit Keys: rootUser, rootPassword, storage-box-password"
 
 # ─── Fertig ───────────────────────────────────────────────────────────────────
 echo ""
@@ -66,21 +82,18 @@ echo "  Nächste Schritte:"
 echo ""
 echo "  1. MinIO deployen:"
 echo "     git add k8s/argocd/applications/minio.yaml"
-echo "     git commit -m 'feat: add MinIO as S3 proxy for CNPG backups'"
+echo "     git add k8s/infrastructure/minio-backup-restic.yaml"
+echo "     git commit -m 'feat: add MinIO + Restic backup to Storage Box'"
 echo "     git push"
 echo ""
 echo "  2. Warten bis MinIO läuft:"
 echo "     kubectl get pods -n infrastructure | grep minio"
 echo ""
-echo "  3. CNPG Backup aktivieren:"
-echo "     git add k8s/infrastructure/postgres-cluster.yaml"
-echo "     git commit -m 'feat: enable CNPG Barman backup via MinIO'"
-echo "     git push"
+echo "  3. Restic Backup manuell testen:"
+echo "     kubectl create job restic-test-\$(date +%s) \\"
+echo "       --from=cronjob/minio-backup-restic -n infrastructure"
+echo "     kubectl logs -n infrastructure -l job-name -f"
 echo ""
-echo "  4. Ersten manuellen Backup triggern:"
-echo "     kubectl cnpg backup homelab-pg -n infrastructure"
-echo ""
-echo "  5. Backup Status prüfen:"
-echo "     kubectl get backup -n infrastructure"
-echo "     kubectl cnpg status homelab-pg -n infrastructure"
+echo "  4. CNPG Recovery testen:"
+echo "     ./scripts/test-cnpg-recovery.sh"
 echo "============================================"
