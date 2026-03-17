@@ -22,6 +22,8 @@ spec:
         # ── Grafana ──────────────────────────────────────────────────────────
         grafana:
           adminPassword: ""  # wird nicht verwendet – Login via Keycloak OIDC
+          initChownData:
+            enabled: false
 
           # Keycloak OIDC
           grafana.ini:
