@@ -73,7 +73,7 @@ spec:
                   (restic snapshots 2>/dev/null || restic init) &&
                   echo "    Repository bereit." &&
                   echo "==> [4/5] MinIO Daten sichern..." &&
-                  restic backup /minio-data --tag minio --tag cnpg-backups --compression max &&
+                  restic backup /export --tag minio --tag cnpg-backups --compression max &&
                   echo "==> [5/5] Alte Snapshots bereinigen..." &&
                   restic forget --keep-daily 30 --keep-weekly 4 --keep-monthly 3 --prune &&
                   echo "==> Backup abgeschlossen." &&
@@ -81,7 +81,7 @@ spec:
 
               volumeMounts:
                 - name: minio-data
-                  mountPath: /minio-data
+                  mountPath: /export
                   readOnly: true
                 - name: minio-secret
                   mountPath: /secrets/minio
@@ -92,10 +92,10 @@ spec:
 
               resources:
                 requests:
-                  memory: 256Mi
+                  memory: "512Mi"
                   cpu: 100m
                 limits:
-                  memory: 512Mi
+                  memory: "2Gi"
 
           volumes:
             - name: minio-data
