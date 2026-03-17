@@ -15,12 +15,6 @@ spec:
       values: |
         architecture: standalone
 
-        image:
-          registry: docker.io
-          repository: redis
-          tag: "latest"
-          pullPolicy: IfNotPresent
-
         auth:
           enabled: true
           existingSecret: redis-secret
