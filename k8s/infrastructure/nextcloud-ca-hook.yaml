@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nextcloud-ca-hook
+  namespace: productivity
+data:
+  inject-ca.sh: |
+    #!/bin/sh
+    echo "==> Injecting homelab CA into PHP bundle..."
+    if grep -q "Homelab Internal CA" /etc/ssl/cert.pem 2>/dev/null; then
+      echo "    CA already present, skipping."
+    else
+      cat /etc/ssl/certs/homelab-ca.pem >> /etc/ssl/cert.pem
+      echo "    CA injected successfully."
+    fi

@@ -28,8 +28,39 @@ spec:
       database: homelab
       owner: homelab
 
+  # ── Backup via Barman + MinIO ─────────────────────────────────────────────
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://cnpg-backups/
+      endpointURL: http://minio.infrastructure.svc.cluster.local:9000
+      s3Credentials:
+        accessKeyId:
+          name: minio-secret
+          key: rootUser
+        secretAccessKey:
+          name: minio-secret
+          key: rootPassword
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+        immediateCheckpoint: false
+        jobs: 2
+    retentionPolicy: "30d"
+
   monitoring:
-    # PodMonitor aktiviert – Prometheus sammelt CNPG-Metriken automatisch ein.
-    # Voraussetzung: kube-prometheus-stack muss im Cluster laufen.
-    # Dashboard-Import: Grafana → Import → ID 20417 (CloudNativePG)
     enablePodMonitor: true
+
+---
+# Täglicher Backup um 03:00 Uhr – nach Velero (02:00) und vor Restic (03:30)
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: homelab-pg-daily
+  namespace: infrastructure
+spec:
+  schedule: "0 3 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: homelab-pg
+  immediate: false
