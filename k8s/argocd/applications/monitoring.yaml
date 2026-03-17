@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://prometheus-community.github.io/helm-charts
     chart: kube-prometheus-stack
-    targetRevision: 82.10.3
+    targetRevision: 82.10.5
     helm:
       values: |
         # Seit Chart 68.x: CRD-Upgrades automatisch via Job statt manuell per kubectl.
@@ -22,6 +22,8 @@ spec:
         # ── Grafana ──────────────────────────────────────────────────────────
         grafana:
           adminPassword: ""  # wird nicht verwendet – Login via Keycloak OIDC
+          initChownData:
+            enabled: false
 
           # Keycloak OIDC
           grafana.ini:

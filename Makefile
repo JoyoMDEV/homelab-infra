@@ -1,4 +1,4 @@
-.PHONY: help lint tf-init tf-plan tf-apply tf-destroy tf-output ansible-ping ansible-run ansible-check ansible-cluster ansible-samba bootstrap bootstrap-certs setup-coredns setup-monitoring status pods apps vault-edit vault-view argocd-pw cert-status cert-ca cert-sync runner-setup runner-status runner-logs
+.PHONY: help lint tf-init tf-plan tf-apply tf-destroy tf-output ansible-ping ansible-run ansible-check ansible-cluster ansible-samba bootstrap bootstrap-certs setup-coredns setup-monitoring status pods apps vault-edit vault-view argocd-pw cert-status cert-ca cert-sync runner-setup runner-status runner-logs recovery-test
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -146,3 +146,7 @@ cert-ca: ## Show the CA certificate (for importing into browsers/devices)
 		echo "CA cert not found locally. Extract from Kubernetes:"; \
 		echo "  kubectl get secret homelab-ca-keypair -n cert-manager -o jsonpath='{.data.tls\\.crt}' | base64 -d > certs/homelab-ca.crt"; \
 	fi
+
+recovery-test: ## Test PostgreSQL recovery from backup (quarterly)
+    chmod +x scripts/test-cnpg-recovery.sh
+    ./scripts/test-cnpg-recovery.sh

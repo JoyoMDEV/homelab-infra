@@ -8,18 +8,12 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: registry-1.docker.io/bitnamicharts
+    repoURL: https://charts.bitnami.com/bitnami
     chart: redis
-    targetRevision: 25.7.0
+    targetRevision: "25.3.2"
     helm:
       values: |
         architecture: standalone
-
-        image:
-          registry: docker.io
-          repository: redis
-          tag: "latest"
-          pullPolicy: IfNotPresent
 
         auth:
           enabled: true

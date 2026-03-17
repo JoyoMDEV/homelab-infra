@@ -1,0 +1,109 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: minio-backup
+  namespace: infrastructure
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: minio-backup
+  namespace: infrastructure
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+    resourceNames: ["minio-secret", "restic-ssh-key"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: minio-backup
+  namespace: infrastructure
+subjects:
+  - kind: ServiceAccount
+    name: minio-backup
+    namespace: infrastructure
+roleRef:
+  kind: Role
+  apiGroup: rbac.authorization.k8s.io
+  name: minio-backup
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: minio-backup-restic
+  namespace: infrastructure
+spec:
+  schedule: "30 3 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: minio-backup
+          restartPolicy: OnFailure
+          containers:
+            - name: restic
+              image: restic/restic:0.17.3
+              command:
+                - /bin/sh
+                - -c
+                - >-
+                  set -euo pipefail &&
+                  echo "==> [1/5] SSH Key einrichten..." &&
+                  mkdir -p /root/.ssh &&
+                  cp /secrets/ssh/ssh-privatekey /root/.ssh/id_ed25519 &&
+                  chmod 600 /root/.ssh/id_ed25519 &&
+                  SFTP_HOST=$(cat /secrets/ssh/storage-box-host) &&
+                  SFTP_USER=$(cat /secrets/ssh/storage-box-user) &&
+                  SFTP_PORT=$(cat /secrets/ssh/storage-box-port) &&
+                  printf "Host %s\n  Port %s\n  User %s\n  IdentityFile /root/.ssh/id_ed25519\n  StrictHostKeyChecking accept-new\n  UserKnownHostsFile /root/.ssh/known_hosts\n" "${SFTP_HOST}" "${SFTP_PORT}" "${SFTP_USER}" > /root/.ssh/config &&
+                  chmod 600 /root/.ssh/config &&
+                  echo "==> [2/5] Restic Repository konfigurieren..." &&
+                  MINIO_PASSWORD=$(cat /secrets/minio/rootPassword) &&
+                  export RESTIC_REPOSITORY="sftp:${SFTP_USER}@${SFTP_HOST}:restic-minio/" &&
+                  export RESTIC_PASSWORD="${MINIO_PASSWORD}" &&
+                  echo "==> [3/5] Restic Repository initialisieren falls nötig..." &&
+                  (restic snapshots 2>/dev/null || restic init) &&
+                  echo "    Repository bereit." &&
+                  echo "==> [4/5] MinIO Daten sichern..." &&
+                  restic backup /export --tag minio --tag cnpg-backups --compression max &&
+                  echo "==> [5/5] Alte Snapshots bereinigen..." &&
+                  restic forget --keep-daily 30 --keep-weekly 4 --keep-monthly 3 --prune &&
+                  echo "==> Backup abgeschlossen." &&
+                  restic snapshots --last 3
+
+              volumeMounts:
+                - name: minio-data
+                  mountPath: /export
+                  readOnly: true
+                - name: minio-secret
+                  mountPath: /secrets/minio
+                  readOnly: true
+                - name: restic-ssh-key
+                  mountPath: /secrets/ssh
+                  readOnly: true
+
+              resources:
+                requests:
+                  memory: "512Mi"
+                  cpu: 100m
+                limits:
+                  memory: "2Gi"
+
+          volumes:
+            - name: minio-data
+              persistentVolumeClaim:
+                claimName: minio
+            - name: minio-secret
+              secret:
+                secretName: minio-secret
+            - name: restic-ssh-key
+              secret:
+                secretName: restic-ssh-key
