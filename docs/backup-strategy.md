@@ -9,7 +9,7 @@ Dieses Dokument beschreibt die Backup-Strategie für das Homelab-Setup bestehend
 | Komponente | Typ | Kritikalität | Sicherung |
 |---|---|---|---|
 | PostgreSQL (CNPG) | Datenbank | 🔴 Kritisch | ✅ CNPG Barman via MinIO + Restic Offsite |
-| Kubernetes Cluster State | K8s-Ressourcen | 🟠 Hoch | ❌ Velero noch nicht deployed |
+| Kubernetes Cluster State | K8s-Ressourcen | 🟠 Hoch | ✅ Velero (täglich 02:00, 14 Tage Retention) |
 | Nextcloud Nutzerdaten | Dateien | 🟠 Hoch | ⚠️ ZFS-Snapshots (Storage Box) |
 | Samba AD DC | Verzeichnisdienst | 🔴 Kritisch | ❌ Noch nicht implementiert |
 | GitLab Repositories | Git-Daten | 🟠 Hoch | ✅ Liegt in PostgreSQL (gesichert) |
@@ -58,13 +58,54 @@ kubectl cnpg status homelab-pg -n infrastructure
 
 ---
 
-### Ebene 2 – Kubernetes Cluster State ❌ Noch nicht implementiert
+### Ebene 2 – Kubernetes Cluster State ✅ Implementiert
 
-**Geplant:** Velero mit MinIO als Backend (Issue #5)
+**Architektur:**
+```
+Velero (täglich 02:00)
+  → Backup aller Namespaces (außer kube-system) → MinIO (velero-backups/)
+  → Retention: 14 Tage (ttl: 336h)
 
-**Risiko:** Bei vollständigem Cluster-Verlust müssen Secrets manuell neu angelegt werden. Kritische Secrets:
-- `gitlab-rails-secrets` → in Ansible Vault sichern!
-- `homelab-ca-keypair` → in Ansible Vault sichern!
+MinIO PVC (lokal im Cluster)
+  → Restic Offsite (täglich 03:30) → Storage Box (/restic-minio/)
+```
+
+**Details:**
+- Cluster-State (Secrets, Deployments, ConfigMaps, Services, CRDs): täglich gesichert
+- PVC-Backup: nicht aktiv (k3s local-path Storage Class nicht unterstützt)
+- Retention Velero: 14 Tage
+- Kritische Secrets zusätzlich in Ansible Vault gesichert:
+  - `gitlab-rails-secrets` ✅
+  - `homelab-ca-keypair` ✅
+
+**Recovery:**
+```bash
+# Recovery-Test ausführen (einmal pro Quartal empfohlen)
+make velero-recovery-test
+
+# Manuellen Backup triggern
+kubectl apply -f - <<YAML
+apiVersion: velero.io/v1
+kind: Backup
+metadata:
+  name: manual-backup
+  namespace: backup
+spec:
+  ttl: 336h
+  storageLocation: default
+  excludedNamespaces:
+    - kube-system
+  defaultVolumesToFsBackup: false
+YAML
+
+# Backup Status prüfen
+kubectl get backup.velero.io -n backup
+kubectl describe backup.velero.io <name> -n backup
+```
+
+**Recovery Zeit:** ~2-5 Minuten für Cluster-State
+**RPO:** ~24 Stunden
+**RTO:** ~30 Minuten (neuer Cluster + Velero + Restore)
 
 ---
 
@@ -110,7 +151,7 @@ make vault-edit
 | 02:30 | ZFS-Snapshot (Storage Box, automatisch) | Storage Box intern | ✅ |
 | 03:00 | CNPG Base-Backup (ScheduledBackup) | MinIO → lokal | ✅ |
 | 03:30 | Restic Offsite (CronJob) | MinIO → Storage Box SFTP | ✅ |
-| 02:00 | Velero Cluster-Backup | MinIO → lokal | ❌ geplant |
+| 02:00 | Velero Cluster-Backup | MinIO → lokal | ✅ |
 | 03:30 | Restic Nextcloud-Dateien | Backblaze B2 | ❌ geplant |
 | 01:00 | Samba AD Backup (systemd Timer) | Storage Box | ❌ geplant |
 
@@ -159,10 +200,7 @@ Noch kein Backup implementiert – manuelle Neu-Provisionierung nötig.
 
 ## Offene Punkte / ToDos
 
-- [ ] **Velero deployen** (Issue #5) – Kubernetes Cluster State
 - [ ] **Ansible-Rolle `backup`** für Samba AD DC (Issue #6)
 - [ ] **Restic CronJob** für Nextcloud-Dateien auf Backblaze B2 (Issue #5)
 - [ ] **`gitlab-rails-secrets` und `homelab-ca-keypair`** in Ansible Vault sichern
 - [ ] **Recovery-Tests** einmal pro Quartal: `make recovery-test`
-- [ ] **Backup Secrets zu Vault migrieren** (Issue #7) – SSH Key und MinIO Credentials
-- [ ] **Terraform: `storage_box_type`** von `bx11` auf `bx21` prüfen – mit Backups könnte 100 GB eng werden

@@ -147,6 +147,25 @@ cert-ca: ## Show the CA certificate (for importing into browsers/devices)
 		echo "  kubectl get secret homelab-ca-keypair -n cert-manager -o jsonpath='{.data.tls\\.crt}' | base64 -d > certs/homelab-ca.crt"; \
 	fi
 
-recovery-test: ## Test PostgreSQL recovery from backup (quarterly)
+recovery-test: postgres-recovery-test velero-recovery-test
+
+postgres-recovery-test: ## Test PostgreSQL recovery from backup (quarterly)
     chmod +x scripts/test-cnpg-recovery.sh
     ./scripts/test-cnpg-recovery.sh
+
+velero-status: ## Show Velero backup status and storage location
+	@echo "=== Velero Pods ==="
+	@kubectl get pods -n backup
+	@echo ""
+	@echo "=== BackupStorageLocation ==="
+	@kubectl get backupstoragelocation -n backup
+	@echo ""
+	@echo "=== Recent Backups ==="
+	@kubectl get backup.velero.io -n backup --sort-by='.metadata.creationTimestamp' | tail -10
+	@echo ""
+	@echo "=== Schedules ==="
+	@kubectl get schedule.velero.io -n backup
+
+velero-recovery-test: ## Test Velero cluster state recovery (quarterly)
+	chmod +x scripts/test-velero-recovery.sh
+	./scripts/test-velero-recovery.sh

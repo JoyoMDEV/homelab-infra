@@ -1,0 +1,103 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: velero
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://vmware-tanzu.github.io/helm-charts
+    chart: velero
+    targetRevision: "12.0.0"
+    helm:
+      values: |
+        # ── Credentials ───────────────────────────────────────────────────────
+        credentials:
+          useSecret: true
+          existingSecret: velero-secret
+
+        # ── BackupStorageLocation (MinIO) ────────────────────────────────────
+        configuration:
+          backupStorageLocation:
+            - name: default
+              provider: aws
+              bucket: velero-backups
+              default: true
+              config:
+                region: minio
+                s3ForcePathStyle: "true"
+                s3Url: http://minio.infrastructure.svc.cluster.local:9000
+                publicUrl: http://minio.infrastructure.svc.cluster.local:9000
+
+          uploaderType: kopia
+          logLevel: info
+          logFormat: text
+
+          # defaultVolumesToFsBackup: false weil k3s local-path nicht von
+          # Kopia unterstützt wird. Cluster-State (Secrets, Deployments etc.)
+          # wird trotzdem vollständig gesichert.
+          # Für PVC-Backups müsste man auf eine andere Storage Class wechseln
+          # (z.B. OpenEBS ZFS) – das ist ein separates Thema.
+          defaultVolumesToFsBackup: false
+
+        # ── Snapshots deaktivieren (kein CSI-Snapshot-Support auf k3s) ──────
+        snapshotsEnabled: false
+
+        # ── node-agent deaktivieren (wegen local-path Limitierung) ──────────
+        # Sobald PVC-Backups gewünscht sind und Storage Class gewechselt wurde,
+        # deployNodeAgent: true setzen und defaultVolumesToFsBackup: true
+        deployNodeAgent: false
+
+        # ── Velero Deployment ────────────────────────────────────────────────
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+
+        # ── Täglicher Backup Schedule ────────────────────────────────────────
+        schedules:
+          daily-cluster-backup:
+            disabled: false
+            schedule: "0 2 * * *"
+            useOwnerReferencesInBackup: false
+            template:
+              ttl: "336h"   # 14 Tage Retention
+              storageLocation: default
+              excludedNamespaces:
+                - kube-system
+              snapshotVolumes: false
+              defaultVolumesToFsBackup: false
+              includedResources:
+                - "*"
+
+        # ── Prometheus Metriken ──────────────────────────────────────────────
+        metrics:
+          enabled: true
+          scrapeInterval: 30s
+          serviceMonitor:
+            enabled: true
+            additionalLabels:
+              release: monitoring
+
+        # ── Init Container: AWS Plugin für MinIO S3-Kompatibilität ───────────
+        initContainers:
+          - name: velero-plugin-for-aws
+            image: velero/velero-plugin-for-aws:v1.12.2
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - mountPath: /target
+                name: plugins
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: backup
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
