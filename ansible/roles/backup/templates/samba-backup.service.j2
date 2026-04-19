@@ -1,0 +1,11 @@
+[Unit]
+Description=Samba AD DC Backup
+After=samba-ad-dc.service
+Requires=samba-ad-dc.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/samba-backup.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=samba-backup

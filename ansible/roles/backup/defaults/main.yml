@@ -1,0 +1,18 @@
+---
+# ── Samba Backup ──────────────────────────────────────────────────────────────
+backup_dir: /backup/samba
+backup_retention_days: 7   # Lokale Retention auf dem Host
+
+# ── Storage Box ───────────────────────────────────────────────────────────────
+backup_storage_box_host: "{{ vault_storage_box_host }}"
+backup_storage_box_user: "{{ vault_storage_box_user }}"
+backup_storage_box_port: 23
+backup_storage_box_remote_path: "samba-backup"
+backup_storage_box_retention_days: 30
+
+# ── SSH Key für Storage Box Rsync ─────────────────────────────────────────────
+backup_ssh_key_path: /root/.ssh/id_ed25519_backup
+backup_ssh_known_hosts: /root/.ssh/known_hosts
+
+# ── systemd Timer ─────────────────────────────────────────────────────────────
+backup_timer_oncalendar: "*-*-* 01:00:00"   # täglich 01:00 Uhr

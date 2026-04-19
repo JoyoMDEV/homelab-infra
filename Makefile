@@ -1,4 +1,4 @@
-.PHONY: help lint tf-init tf-plan tf-apply tf-destroy tf-output ansible-ping ansible-run ansible-check ansible-cluster ansible-samba bootstrap bootstrap-certs setup-coredns setup-monitoring status pods apps vault-edit vault-view argocd-pw cert-status cert-ca cert-sync runner-setup runner-status runner-logs recovery-test
+.PHONY: help lint tf-init tf-plan tf-apply tf-destroy tf-output ansible-ping ansible-run ansible-check ansible-cluster ansible-samba ansible-backup bootstrap bootstrap-certs setup-coredns setup-monitoring status pods apps vault-edit vault-view argocd-pw cert-status cert-ca cert-sync runner-setup runner-status runner-logs recovery-test postgres-recovery-test velero-recovery-test velero-status samba-backup-status
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -44,6 +44,9 @@ ansible-cluster: ## Run k3s cluster playbook only
 
 ansible-samba: ## Run Samba AD role only
 	cd ansible && ansible-playbook site.yml --start-at-task="Install Samba AD DC packages"
+
+ansible-backup: ## Run Samba backup role only
+	cd ansible && ansible-playbook site.yml --tags backup
 
 # ========================
 # Secrets
@@ -147,12 +150,6 @@ cert-ca: ## Show the CA certificate (for importing into browsers/devices)
 		echo "  kubectl get secret homelab-ca-keypair -n cert-manager -o jsonpath='{.data.tls\\.crt}' | base64 -d > certs/homelab-ca.crt"; \
 	fi
 
-recovery-test: postgres-recovery-test velero-recovery-test
-
-postgres-recovery-test: ## Test PostgreSQL recovery from backup (quarterly)
-    chmod +x scripts/test-cnpg-recovery.sh
-    ./scripts/test-cnpg-recovery.sh
-
 velero-status: ## Show Velero backup status and storage location
 	@echo "=== Velero Pods ==="
 	@kubectl get pods -n backup
@@ -166,6 +163,22 @@ velero-status: ## Show Velero backup status and storage location
 	@echo "=== Schedules ==="
 	@kubectl get schedule.velero.io -n backup
 
+# ========================
+# Recovery Tests
+# ========================
+recovery-test: postgres-recovery-test velero-recovery-test ## Run all recovery tests (quarterly)
+
+postgres-recovery-test: ## Test PostgreSQL recovery from backup (quarterly)
+	chmod +x scripts/test-cnpg-recovery.sh
+	./scripts/test-cnpg-recovery.sh
+
 velero-recovery-test: ## Test Velero cluster state recovery (quarterly)
 	chmod +x scripts/test-velero-recovery.sh
 	./scripts/test-velero-recovery.sh
+
+# ========================
+# Samba Backup
+# ========================
+samba-backup-status: ## Show Samba backup timer status on server
+	ssh root@$(shell cd terraform && terraform output -raw k3s_server_ip) \
+	  "systemctl status samba-backup.timer && journalctl -u samba-backup --since '24h ago' --no-pager | tail -20"

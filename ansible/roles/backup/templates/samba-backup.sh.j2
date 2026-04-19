@@ -1,0 +1,88 @@
+#!/bin/bash
+set -euo pipefail
+
+# =============================================================================
+#  samba-backup.sh
+#  Täglich ausgeführt von systemd Timer (01:00 Uhr)
+#  1. Samba AD Online Backup erstellen
+#  2. Backup zur Storage Box syncen
+#  3. Alte lokale Backups bereinigen
+# =============================================================================
+
+BACKUP_DIR="{{ backup_dir }}"
+STORAGE_BOX_HOST="{{ backup_storage_box_host }}"
+STORAGE_BOX_USER="{{ backup_storage_box_user }}"
+STORAGE_BOX_PORT="{{ backup_storage_box_port }}"
+STORAGE_BOX_PATH="{{ backup_storage_box_remote_path }}"
+SSH_KEY="{{ backup_ssh_key_path }}"
+RETENTION_DAYS="{{ backup_retention_days }}"
+REMOTE_RETENTION_DAYS="{{ backup_storage_box_retention_days }}"
+TIMESTAMP=$(date +%Y-%m-%d_%H-%M-%S)
+LOG_TAG="samba-backup"
+
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee /dev/stderr; }
+
+log "==> [1/4] Starte Samba AD Online Backup..."
+
+# Backup-Verzeichnis für diesen Lauf anlegen
+RUN_DIR="${BACKUP_DIR}/${TIMESTAMP}"
+mkdir -p "${RUN_DIR}"
+
+# DB-Check vor dem Backup (empfohlen laut Samba-Dokumentation)
+log "    Führe dbcheck aus..."
+samba-tool dbcheck --cross-ncs 2>&1 || true
+
+# Samba Online Backup erstellen
+# --server: Hostname des DC (localhost funktioniert nicht zuverlässig)
+# --include-secrets: Passwort-Hashes mitsichern (kritisch für echten Recovery!)
+if samba-tool domain backup online \
+    --targetdir="${RUN_DIR}" \
+    --server="127.0.0.1" \
+    -U Administrator \
+    --password='{{ vault_samba_admin_password }}' 2>&1; then
+  log "    Backup erstellt in ${RUN_DIR}"
+else
+  log "FEHLER: samba-tool domain backup fehlgeschlagen"
+  exit 1
+fi
+
+# Prüfen ob Backup-Datei erstellt wurde
+BACKUP_FILE=$(find "${RUN_DIR}" -name "*.tar.bz2" 2>/dev/null | head -1)
+if [[ -z "${BACKUP_FILE}" ]]; then
+  log "FEHLER: Keine Backup-Datei gefunden in ${RUN_DIR}"
+  exit 1
+fi
+log "    Backup-Datei: ${BACKUP_FILE}"
+
+# ── Rsync zur Storage Box ─────────────────────────────────────────────────────
+log "==> [2/4] Sync zur Storage Box..."
+
+rsync \
+  --archive \
+  --compress \
+  --delete \
+  --rsh="ssh -i ${SSH_KEY} -p ${STORAGE_BOX_PORT} -o StrictHostKeyChecking=accept-new" \
+  "${BACKUP_DIR}/" \
+  "${STORAGE_BOX_USER}@${STORAGE_BOX_HOST}:${STORAGE_BOX_PATH}/" \
+  2>&1
+
+log "    Sync abgeschlossen."
+
+# ── Alte Remote-Backups bereinigen ────────────────────────────────────────────
+log "==> [3/4] Remote-Retention wird durch lokale Bereinigung + rsync --delete gesteuert..."
+log "    Alte Remote-Verzeichnisse werden beim nächsten Sync automatisch gelöscht."
+
+# ── Alte lokale Backups bereinigen ────────────────────────────────────────────
+log "==> [4/4] Bereinige alte lokale Backups (älter als ${RETENTION_DAYS} Tage)..."
+
+find "${BACKUP_DIR}" \
+  -maxdepth 1 \
+  -type d \
+  -mtime "+${RETENTION_DAYS}" \
+  -exec rm -rf {} + \
+  2>/dev/null || true
+
+REMAINING=$(find "${BACKUP_DIR}" -maxdepth 1 -type d | wc -l)
+log "    Lokale Backups verbleibend: $((REMAINING - 1))"
+
+log "==> Samba Backup abgeschlossen. ✅"

@@ -1,0 +1,120 @@
+---
+# ── Backup-Verzeichnis anlegen ────────────────────────────────────────────────
+- name: Backup-Verzeichnis anlegen
+  ansible.builtin.file:
+    path: "{{ backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# ── SSH Key für Storage Box generieren ───────────────────────────────────────
+- name: Prüfen ob SSH Key bereits existiert
+  ansible.builtin.stat:
+    path: "{{ backup_ssh_key_path }}"
+  register: backup_ssh_key_stat
+
+- name: SSH Key für Storage Box Rsync generieren
+  ansible.builtin.command:
+    cmd: >
+      ssh-keygen -t ed25519
+      -C "samba-backup@{{ inventory_hostname }}"
+      -N ""
+      -f {{ backup_ssh_key_path }}
+  when: not backup_ssh_key_stat.stat.exists
+  changed_when: true
+
+- name: Public Key auslesen
+  ansible.builtin.slurp:
+    src: "{{ backup_ssh_key_path }}.pub"
+  register: backup_ssh_public_key
+  when: backup_ssh_key_stat.stat.exists or not ansible_check_mode
+
+- name: Public Key anzeigen (muss auf Storage Box hinterlegt werden)
+  ansible.builtin.debug:
+    msg: |
+      ============================================================
+      SSH Public Key für Storage Box – bitte manuell hinterlegen:
+
+      {{ backup_ssh_public_key.content | b64decode | trim }}
+      ============================================================
+  when:
+    - not backup_ssh_key_stat.stat.exists
+    - not ansible_check_mode
+    - backup_ssh_public_key is not skipped
+
+- name: Warten bis SSH Key auf Storage Box hinterlegt wurde
+  ansible.builtin.pause:
+    prompt: "Bitte den Public Key auf der Storage Box hinterlegen, dann Enter drücken"
+  when:
+    - not backup_ssh_key_stat.stat.exists
+    - not ansible_check_mode
+
+# ── Storage Box SSH Fingerprint akzeptieren ───────────────────────────────────
+- name: Storage Box SSH Fingerprint in known_hosts eintragen
+  ansible.builtin.known_hosts:
+    name: "[{{ backup_storage_box_host }}]:{{ backup_storage_box_port }}"
+    key: "{{ lookup('pipe', 'ssh-keyscan -p ' + backup_storage_box_port | string + ' ' + backup_storage_box_host + ' 2>/dev/null') }}"
+    path: "{{ backup_ssh_known_hosts }}"
+    state: present
+
+# ── Remote Backup-Verzeichnis anlegen ────────────────────────────────────────
+- name: Remote Backup-Verzeichnis auf Storage Box anlegen
+  ansible.builtin.command:
+    cmd: >
+      ssh -i {{ backup_ssh_key_path }}
+      -p {{ backup_storage_box_port }}
+      -o StrictHostKeyChecking=accept-new
+      {{ backup_storage_box_user }}@{{ backup_storage_box_host }}
+      "mkdir -p {{ backup_storage_box_remote_path }}"
+  changed_when: true
+  failed_when: false
+
+# ── Backup Script deployen ────────────────────────────────────────────────────
+- name: Samba Backup Script deployen
+  ansible.builtin.template:
+    src: samba-backup.sh.j2
+    dest: /usr/local/bin/samba-backup.sh
+    owner: root
+    group: root
+    mode: "0750"
+
+# ── systemd Service deployen ──────────────────────────────────────────────────
+- name: Systemd Service für Samba-Backup deployen
+  ansible.builtin.template:
+    src: samba-backup.service.j2
+    dest: /etc/systemd/system/samba-backup.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Systemd Timer für Samba-Backup deployen
+  ansible.builtin.template:
+    src: samba-backup.timer.j2
+    dest: /etc/systemd/system/samba-backup.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Systemd Timer aktivieren und starten
+  ansible.builtin.systemd:
+    name: samba-backup.timer
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: not ansible_check_mode
+
+# ── Ersten manuellen Backup triggern ─────────────────────────────────────────
+- name: Ersten manuellen Backup triggern
+  ansible.builtin.command:
+    cmd: /usr/local/bin/samba-backup.sh
+  changed_when: true
+  register: backup_first_backup_result
+  when: not ansible_check_mode
+
+- name: Backup-Ergebnis anzeigen
+  ansible.builtin.debug:
+    msg: "{{ backup_first_backup_result.stdout_lines }}"
+  when: not ansible_check_mode

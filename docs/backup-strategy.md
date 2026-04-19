@@ -11,7 +11,7 @@ Dieses Dokument beschreibt die Backup-Strategie für das Homelab-Setup bestehend
 | PostgreSQL (CNPG) | Datenbank | 🔴 Kritisch | ✅ CNPG Barman via MinIO + Restic Offsite |
 | Kubernetes Cluster State | K8s-Ressourcen | 🟠 Hoch | ✅ Velero (täglich 02:00, 14 Tage Retention) |
 | Nextcloud Nutzerdaten | Dateien | 🟠 Hoch | ⚠️ ZFS-Snapshots (Storage Box) |
-| Samba AD DC | Verzeichnisdienst | 🔴 Kritisch | ❌ Noch nicht implementiert |
+| Samba AD DC | Verzeichnisdienst | 🔴 Kritisch | ✅ Ansible-Rolle backup (täglich 01:00, 7 Tage lokal, Storage Box via rsync) |
 | GitLab Repositories | Git-Daten | 🟠 Hoch | ✅ Liegt in PostgreSQL (gesichert) |
 | Kubernetes Secrets | Credentials | 🔴 Kritisch | ⚠️ Teilweise (Ansible Vault) |
 | TLS / CA | Zertifikate | 🟡 Mittel | ⚠️ Nur im Cluster-Secret |
@@ -117,12 +117,36 @@ kubectl describe backup.velero.io <name> -n backup
 
 ---
 
-### Ebene 4 – Samba AD DC ❌ Noch nicht implementiert
+### Ebene 4 – Samba AD DC ✅ Implementiert
 
-**Geplant:** Ansible-Rolle `backup` mit systemd Timer (Issue #6)
+**Architektur:**
+```
+samba-tool domain backup online (täglich 01:00 via systemd Timer)
+  → /backup/samba/<timestamp>/ (lokal auf dem Host, 7 Tage Retention)
+  → rsync → Storage Box (samba-backup/, Remote-Retention via --delete)
+```
 
-**Risiko:** Bei Ausfall müsste die Domain komplett neu provisioniert werden.
-Keycloak, GitLab und alle OIDC-Services würden sofort aufhören zu funktionieren.
+**Details:**
+- Backup-Befehl: `samba-tool domain backup online` (DC läuft weiter während Backup)
+- DB-Check vor jedem Backup: `samba-tool dbcheck --cross-ncs`
+- Lokale Retention: 7 Tage
+- Remote Retention: gesteuert durch rsync `--delete` + lokale Bereinigung
+- Backup-Datei: `samba-backup-homelab.local-<timestamp>.tar.bz2`
+**Backup prüfen:**
+```bash
+# Timer-Status und letzte Logs
+make samba-backup-status
+
+# Backup-Dateien auf dem Host
+ssh root@<server-ip> "ls -lh /backup/samba/"
+
+# Backup-Dateien auf Storage Box
+sftp -P 23 u549610@u549610.your-storagebox.de
+sftp> ls samba-backup/
+```
+
+**RPO:** ~24 Stunden
+**RTO:** ~30-60 Minuten (neuer Server + Provision + Restore)
 
 ---
 
@@ -153,7 +177,7 @@ make vault-edit
 | 03:30 | Restic Offsite (CronJob) | MinIO → Storage Box SFTP | ✅ |
 | 02:00 | Velero Cluster-Backup | MinIO → lokal | ✅ |
 | 03:30 | Restic Nextcloud-Dateien | Backblaze B2 | ❌ geplant |
-| 01:00 | Samba AD Backup (systemd Timer) | Storage Box | ❌ geplant |
+| 01:00 | Samba AD Backup (systemd Timer) | Storage Box | ✅ |
 
 ---
 
@@ -192,15 +216,67 @@ make recovery-test   # Verifiziert dass Backup funktioniert
 
 **RTO:** ~2-4 Stunden | **RPO:** ~24 Stunden
 
-### Szenario C: Samba AD ausgefallen
-Noch kein Backup implementiert – manuelle Neu-Provisionierung nötig.
-→ Issue #6 priorisieren!
+### Szenario C: Samba AD DC ausgefallen
+
+⚠️ **Achtung:** Restore nur auf einem frischen Server durchführen — niemals auf einem laufenden DC. Ein restored DC würde mit der Produktion interferieren.
+
+**Voraussetzungen:**
+- Neuer Server provisioniert (oder bestehender Server neu aufgesetzt)
+- Samba installiert aber NICHT provisioniert
+- Backup-Datei von der Storage Box verfügbar
+**Schritt 1: Backup von Storage Box holen**
+```bash
+# Neueste Backup-Datei von Storage Box laden
+sftp -P 23 u549610@u549610.your-storagebox.de
+sftp> ls samba-backup/
+sftp> get samba-backup/<neuestes-verzeichnis>/samba-backup-homelab.local-<timestamp>.tar.bz2 /tmp/
+sftp> bye
+```
+
+**Schritt 2: Samba-Dienst stoppen**
+```bash
+systemctl stop samba-ad-dc
+```
+
+**Schritt 3: Domain aus Backup wiederherstellen**
+```bash
+samba-tool domain backup restore \
+  --backup-file=/tmp/samba-backup-homelab.local-<timestamp>.tar.bz2 \
+  --newservername=k3s-server \
+  --targetdir=/var/lib/samba-restored
+
+# smb.conf aus dem Restore übernehmen
+cp /var/lib/samba-restored/etc/smb.conf /etc/samba/smb.conf
+```
+
+**Schritt 4: Samba starten und verifizieren**
+```bash
+systemctl start samba-ad-dc
+systemctl status samba-ad-dc
+
+# Domain-Level prüfen
+samba-tool domain level show
+
+# User prüfen
+samba-tool user list
+
+# DNS prüfen
+dig @127.0.0.1 auth.homelab.local
+```
+
+**Schritt 5: Keycloak LDAP-Sync prüfen**
+```bash
+# In Keycloak: User Federation → samba-ad → Synchronize all users
+# Alle OIDC-Services (GitLab, ArgoCD, Grafana, Nextcloud) sollten
+# danach wieder funktionieren
+```
+
+**Hinweis:** Nach dem Restore müssen alle anderen DCs neu der Domain beitreten
+(nicht applicable bei Single-DC Setup wie hier).
 
 ---
 
 ## Offene Punkte / ToDos
 
-- [ ] **Ansible-Rolle `backup`** für Samba AD DC (Issue #6)
 - [ ] **Restic CronJob** für Nextcloud-Dateien auf Backblaze B2 (Issue #5)
-- [ ] **`gitlab-rails-secrets` und `homelab-ca-keypair`** in Ansible Vault sichern
 - [ ] **Recovery-Tests** einmal pro Quartal: `make recovery-test`

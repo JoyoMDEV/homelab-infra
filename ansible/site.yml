@@ -7,3 +7,4 @@
     - tailscale
     - k3s_server
     - samba
+    - backup

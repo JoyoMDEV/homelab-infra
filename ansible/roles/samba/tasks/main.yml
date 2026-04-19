@@ -123,6 +123,7 @@
     echo '{{ samba_admin_password }}' | kinit administrator@{{ samba_realm }}
   changed_when: false
   no_log: true
+  failed_when: false
 
 # noqa risky-shell-pipe
 - name: Get all A records for k3s-server
@@ -228,6 +229,7 @@
   ansible.builtin.command: klist
   register: samba_klist_output
   changed_when: false
+  failed_when: false
 
 - name: Show Kerberos ticket
   ansible.builtin.debug:
