@@ -24,11 +24,11 @@ spec:
         existingSecret: renovate-secret
 
         renovate:
-          # Node.js Heap erhöhen – verhindert OOM bei 30+ Dependencies
-          # Renovate liest RENOVATE_NODE_ARGS und reicht sie an Node.js weiter
-          extraEnvVars:
-            - name: RENOVATE_NODE_ARGS
-              value: "--max-old-space-size=1024"
+          # RENOVATE_NODE_ARGS wird vom Startup-Script als Array gelesen:
+          # /usr/local/sbin/renovate: "${RENOVATE_NODE_ARGS[@]}"
+          # → als einzelner String-Wert übergeben, bash splittet ihn automatisch
+          env:
+            RENOVATE_NODE_ARGS: "--max-old-space-size=1536"
 
           config: |
             {
@@ -44,7 +44,7 @@ spec:
             memory: 512Mi
             cpu: 100m
           limits:
-            memory: 1500Mi
+            memory: 2Gi
 
   destination:
     server: https://kubernetes.default.svc
