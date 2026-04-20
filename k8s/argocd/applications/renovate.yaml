@@ -24,6 +24,12 @@ spec:
         existingSecret: renovate-secret
 
         renovate:
+          # Node.js Heap erhöhen – verhindert OOM bei 30+ Dependencies
+          # Renovate liest RENOVATE_NODE_ARGS und reicht sie an Node.js weiter
+          extraEnvVars:
+            - name: RENOVATE_NODE_ARGS
+              value: "--max-old-space-size=1024"
+
           config: |
             {
               "platform": "github",
@@ -35,10 +41,10 @@ spec:
 
         resources:
           requests:
-            memory: 256Mi
+            memory: 512Mi
             cpu: 100m
           limits:
-            memory: 1Gi
+            memory: 1500Mi
 
   destination:
     server: https://kubernetes.default.svc
