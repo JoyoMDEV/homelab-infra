@@ -1,0 +1,93 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nocodb
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://zekker6.github.io/helm-charts/
+    chart: nocodb
+    targetRevision: "1.10.0"
+    helm:
+      values: |
+        image:
+          repository: nocodb/nocodb
+          tag: "0.301.5"
+          pullPolicy: IfNotPresent
+
+        env:
+          TZ: "Europe/Berlin"
+
+          # ── Datenbank ────────────────────────────────────────────────────
+          # NC_DB URL kommt komplett aus dem Secret (inkl. Passwort).
+          # So gibt es keinen Interpolations-Mismatch zwischen Secret und URL.
+          # WICHTIG: setup-nocodb.sh erstellt db-url und db-password synchron.
+          NC_DB:
+            valueFrom:
+              secretKeyRef:
+                name: nocodb-secret
+                key: db-url
+
+          # ── Security ─────────────────────────────────────────────────────
+          NC_AUTH_JWT_SECRET:
+            valueFrom:
+              secretKeyRef:
+                name: nocodb-secret
+                key: jwt-secret
+
+          # ── Anwendungseinstellungen ───────────────────────────────────────
+          NC_PUBLIC_URL: "https://nocodb.homelab.local"
+
+          # Telemetrie deaktivieren
+          NC_DISABLE_TELE: "true"
+
+          # Signup nur für den ersten Admin-User erlauben
+          NC_INVITE_ONLY_SIGNUP: "false"
+
+          # Node.js Heap explizit setzen – verhindert OOM bei Startup
+          NODE_OPTIONS: "--max-old-space-size=768"
+
+        # ── Kein SQLite PVC nötig – wir nutzen PostgreSQL ─────────────────
+        persistence:
+          data:
+            enabled: false
+
+        service:
+          main:
+            ports:
+              http:
+                port: 8080
+
+        ingress:
+          main:
+            enabled: true
+            ingressClassName: traefik
+            hosts:
+              - host: nocodb.homelab.local
+                paths:
+                  - path: /
+                    pathType: Prefix
+            tls:
+              - secretName: homelab-wildcard-tls
+                hosts:
+                  - nocodb.homelab.local
+
+        resources:
+          requests:
+            memory: 512Mi
+            cpu: 100m
+          limits:
+            memory: 1Gi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: productivity
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

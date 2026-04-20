@@ -39,9 +39,6 @@ fi
 echo "    Traefik Cluster-IP: ${TRAEFIK_IP}"
 
 # ─── Step 2: Verify the default Corefile imports coredns-custom ──────────────
-# k3s CoreDNS Corefile contains: import /etc/coredns/custom/*.server
-# The coredns-custom ConfigMap is mounted at /etc/coredns/custom/ inside the
-# CoreDNS pod. Any *.server key in that ConfigMap is automatically loaded.
 echo ""
 echo "==> Verifying k3s CoreDNS supports coredns-custom..."
 if kubectl get configmap coredns -n kube-system \
@@ -56,11 +53,6 @@ fi
 FALLBACK=${FALLBACK:-false}
 
 # ─── Step 3: Apply coredns-custom ConfigMap ───────────────────────────────────
-# Each key in coredns-custom must end in .server to be picked up by CoreDNS.
-# We use 'homelab.server' as the key name.
-#
-# The wildcard hosts entry (*.homelab.local → Traefik IP) means any new service
-# automatically works without changing CoreDNS again.
 if [[ "${FALLBACK}" == "false" ]]; then
   echo ""
   echo "==> Applying coredns-custom ConfigMap (k3s-safe, survives restarts)..."
@@ -85,6 +77,7 @@ data:
             ${TRAEFIK_IP} homarr.homelab.local
             ${TRAEFIK_IP} vault.homelab.local
             ${TRAEFIK_IP} paperless.homelab.local
+            ${TRAEFIK_IP} nocodb.homelab.local
             ${TRAEFIK_IP} homelab.local
             fallthrough
         }
@@ -127,6 +120,7 @@ else
         ${TRAEFIK_IP} homarr.homelab.local
         ${TRAEFIK_IP} vault.homelab.local
         ${TRAEFIK_IP} paperless.homelab.local
+        ${TRAEFIK_IP} nocodb.homelab.local
         ${TRAEFIK_IP} homelab.local
         fallthrough
     }
@@ -163,8 +157,8 @@ kubectl run -it --rm dns-test --image=alpine --restart=Never -- \
     nslookup auth.homelab.local
     echo '--- gitlab.homelab.local ---'
     nslookup gitlab.homelab.local
-    echo '--- argocd.homelab.local ---'
-    nslookup argocd.homelab.local
+    echo '--- nocodb.homelab.local ---'
+    nslookup nocodb.homelab.local
   " 2>/dev/null || echo "    (DNS test pod cleanup complete)"
 
 # ─── Done ────────────────────────────────────────────────────────────────────
@@ -183,13 +177,14 @@ echo ""
 echo "  All *.homelab.local domains now resolve"
 echo "  inside the cluster → Traefik → Service"
 echo ""
-echo "  This means:"
-echo "  - GitLab → Keycloak OIDC works"
-echo "  - ArgoCD → Keycloak OIDC works"
-echo "  - Any new *.homelab.local service works"
-echo "    automatically without changing CoreDNS"
-echo ""
-echo "  Verify manually:"
-echo "    kubectl run -it --rm dns-test --image=alpine --restart=Never -- \\"
-echo "      nslookup auth.homelab.local"
+echo "  Services:"
+echo "    - auth.homelab.local       (Keycloak)"
+echo "    - gitlab.homelab.local     (GitLab)"
+echo "    - argocd.homelab.local     (ArgoCD)"
+echo "    - grafana.homelab.local    (Grafana)"
+echo "    - nextcloud.homelab.local  (Nextcloud)"
+echo "    - homarr.homelab.local     (Homarr)"
+echo "    - vault.homelab.local      (Vaultwarden)"
+echo "    - paperless.homelab.local  (Paperless-ngx)"
+echo "    - nocodb.homelab.local     (NocoDB)"
 echo "============================================"
