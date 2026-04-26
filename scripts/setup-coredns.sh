@@ -76,6 +76,7 @@ data:
             ${TRAEFIK_IP} nextcloud.homelab.local
             ${TRAEFIK_IP} homarr.homelab.local
             ${TRAEFIK_IP} vault.homelab.local
+            ${TRAEFIK_IP} hcvault.homelab.local
             ${TRAEFIK_IP} paperless.homelab.local
             ${TRAEFIK_IP} nocodb.homelab.local
             ${TRAEFIK_IP} homelab.local
@@ -119,6 +120,7 @@ else
         ${TRAEFIK_IP} nextcloud.homelab.local
         ${TRAEFIK_IP} homarr.homelab.local
         ${TRAEFIK_IP} vault.homelab.local
+        ${TRAEFIK_IP} hcvault.homelab.local
         ${TRAEFIK_IP} paperless.homelab.local
         ${TRAEFIK_IP} nocodb.homelab.local
         ${TRAEFIK_IP} homelab.local
@@ -185,6 +187,7 @@ echo "    - grafana.homelab.local    (Grafana)"
 echo "    - nextcloud.homelab.local  (Nextcloud)"
 echo "    - homarr.homelab.local     (Homarr)"
 echo "    - vault.homelab.local      (Vaultwarden)"
+echo "    - hcvault.homelab.local    (HashiCorp Vault)"
 echo "    - paperless.homelab.local  (Paperless-ngx)"
 echo "    - nocodb.homelab.local     (NocoDB)"
 echo "============================================"
