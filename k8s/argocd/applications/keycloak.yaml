@@ -11,17 +11,25 @@ spec:
   source:
     repoURL: https://codecentric.github.io/helm-charts
     chart: keycloakx
-    targetRevision: 4.0.0
+    targetRevision: 7.1.11
 
     helm:
       values: |
         replicas: 1
+
+        # ── Startup Command ───────────────────────────────────────────────────
+        # Ab Keycloak 25+: --hostname muss explizit gesetzt werden.
+        # Ohne das schlägt die Admin-Konsole mit "somethingWentWrong" fehl
+        # weil Keycloak dann keine konsistente Basis-URL ableiten kann.
+        # --proxy-headers=xforwarded: Traefik setzt X-Forwarded-* Header
         command:
           - "/opt/keycloak/bin/kc.sh"
           - "start"
+          - "--hostname=https://auth.homelab.local"
           - "--hostname-strict=false"
           - "--http-enabled=true"
           - "--proxy-headers=xforwarded"
+
         extraEnv: |
           - name: KEYCLOAK_ADMIN
             value: admin
@@ -47,14 +55,20 @@ spec:
               secretKeyRef:
                 name: keycloak-db-secret
                 key: password
+
+        # ── Resources ─────────────────────────────────────────────────────────
         resources:
           requests:
             memory: 512Mi
             cpu: 250m
           limits:
             memory: 1Gi
+
+        # ── HTTP ──────────────────────────────────────────────────────────────
         http:
           relativePath: /
+
+        # ── Ingress ───────────────────────────────────────────────────────────
         ingress:
           enabled: true
           ingressClassName: traefik
@@ -63,6 +77,11 @@ spec:
               paths:
                 - path: /
                   pathType: Prefix
+          tls:
+            - hosts:
+                - auth.homelab.local
+              secretName: homelab-wildcard-tls
+
   destination:
     server: https://kubernetes.default.svc
     namespace: auth
