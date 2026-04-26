@@ -1,0 +1,117 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://helm.releases.hashicorp.com
+    chart: vault
+    targetRevision: "0.32.0"
+    helm:
+      values: |
+        global:
+          enabled: true
+          tlsDisable: true    # Traefik übernimmt TLS-Terminierung, Vault läuft intern auf HTTP
+
+        injector:
+          enabled: false      # Kein Agent Injector – wir nutzen External Secrets Operator
+
+        server:
+          # ── Image ──────────────────────────────────────────────────────────
+          image:
+            repository: hashicorp/vault
+            tag: "1.21.2"
+            pullPolicy: IfNotPresent
+
+          # ── Standalone Mode (kein HA für Homelab) ─────────────────────────
+          standalone:
+            enabled: true
+            config: |
+              ui = true
+
+              listener "tcp" {
+                tls_disable     = 1
+                address         = "[::]:8200"
+                cluster_address = "[::]:8201"
+              }
+
+              storage "file" {
+                path = "/vault/data"
+              }
+
+              # Audit Log (wird später via auditLog aktiviert)
+              # log_level = "info"
+
+          # ── Persistence ────────────────────────────────────────────────────
+          dataStorage:
+            enabled: true
+            size: 5Gi
+            accessMode: ReadWriteOnce
+
+          # ── Resources ──────────────────────────────────────────────────────
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 512Mi
+
+          # ── Readiness/Liveness ─────────────────────────────────────────────
+          # Vault meldet "sealed" als nicht-ready → readinessProbe muss das erlauben
+          readinessProbe:
+            enabled: true
+            path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+            scheme: HTTP
+
+          # ── Ingress ────────────────────────────────────────────────────────
+          ingress:
+            enabled: true
+            ingressClassName: traefik
+            hosts:
+              - host: hcvault.homelab.local
+                paths:
+                  - /
+            tls:
+              - secretName: homelab-wildcard-tls
+                hosts:
+                  - hcvault.homelab.local
+
+          # ── Extra Volumes: homelab CA für Keycloak-OIDC-Verbindung ─────────
+          volumes:
+            - name: homelab-ca
+              secret:
+                secretName: homelab-ca
+
+          volumeMounts:
+            - name: homelab-ca
+              mountPath: /usr/local/share/ca-certificates/homelab-ca.crt
+              subPath: homelab-ca.crt
+              readOnly: true
+
+          # ── Extra Environment ───────────────────────────────────────────────
+          extraEnvironmentVars:
+            SSL_CERT_DIR: /usr/local/share/ca-certificates
+
+          # ── ServiceAccount ─────────────────────────────────────────────────
+          serviceAccount:
+            create: true
+            name: vault
+
+        # ── UI ─────────────────────────────────────────────────────────────────
+        ui:
+          enabled: true
+          serviceType: ClusterIP
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: security
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
