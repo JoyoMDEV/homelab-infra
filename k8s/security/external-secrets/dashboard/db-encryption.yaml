@@ -1,0 +1,18 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: db-encryption
+  namespace: dashboard
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault
+    kind: ClusterSecretStore
+  target:
+    name: db-encryption
+    creationPolicy: Owner
+  data:
+    - secretKey: db-encryption-key
+      remoteRef:
+        key: homelab/dashboard/db-encryption
+        property: db-encryption-key

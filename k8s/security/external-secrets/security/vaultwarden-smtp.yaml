@@ -1,0 +1,22 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: vaultwarden-smtp
+  namespace: security
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault
+    kind: ClusterSecretStore
+  target:
+    name: vaultwarden
+    creationPolicy: Owner
+  data:
+    - secretKey: SMTP_USERNAME
+      remoteRef:
+        key: homelab/security/vaultwarden-smtp
+        property: SMTP_USERNAME
+    - secretKey: SMTP_PASSWORD
+      remoteRef:
+        key: homelab/security/vaultwarden-smtp
+        property: SMTP_PASSWORD

@@ -1,0 +1,34 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: restic-ssh-key
+  namespace: infrastructure
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault
+    kind: ClusterSecretStore
+  target:
+    name: restic-ssh-key
+    creationPolicy: Owner
+  data:
+    - secretKey: ssh-privatekey
+      remoteRef:
+        key: homelab/infrastructure/restic-ssh
+        property: ssh-privatekey
+    - secretKey: ssh-publickey
+      remoteRef:
+        key: homelab/infrastructure/restic-ssh
+        property: ssh-publickey
+    - secretKey: storage-box-host
+      remoteRef:
+        key: homelab/infrastructure/restic-ssh
+        property: storage-box-host
+    - secretKey: storage-box-user
+      remoteRef:
+        key: homelab/infrastructure/restic-ssh
+        property: storage-box-user
+    - secretKey: storage-box-port
+      remoteRef:
+        key: homelab/infrastructure/restic-ssh
+        property: storage-box-port
