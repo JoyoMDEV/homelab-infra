@@ -65,10 +65,14 @@ spec:
               hosts:
                 - minio-console.homelab.local
 
-        # Damit die Console-Redirects (Login etc.) auf den richtigen Hostnamen zeigen
+        # Damit die Console-Redirects (Login etc.) auf den richtigen Hostnamen zeigen.
+        # WICHTIG: MINIO_SERVER_URL absichtlich NICHT gesetzt – der Pod selbst
+        # kann minio.homelab.local nicht auflösen (CoreDNS kennt nur *.svc.cluster.local,
+        # der Hostname existiert nur über Tailscale Split DNS). Würde man das setzen,
+        # versucht die Console beim Login sich selbst über diese URL zu erreichen
+        # und scheitert an DNS -> 503 "network error" im Browser.
         environment:
           MINIO_BROWSER_REDIRECT_URL: "https://minio-console.homelab.local"
-          MINIO_SERVER_URL: "https://minio.homelab.local"
 
         # Metrics für Prometheus
         metrics:
