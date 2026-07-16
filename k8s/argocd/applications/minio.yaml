@@ -41,9 +41,18 @@ spec:
           limits:
             memory: 1Gi
 
-        # Kein Ingress nötig – CNPG redet intern mit MinIO
+        # S3 API über Traefik erreichbar (Tailscale DNS: *.homelab.local läuft
+        # als Wildcard über die Samba AD DC, daher reicht der Ingress hier aus –
+        # kein zusätzlicher DNS-Eintrag nötig)
         ingress:
-          enabled: false
+          enabled: true
+          ingressClassName: traefik
+          hosts:
+            - minio.homelab.local
+          tls:
+            - secretName: homelab-wildcard-tls
+              hosts:
+                - minio.homelab.local
 
         # Metrics für Prometheus
         metrics:
@@ -60,4 +69,4 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=false  # Namespace existiert bereits
+      - CreateNamespace=false # Namespace existiert bereits
