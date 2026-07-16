@@ -54,6 +54,22 @@ spec:
               hosts:
                 - minio.homelab.local
 
+        # Web-Console separat, eigener Ingress-Block im Chart
+        consoleIngress:
+          enabled: true
+          ingressClassName: traefik
+          hosts:
+            - minio-console.homelab.local
+          tls:
+            - secretName: homelab-wildcard-tls
+              hosts:
+                - minio-console.homelab.local
+
+        # Damit die Console-Redirects (Login etc.) auf den richtigen Hostnamen zeigen
+        environment:
+          MINIO_BROWSER_REDIRECT_URL: "https://minio-console.homelab.local"
+          MINIO_SERVER_URL: "https://minio.homelab.local"
+
         # Metrics für Prometheus
         metrics:
           serviceMonitor:
