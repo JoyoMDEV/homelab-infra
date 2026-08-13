@@ -104,6 +104,30 @@ spec:
         alloy:
           enabled: true
 
+          # Hubble-Flow-Export-Datei pro Node zusätzlich in den Alloy-Container
+          # mounten (schreibt cilium-agent via hubble.export.static, siehe
+          # ansible/files/cilium-values.yaml). Ohne diesen hostPath-Mount sieht
+          # Alloy nur Pod-Logs über die Kubernetes-API, nicht diese Host-Datei.
+          volumes:
+            extra:
+              - name: hubble-flowlogs
+                hostPath:
+                  path: /var/run/cilium/hubble
+          mounts:
+            extra:
+              - name: hubble-flowlogs
+                mountPath: /var/run/cilium/hubble
+                readOnly: true
+
+          # HOSTNAME im Container ist der Pod-Name, nicht der Node-Name -
+          # für ein brauchbares "node"-Label im Hubble-Flow-Log-Stream
+          # brauchen wir den echten Node-Namen über die Downward API.
+          extraEnv:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+
           alloy:
             resources:
               requests:
@@ -149,6 +173,23 @@ spec:
               // Logs lesen und an Loki senden
               loki.source.kubernetes "pods" {
                 targets    = discovery.relabel.pods.output
+                forward_to = [loki.write.default.receiver]
+              }
+
+              // Hubble-Flow-Logs (Cilium) von der Host-Datei einlesen -
+              // Grundlage für die 14-Tage-CiliumNetworkPolicy-Analyse.
+              // job="hubble-flows" als eigenes Loki-Label zum späteren Filtern
+              // in Grafana/LogQL, z.B. {job="hubble-flows", node="k3s-server"}.
+              local.file_match "hubble_flows" {
+                path_targets = [{
+                  __path__ = "/var/run/cilium/hubble/events.log",
+                  job      = "hubble-flows",
+                  node     = env("NODE_NAME"),
+                }]
+              }
+
+              loki.source.file "hubble_flows" {
+                targets    = local.file_match.hubble_flows.targets
                 forward_to = [loki.write.default.receiver]
               }
 
