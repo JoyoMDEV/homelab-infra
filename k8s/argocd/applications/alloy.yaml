@@ -22,7 +22,7 @@ spec:
   source:
     repoURL: https://grafana.github.io/helm-charts
     chart: alloy
-    targetRevision: "" # TODO: `helm search repo grafana/alloy --versions`
+    targetRevision: "1.11.1"
     helm:
       values: |
         controller:
