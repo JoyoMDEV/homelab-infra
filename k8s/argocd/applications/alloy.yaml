@@ -28,22 +28,25 @@ spec:
         controller:
           type: daemonset
 
-        # Hubble-Flow-Export-Datei pro Node zusätzlich in den Alloy-Container
-        # mounten (schreibt cilium-agent via hubble.export.static). Ohne
-        # diesen hostPath-Mount sieht Alloy nur Pod-Logs über die
-        # Kubernetes-API, nicht diese Host-Datei.
-        volumes:
-          extra:
-            - name: hubble-flowlogs
-              hostPath:
-                path: /var/run/cilium/hubble
-        mounts:
-          extra:
-            - name: hubble-flowlogs
-              mountPath: /var/run/cilium/hubble
-              readOnly: true
+          # Hubble-Flow-Export-Datei pro Node (schreibt cilium-agent via
+          # hubble.export.static, siehe ansible/files/cilium-values.yaml).
+          # WICHTIG: in Chart 1.11.1 liegen Extra-Volumes unter
+          # controller.volumes.extra, NICHT unter einem Top-Level "volumes:".
+          volumes:
+            extra:
+              - name: hubble-flowlogs
+                hostPath:
+                  path: /var/run/cilium/hubble
 
         alloy:
+          # WICHTIG: Mounts liegen unter alloy.mounts.extra, NICHT unter
+          # einem Top-Level "mounts:".
+          mounts:
+            extra:
+              - name: hubble-flowlogs
+                mountPath: /var/run/cilium/hubble
+                readOnly: true
+
           resources:
             requests:
               memory: 64Mi
@@ -60,67 +63,71 @@ spec:
                 fieldRef:
                   fieldPath: spec.nodeName
 
-          # Alloy-Konfiguration: Kubernetes Pod-Logs + Hubble-Flow-Logs -> Loki
-          extraConfig: |
-            // Kubernetes Pod-Logs entdecken
-            discovery.kubernetes "pods" {
-              role = "pod"
-            }
-
-            // Labels umschreiben: Kubernetes-Metadaten -> Loki-Labels
-            discovery.relabel "pods" {
-              targets = discovery.kubernetes.pods.targets
-
-              rule {
-                source_labels = ["__meta_kubernetes_namespace"]
-                target_label  = "namespace"
+          # WICHTIG: Es gibt kein "extraConfig" in diesem Chart - die
+          # komplette Alloy-Konfiguration wird über configMap.content
+          # gesetzt (kompletter River-Config-Text, kein Append-Mechanismus).
+          configMap:
+            create: true
+            content: |
+              // Kubernetes Pod-Logs entdecken
+              discovery.kubernetes "pods" {
+                role = "pod"
               }
-              rule {
-                source_labels = ["__meta_kubernetes_pod_name"]
-                target_label  = "pod"
-              }
-              rule {
-                source_labels = ["__meta_kubernetes_container_name"]
-                target_label  = "container"
-              }
-              rule {
-                source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
-                target_label  = "app"
-              }
-              rule {
-                source_labels = ["__meta_kubernetes_pod_node_name"]
-                target_label  = "node"
-              }
-            }
 
-            // Logs lesen und an Loki senden
-            loki.source.kubernetes "pods" {
-              targets    = discovery.relabel.pods.output
-              forward_to = [loki.write.default.receiver]
-            }
+              // Labels umschreiben: Kubernetes-Metadaten -> Loki-Labels
+              discovery.relabel "pods" {
+                targets = discovery.kubernetes.pods.targets
 
-            // Hubble-Flow-Logs (Cilium) von der Host-Datei einlesen -
-            // Grundlage für die 14-Tage-CiliumNetworkPolicy-Analyse.
-            // job="hubble-flows" als eigenes Loki-Label zum späteren Filtern
-            // in Grafana/LogQL, z.B. {job="hubble-flows", node="k3s-server"}.
-            local.file_match "hubble_flows" {
-              path_targets = [{
-                __path__ = "/var/run/cilium/hubble/events.log",
-                job      = "hubble-flows",
-                node     = env("NODE_NAME"),
-              }]
-            }
-
-            loki.source.file "hubble_flows" {
-              targets    = local.file_match.hubble_flows.targets
-              forward_to = [loki.write.default.receiver]
-            }
-
-            loki.write "default" {
-              endpoint {
-                url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+                rule {
+                  source_labels = ["__meta_kubernetes_namespace"]
+                  target_label  = "namespace"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_name"]
+                  target_label  = "pod"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_container_name"]
+                  target_label  = "container"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+                  target_label  = "app"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_node_name"]
+                  target_label  = "node"
+                }
               }
-            }
+
+              // Logs lesen und an Loki senden
+              loki.source.kubernetes "pods" {
+                targets    = discovery.relabel.pods.output
+                forward_to = [loki.write.default.receiver]
+              }
+
+              // Hubble-Flow-Logs (Cilium) von der Host-Datei einlesen -
+              // Grundlage für die 14-Tage-CiliumNetworkPolicy-Analyse.
+              // job="hubble-flows" als eigenes Loki-Label zum späteren Filtern
+              // in Grafana/LogQL, z.B. {job="hubble-flows", node="k3s-server"}.
+              local.file_match "hubble_flows" {
+                path_targets = [{
+                  __path__ = "/var/run/cilium/hubble/events.log",
+                  job      = "hubble-flows",
+                  node     = env("NODE_NAME"),
+                }]
+              }
+
+              loki.source.file "hubble_flows" {
+                targets    = local.file_match.hubble_flows.targets
+                forward_to = [loki.write.default.receiver]
+              }
+
+              loki.write "default" {
+                endpoint {
+                  url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+                }
+              }
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
