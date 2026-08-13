@@ -39,6 +39,18 @@ ansible-run: ## Run full site playbook
 ansible-check: ## Dry-run full site playbook
 	cd ansible && ansible-playbook site.yml --check --diff
 
+migrate-cilium-workers: ## Cilium-Migration: Phase 1+2 (Worker-Nodes, KEIN Helm-Uninstall/Device-Cleanup - sicher für Retries)
+	cd ansible && ansible-playbook playbooks/migrate-to-cilium.yml --tags "phase1,phase2"
+
+migrate-cilium-workers-clean: ## Wie oben, aber MIT Helm-Uninstall + Device-Cleanup (nur bei kaputtem/gecrashtem Cilium-Release nötig)
+	cd ansible && ansible-playbook playbooks/migrate-to-cilium.yml --tags "phase1,phase2" -e force_clean_reinstall=true
+
+harden-ssh: ## SSH/k3s-API auf Tailscale beschränken - VORHER ansible/roles/hardening/README.md lesen!
+	cd ansible && ansible-playbook harden_ssh.yml
+
+migrate-cilium-server: ## Cilium-Migration: Phase 3+4 (Control-Plane + Cleanup) - NUR nach erfolgreicher Worker-Migration
+	cd ansible && ansible-playbook playbooks/migrate-to-cilium.yml --tags "phase3,phase4" -e migrate_control_plane=true
+
 ansible-cluster: ## Run k3s cluster playbook only
 	cd ansible && ansible-playbook cluster.yml
 

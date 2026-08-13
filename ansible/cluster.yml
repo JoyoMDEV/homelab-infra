@@ -10,5 +10,6 @@
   hosts: workers
   become: true
   roles:
+    - common
     - tailscale
     - k3s_agent

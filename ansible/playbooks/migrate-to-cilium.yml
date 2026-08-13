@@ -1,0 +1,276 @@
+---
+# Einmaliges, manuell aufgerufenes Migrations-Playbook. NICHT Teil von
+# site.yml/cluster.yml — bewusst getrennt, weil diese Migration
+# reihenfolgeabhängig und teilweise destruktiv ist (cordon/drain/restart),
+# während site.yml/cluster.yml für routinemäßige, idempotente Convergence-
+# Läufe gedacht sind (z.B. beim Hinzufügen neuer Worker).
+#
+# Aufruf: make migrate-cilium
+# (siehe Makefile — ruft dieses Playbook mit --limit und Sicherheitsabfragen)
+#
+# Phase 2 pausiert nach JEDEM Worker-Node zur manuellen Bestätigung.
+# Phase 3 (Control-Plane) läuft NUR mit explizitem -e migrate_control_plane=true.
+
+- name: "Cilium-Migration Phase 0: Aufräumen vorheriger (gecrashter) Install-Versuche"
+  tags: [phase1]
+  hosts: server,workers
+  become: true
+  gather_facts: false
+  tasks:
+    - name: "{{ inventory_hostname }}: verwaiste Cilium-Netzwerk-Devices entfernen (falls von gecrashtem Agent hinterlassen)"
+      # noqa command-instead-of-module no-changed-when
+      ansible.builtin.shell: |
+        for dev in cilium_vxlan cilium_host cilium_net; do
+          ip link delete "$dev" 2>/dev/null || true
+        done
+      changed_when: false
+      when: force_clean_reinstall | default(false) | bool
+
+    - name: "{{ inventory_hostname }}: verwaiste Cilium-CNI-Configs entfernen (Flannel-Configs bleiben unberührt)"
+      ansible.builtin.shell: |
+        rm -f /etc/cni/net.d/*cilium* 2>/dev/null || true
+      changed_when: false
+      when: force_clean_reinstall | default(false) | bool
+
+- name: "Cilium-Migration Phase 1: Cilium installieren (koexistiert mit Flannel)"
+  tags: [phase1]
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  vars:
+    cilium_chart_version: "{{ cilium_version | default('1.16.5') }}"
+    kubeconfig_path: "{{ playbook_dir }}/../../kubeconfig"
+  tasks:
+    - name: Vorherigen (ggf. defekten) Cilium-Helm-Release entfernen, NUR mit explizitem force_clean_reinstall=true
+      # noqa command-instead-of-module no-changed-when risky-shell-pipe
+      ansible.builtin.shell: >
+        helm uninstall cilium --namespace kube-system --kubeconfig {{ kubeconfig_path }} || true
+      when: force_clean_reinstall | default(false) | bool
+    - name: Cilium Helm-Repo hinzufügen
+      # noqa command-instead-of-module no-changed-when
+      ansible.builtin.shell: helm repo add cilium https://helm.cilium.io/ && helm repo update
+
+    - name: Cilium installieren
+      # noqa command-instead-of-module risky-shell-pipe
+      ansible.builtin.shell: >
+        helm upgrade --install cilium cilium/cilium
+        --version {{ cilium_chart_version }}
+        --namespace kube-system
+        --kubeconfig {{ kubeconfig_path }}
+        -f {{ playbook_dir }}/../files/cilium-values.yaml
+        --set k8sServiceHost={{ hostvars[groups['server'][0]]['ansible_host'] }}
+        --set k8sServicePort=6443
+      register: cilium_install
+      changed_when: "'has been upgraded' in cilium_install.stdout or 'has been installed' in cilium_install.stdout"
+
+    - name: Warten bis Cilium-DaemonSet ready ist
+      # noqa command-instead-of-module no-changed-when
+      ansible.builtin.shell: >
+        KUBECONFIG={{ kubeconfig_path }} kubectl -n kube-system rollout status
+        daemonset/cilium --timeout=180s
+
+- name: "Cilium-Migration Phase 2: Worker-Nodes umziehen (einzeln, mit Pause)"
+  tags: [phase2]
+  hosts: workers
+  become: true
+  serial: 1
+  order: sorted
+  gather_facts: false
+  vars:
+    kubeconfig_path: "{{ playbook_dir }}/../../kubeconfig"
+  tasks:
+    - name: "{{ inventory_hostname }}: cordon"
+      # noqa command-instead-of-module
+      ansible.builtin.shell: "KUBECONFIG={{ kubeconfig_path }} kubectl cordon {{ inventory_hostname }}"
+      delegate_to: localhost
+      become: false
+
+    - name: "{{ inventory_hostname }}: drain"
+      # noqa command-instead-of-module risky-shell-pipe
+      ansible.builtin.shell: >
+        KUBECONFIG={{ kubeconfig_path }} kubectl drain {{ inventory_hostname }}
+        --ignore-daemonsets --delete-emptydir-data --timeout=180s
+      delegate_to: localhost
+      become: false
+
+    - name: "{{ inventory_hostname }}: stale Flannel-Interface entfernen (verhindert Routing-Konflikt mit Cilium)"
+      # noqa command-instead-of-module no-changed-when
+      ansible.builtin.shell: |
+        ip link delete flannel.1 2>/dev/null || true
+        ip route flush dev flannel.1 2>/dev/null || true
+      changed_when: false
+
+    - name: "{{ inventory_hostname }}: k3s-agent neu starten (übernimmt Cilium-CNI)"
+      ansible.builtin.systemd:
+        name: k3s-agent
+        state: restarted
+
+    - name: "{{ inventory_hostname }}: warten bis wieder Ready"
+      # noqa command-instead-of-module no-changed-when
+      ansible.builtin.shell: >
+        KUBECONFIG={{ kubeconfig_path }} kubectl get node {{ inventory_hostname }}
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      delegate_to: localhost
+      become: false
+      register: node_ready
+      retries: 12
+      delay: 10
+      until: node_ready.stdout == "True"
+
+    - name: "{{ inventory_hostname }}: uncordon"
+      # noqa command-instead-of-module
+      ansible.builtin.shell: "KUBECONFIG={{ kubeconfig_path }} kubectl uncordon {{ inventory_hostname }}"
+      delegate_to: localhost
+      become: false
+
+    - name: Manuelle Bestätigung vor dem nächsten Node
+      ansible.builtin.pause:
+        prompt: >
+          {{ inventory_hostname }} ist migriert und Ready. Vorher prüfen:
+          `kubectl get pods -A -o wide | grep {{ inventory_hostname }}` —
+          laufen alle Pods dort wieder? Dann ENTER für den nächsten Node.
+          (Bei Pi: auf Throttling achten, ggf. hier abbrechen und an einem
+          kühleren Zeitpunkt fortsetzen — Playbook ist mit --limit erneut
+          startbar, bereits migrierte Nodes werden nicht wiederholt.)
+
+- name: "Cilium-Migration Phase 3: Control-Plane-Node (NUR mit explizitem Opt-in)"
+  tags: [phase3]
+  hosts: server
+  become: true
+  gather_facts: false
+  vars:
+    kubeconfig_path: "{{ playbook_dir }}/../../kubeconfig"
+  tasks:
+    - name: Sicherheitsabfrage
+      ansible.builtin.fail:
+        msg: >
+          Control-Plane-Migration nur mit -e migrate_control_plane=true
+          ausführen, UND erst wenn alle Worker erfolgreich migriert sind.
+          Samba AD DC läuft nativ auf diesem Host (nicht als Pod) — die
+          Migration betrifft nur die k3s-CNI-Ebene, aber es ist trotzdem
+          der riskanteste Einzelschritt, deshalb der explizite Opt-in.
+      when: not (migrate_control_plane | default(false) | bool)
+
+    - name: "{{ inventory_hostname }}: cordon"
+      # noqa command-instead-of-module
+      ansible.builtin.shell: "KUBECONFIG={{ kubeconfig_path }} kubectl cordon {{ inventory_hostname }}"
+      delegate_to: localhost
+      become: false
+
+    - name: "CNPG-Cluster homelab-pg auf 0 Instanzen runterskalieren (CNPG-nativer Weg, kein PDB-Kampf mehr)"
+      # noqa command-instead-of-module no-changed-when
+      ansible.builtin.shell: >
+        KUBECONFIG={{ kubeconfig_path }} kubectl patch cluster.postgresql.cnpg.io homelab-pg
+        -n infrastructure --type merge -p '{"spec":{"instances":0}}'
+      delegate_to: localhost
+      become: false
+
+    - name: "Warten, bis CNPG den Postgres-Pod tatsächlich abgebaut hat"
+      # noqa command-instead-of-module no-changed-when
+      ansible.builtin.shell: >
+        KUBECONFIG={{ kubeconfig_path }} kubectl get pod homelab-pg-1 -n infrastructure
+        -o jsonpath='{.metadata.name}' 2>/dev/null
+      delegate_to: localhost
+      become: false
+      register: pg_pod_check
+      retries: 12
+      delay: 10
+      until: pg_pod_check.stdout == "" or pg_pod_check.rc != 0
+      failed_when: false
+
+    - name: "{{ inventory_hostname }}: drain"
+      # noqa command-instead-of-module risky-shell-pipe
+      ansible.builtin.shell: >
+        KUBECONFIG={{ kubeconfig_path }} kubectl drain {{ inventory_hostname }}
+        --ignore-daemonsets --delete-emptydir-data --timeout=180s
+      delegate_to: localhost
+      become: false
+
+    - name: "{{ inventory_hostname }}: stale Flannel-Interface entfernen (verhindert Routing-Konflikt mit Cilium)"
+      # noqa command-instead-of-module no-changed-when
+      ansible.builtin.shell: |
+        ip link delete flannel.1 2>/dev/null || true
+        ip route flush dev flannel.1 2>/dev/null || true
+      changed_when: false
+
+    - name: "{{ inventory_hostname }}: k3s (Server) neu starten"
+      ansible.builtin.systemd:
+        name: k3s
+        state: restarted
+
+    - name: "{{ inventory_hostname }}: warten bis wieder Ready"
+      # noqa command-instead-of-module no-changed-when
+      ansible.builtin.shell: >
+        KUBECONFIG={{ kubeconfig_path }} kubectl get node {{ inventory_hostname }}
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      delegate_to: localhost
+      become: false
+      register: server_node_ready
+      retries: 12
+      delay: 10
+      until: server_node_ready.stdout == "True"
+
+    - name: "{{ inventory_hostname }}: uncordon"
+      # noqa command-instead-of-module
+      ansible.builtin.shell: "KUBECONFIG={{ kubeconfig_path }} kubectl uncordon {{ inventory_hostname }}"
+      delegate_to: localhost
+      become: false
+
+    - name: "CNPG-Cluster homelab-pg wieder auf 1 Instanz hochskalieren"
+      # noqa command-instead-of-module no-changed-when
+      ansible.builtin.shell: >
+        KUBECONFIG={{ kubeconfig_path }} kubectl patch cluster.postgresql.cnpg.io homelab-pg
+        -n infrastructure --type merge -p '{"spec":{"instances":1}}'
+      delegate_to: localhost
+      become: false
+
+    - name: "Warten, bis Postgres wieder läuft"
+      # noqa command-instead-of-module no-changed-when
+      ansible.builtin.shell: >
+        KUBECONFIG={{ kubeconfig_path }} kubectl get pod homelab-pg-1 -n infrastructure
+        -o jsonpath='{.status.phase}'
+      delegate_to: localhost
+      become: false
+      register: pg_pod_running
+      retries: 12
+      delay: 10
+      until: pg_pod_running.stdout == "Running"
+      failed_when: false
+
+- name: "Cilium-Migration Phase 4: Cleanup"
+  tags: [phase4]
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: false
+  vars:
+    kubeconfig_path: "{{ playbook_dir }}/../../kubeconfig"
+  tasks:
+    - name: Flannel-DaemonSet entfernen (falls noch vorhanden)
+      # noqa command-instead-of-module
+      ansible.builtin.shell: >
+        KUBECONFIG={{ kubeconfig_path }} kubectl -n kube-system delete
+        daemonset kube-flannel --ignore-not-found
+
+    - name: Cilium auf cni.exclusive=true umstellen (jetzt sicher, kein Flannel mehr)
+      # noqa command-instead-of-module
+      ansible.builtin.shell: >
+        helm upgrade cilium cilium/cilium --reuse-values
+        --namespace kube-system --kubeconfig {{ kubeconfig_path }}
+        --set cni.exclusive=true
+
+    - name: Cilium Connectivity-Test
+      # noqa command-instead-of-module no-changed-when
+      ansible.builtin.shell: "cilium connectivity test --kubeconfig {{ kubeconfig_path }}"
+      register: connectivity_test
+      failed_when: "'All tests successful' not in connectivity_test.stdout"
+
+    - name: Ergebnis anzeigen
+      ansible.builtin.debug:
+        msg: >
+          Migration abgeschlossen. Nächste Schritte von Hand: Flannel-Reste
+          aus /etc/cni/net.d/ auf jedem Node prüfen (optional, Cilium
+          ignoriert sie mit cni.exclusive=true), und die Rollen-Defaults
+          (k3s_server/k3s_agent) sind bereits für zukünftige Fresh-Installs
+          auf --flannel-backend=none umgestellt.

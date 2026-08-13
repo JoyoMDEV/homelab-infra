@@ -1,0 +1,9 @@
+---
+# Einmaliges Härtungs-Playbook - siehe README.md in diesem Ordner, BEVOR
+# du das ausführst. Sperrt SSH/k3s-API auf Tailscale-only ein.
+- name: SSH/k3s-API auf Tailscale beschränken
+  hosts: server,workers
+  become: true
+  gather_facts: false
+  roles:
+    - hardening

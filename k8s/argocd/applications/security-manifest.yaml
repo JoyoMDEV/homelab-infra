@@ -1,0 +1,42 @@
+---
+# Synct den gesamten k8s/security-Pfad rekursiv — deckt ab:
+#   - k8s/security/network-policies/*.yaml   (CiliumNetworkPolicy, mehrere NS)
+#   - k8s/security/external-secrets/**/*.yaml (ExternalSecret, mehrere NS)
+#   - k8s/security/vault-cluster-secret-store.yaml (ClusterSecretStore)
+#
+# Alle Manifeste in diesem Pfad setzen ihren Namespace selbst über
+# metadata.namespace — "destination.namespace: security" unten ist nur der
+# Fallback für die seltenen cluster-scoped Resources (z.B. die
+# CiliumClusterwideNetworkPolicy und die ClusterSecretStore, die ohnehin
+# keinen Namespace haben).
+#
+# WICHTIG: Die manuellen `kubectl apply -f k8s/security/...`-Schritte aus
+# scripts/setup-hcvault.sh und docs/vault-setup.md müssen entfernt werden,
+# sobald diese App aktiv ist — sonst kollidiert ArgoCDs Drift-Detection mit
+# den manuell angewendeten Ressourcen (ArgoCD versucht ggf. "self-heal"
+# gegen etwas, das gerade von Hand geändert wurde).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: security-manifests
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/JoyoMDEV/homelab-infra.git
+    targetRevision: main
+    path: k8s/security
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: security
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

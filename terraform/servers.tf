@@ -19,21 +19,10 @@ resource "hcloud_network_subnet" "k3s" {
 resource "hcloud_firewall" "k3s" {
   name = "k3s-firewall"
 
-  # SSH
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "22"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # k3s API
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "6443"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
+  # SSH und k3s-API laufen ausschließlich über Tailscale (siehe Rule unten,
+  # UDP 41641) - kein öffentlicher TCP-Zugriff auf 22/6443 nötig. kubeconfig
+  # und ~/.ssh/config zeigen beide bereits auf die Tailscale-IP, nie auf
+  # die öffentliche - dieser Fix entfernt nur ungenutzte Angriffsfläche.
 
   # Tailscale WireGuard
   rule {

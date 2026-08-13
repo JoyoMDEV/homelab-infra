@@ -17,13 +17,12 @@
 
 # noqa command-instead-of-module no-changed-when risky-shell-pipe
 - name: Install k3s agent
-  when: not k3s_binary.stat.exists
+  when: not k3s_agent_binary.stat.exists
   ansible.builtin.shell: |
     curl -sfL https://get.k3s.io | sh -s - agent \
       --server {{ k3s_agent_server_url }} \
       --token {{ k3s_agent_token }} \
       --node-ip {{ k3s_agent_tailscale_ip.stdout }} \
-      --flannel-iface tailscale0 \
       {{ k3s_agent_node_labels }}
   environment:
     INSTALL_K3S_VERSION: "{{ k3s_agent_version | default(omit) }}"

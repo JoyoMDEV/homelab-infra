@@ -17,7 +17,8 @@
       --write-kubeconfig-mode 644 \
       --disable servicelb \
       --node-ip {{ k3s_server_tailscale_ip.stdout }} \
-      --flannel-iface tailscale0 \
+      --flannel-backend=none \
+      --disable-network-policy \
       --node-label role=server \
       --node-label location=cloud \
       --tls-san {{ k3s_server_tailscale_ip.stdout }} \

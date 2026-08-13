@@ -11,17 +11,31 @@ metadata:
   namespace: kube-system
 spec:
   valuesContent: |
+    deployment:
+      kind: DaemonSet
+    updateStrategy:
+      rollingUpdate:
+        maxUnavailable: 1
+        maxSurge: 0
+    hostNetwork: true
+    # Ohne ClusterFirstWithHostNet würde der Pod das Host-eigene /etc/resolv.conf
+    # nutzen statt CoreDNS - Traefik braucht aber Cluster-DNS, um Backend-Services
+    # per Namen zu erreichen.
+    dnsPolicy: ClusterFirstWithHostNet
     ports:
       web:
-        hostPort: 80
+        port: 80
         redirectTo:
           port: websecure
           priority: 10
       websecure:
-        hostPort: 443
+        port: 443
         tls:
           enabled: true
-    hostNetwork: false
+    securityContext:
+      capabilities:
+        drop: [ALL]
+        add: [NET_BIND_SERVICE]
     providers:
       kubernetesCRD:
         allowCrossNamespace: true

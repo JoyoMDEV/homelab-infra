@@ -1,0 +1,31 @@
+# Referenziert von ansible/playbooks/migrate-to-cilium.yml
+# und docs/cilium-migration.md — bei Änderungen beide Stellen im Blick halten.
+#
+# devices/k8sServiceHost werden zur Laufzeit vom Playbook per --set
+# überschrieben (Tailscale-IP ist pro Umgebung unterschiedlich), die Werte
+# hier sind der Default für den Fall, dass jemand `helm install` von Hand
+# ohne das Playbook ausführt.
+tunnelProtocol: vxlan
+tunnelPort: 8473  # Flannel belegt während der Migration noch Port 8472 (VXLAN-
+                  # Default) auf jedem Node - ohne diesen Wert kollidiert Cilium's
+                  # cilium_vxlan-Device damit ("address already in use"), weil
+                  # Cilium's DaemonSet auf ALLEN Nodes startet, sobald es
+                  # installiert ist - unabhängig davon, ob der Node schon
+                  # "migriert" ist. Nach Phase 4 (Flannel entfernt) könnte man
+                  # theoretisch auf 8472 zurückwechseln, ist aber nicht nötig.
+devices: tailscale0
+hostPort:
+  enabled: true
+ipam:
+  mode: kubernetes
+kubeProxyReplacement: false
+cni:
+  exclusive: true
+operator:
+  replicas: 1
+hubble:
+  enabled: true
+  relay:
+    enabled: true
+  ui:
+    enabled: true
