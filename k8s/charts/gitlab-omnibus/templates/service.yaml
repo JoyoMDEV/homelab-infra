@@ -49,3 +49,20 @@ spec:
                 name: {{ .Release.Name }}
                 port:
                   number: 5050
+---
+# Ersetzt "hostPort: 2222" im Deployment (siehe dortiger Kommentar) - reines
+# TCP-Passthrough, kein TLS-Termination hier, SSH verschlüsselt selbst.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: {{ .Release.Name }}-ssh
+  labels:
+    app: gitlab
+spec:
+  entryPoints:
+    - ssh
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: {{ .Release.Name }}
+          port: 22

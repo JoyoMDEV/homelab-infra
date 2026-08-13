@@ -113,9 +113,15 @@ spec:
           ports:
             - name: http
               containerPort: 80
+            # hostPort hier entfernt - funktioniert seit dem Wechsel zu
+            # Cilium nicht mehr (kubeProxyReplacement: false -> Ciliums
+            # hostPort-BPF-Datapath inaktiv). SSH-Traffic erreicht diesen
+            # Container jetzt über den Service "ssh"-Port + die neue
+            # IngressRouteTCP (siehe templates/service.yaml), geroutet über
+            # Traefiks neuen "ssh"-Entrypoint auf Port 2222
+            # (k8s/traefik-tls-config.yaml).
             - name: ssh
               containerPort: 22
-              hostPort: 2222
             - name: registry
               containerPort: 5050
           volumeMounts:
