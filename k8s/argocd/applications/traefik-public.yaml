@@ -138,6 +138,7 @@ spec:
             namespaces:
               - public
               - overleaf
+              - auth
           kubernetesIngress:
             enabled: false # nur CRD-basiertes Routing für den Public-Tier
 
