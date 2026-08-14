@@ -45,6 +45,24 @@ spec:
       capabilities:
         drop: [ALL]
         add: [NET_BIND_SERVICE]
+    # NODE_IP = die Tailscale-IP dieses Nodes (k3s wurde mit --node-ip auf
+    # die Tailscale-Adresse gestartet, siehe ansible/roles/k3s_server und
+    # k3s_agent - Kubernetes kennt sie also pro Node schon als "die" IP).
+    # $(NODE_IP) wird von Kubernetes selbst in "args" ersetzt (kein Shell-
+    # Trick nötig). Bindet web/websecure NUR an die Tailscale-IP statt an
+    # 0.0.0.0 - schließt damit die am Anfang gefundene Lücke (internes
+    # Traefik war technisch über die öffentliche IP von CX53 erreichbar) UND
+    # macht gleichzeitig Platz für die zweite, öffentliche Traefik-Instanz,
+    # die genau diesen Wildcard-Bind sonst blockiert (siehe "address already
+    # in use" im Chat-Verlauf).
+    env:
+      - name: NODE_IP
+        valueFrom:
+          fieldRef:
+            fieldPath: status.hostIP
+    additionalArguments:
+      - "--entryPoints.web.address=$(NODE_IP):80/tcp"
+      - "--entryPoints.websecure.address=$(NODE_IP):443/tcp"
     providers:
       kubernetesCRD:
         allowCrossNamespace: true

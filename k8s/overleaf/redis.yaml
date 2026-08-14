@@ -1,0 +1,61 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: overleaf-redis-data
+  namespace: overleaf
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: overleaf-redis
+  namespace: overleaf
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: overleaf-redis
+  template:
+    metadata:
+      labels:
+        app: overleaf-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command: ["redis-server", "--appendonly", "yes"]
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: overleaf-redis-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: overleaf-redis
+  namespace: overleaf
+spec:
+  selector:
+    app: overleaf-redis
+  ports:
+    - port: 6379
+      targetPort: 6379

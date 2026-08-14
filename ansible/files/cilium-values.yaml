@@ -29,3 +29,9 @@ hubble:
     enabled: true
   ui:
     enabled: true
+  export:
+    static:
+      enabled: true
+      filePath: /var/run/cilium/hubble/events.log
+    fileMaxSizeMb: 20
+    fileMaxBackups: 10

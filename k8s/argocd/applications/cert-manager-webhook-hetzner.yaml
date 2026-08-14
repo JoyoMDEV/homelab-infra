@@ -1,0 +1,38 @@
+---
+# Die alte Hetzner-DNS-API (dns.hetzner.com) wurde am 27.05.2026 komplett
+# abgeschaltet (siehe status.hetzner.com/incident/c2146c42...) - jeder
+# Community-Fork, der noch dagegen läuft (vadimkim etc.), kann nicht mehr
+# funktionieren. Das hier ist der OFFIZIELLE, von Hetzner selbst gepflegte
+# Webhook gegen die neue Cloud-API (github.com/hetzner/cert-manager-webhook-hetzner).
+#
+# WICHTIG: Der API-Token muss ein Hetzner CLOUD (Projekt-)Token sein
+# (console.hetzner.com -> das Projekt, dem die DNS-Zone zugeordnet ist ->
+# Sicherheit -> API-Tokens, Lese+Schreib) - NICHT der alte DNS-Zonen-Token
+# aus der abgeschalteten DNS-Console. Andere Tokenart, andere Berechtigung.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager-webhook-hetzner
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.hetzner.cloud
+    chart: cert-manager-webhook-hetzner
+    targetRevision: "0.8.0"
+    helm:
+      values: |
+        groupName: acme.johannesmoseler.de
+  destination:
+    server: https://kubernetes.default.svc
+    # Muss laut Projekt-Doku im selben Namespace wie cert-manager selbst
+    # laufen (cert-manager wurde per bootstrap-certmanager.sh dort installiert).
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

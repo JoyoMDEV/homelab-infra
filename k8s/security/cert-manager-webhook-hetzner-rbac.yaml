@@ -1,0 +1,29 @@
+---
+# Der cert-manager-webhook-hetzner-Chart bringt keine RBAC für das eigentliche
+# API-Token-Secret mit (das entsteht ja erst bei uns über den ExternalSecret,
+# nicht als Chart-Template) - ohne das hier schlägt jede DNS-01-Challenge mit
+# "cannot get resource secrets ... forbidden" fehl.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cert-manager-webhook-hetzner-secret-reader
+  namespace: cert-manager
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["hetzner-dns-token"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: cert-manager-webhook-hetzner-secret-reader
+  namespace: cert-manager
+subjects:
+  - kind: ServiceAccount
+    name: cert-manager-webhook-hetzner
+    namespace: cert-manager
+roleRef:
+  kind: Role
+  name: cert-manager-webhook-hetzner-secret-reader
+  apiGroup: rbac.authorization.k8s.io

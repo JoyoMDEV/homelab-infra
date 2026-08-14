@@ -1,0 +1,27 @@
+---
+# Vault-Pfad manuell befüllen, z.B.:
+#   vault kv put secret/homelab/public/hetzner-dns-token token="<cloud-token>"
+#
+# WICHTIG: Das muss ein Hetzner CLOUD (Projekt-)API-Token sein
+# (console.hetzner.com -> Projekt -> Sicherheit -> API-Tokens, Lese+Schreib),
+# NICHT der alte DNS-Zonen-Token aus der am 27.05.2026 abgeschalteten
+# DNS-Console - andere Tokenart. Key-Name "token" passt zum offiziellen
+# hetzner/cert-manager-webhook-hetzner-Chart (tokenSecretKeyRef.key).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: hetzner-dns-token
+  namespace: cert-manager
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault
+    kind: ClusterSecretStore
+  target:
+    name: hetzner-dns-token
+    creationPolicy: Owner
+  data:
+    - secretKey: token
+      remoteRef:
+        key: homelab/public/hetzner-dns-token
+        property: token

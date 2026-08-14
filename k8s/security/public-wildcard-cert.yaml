@@ -1,0 +1,18 @@
+---
+# Produktions-Wildcard-Zertifikat für *.svc.johannesmoseler.de - wird von
+# Overleaf, Minecraft und allen künftigen public-Diensten gemeinsam über
+# secretName referenziert. Erfolgreich gegen letsencrypt-staging getestet
+# (siehe Chat-Verlauf), dies hier ist der Prod-Issuer für ein echtes,
+# browser-vertrauenswürdiges Zertifikat.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: svc-wildcard
+  namespace: public
+spec:
+  secretName: svc-wildcard-tls
+  issuerRef:
+    name: letsencrypt-prod
+    kind: ClusterIssuer
+  dnsNames:
+    - "*.svc.johannesmoseler.de"

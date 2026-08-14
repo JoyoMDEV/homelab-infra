@@ -1,0 +1,93 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: overleaf-mongo-data
+  namespace: overleaf
+spec:
+  resources:
+    requests:
+      storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: overleaf-mongo
+  namespace: overleaf
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: overleaf-mongo
+  template:
+    metadata:
+      labels:
+        app: overleaf-mongo
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:8.0
+          args: ["--replSet", "overleaf"]
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: data
+              mountPath: /data/db
+          readinessProbe:
+            exec:
+              command: ["mongosh", "--eval", "db.adminCommand('ping')"]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: overleaf-mongo-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: overleaf-mongo
+  namespace: overleaf
+spec:
+  selector:
+    app: overleaf-mongo
+  ports:
+    - port: 27017
+      targetPort: 27017
+---
+# Einmaliger Init-Job: initiiert das Replicaset (nötig, da --replSet ohne
+# rs.initiate() im "not yet initialized"-Zustand hängen bleibt).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: overleaf-mongo-init-replicaset
+  namespace: overleaf
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: init-replicaset
+          image: mongo:8.0
+          command:
+            - mongosh
+            - --host
+            - overleaf-mongo
+            - --eval
+            - >
+              try {
+                rs.status()
+              } catch (e) {
+                rs.initiate({_id: "overleaf", members: [{_id: 0, host: "overleaf-mongo:27017"}]})
+              }

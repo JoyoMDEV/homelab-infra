@@ -1,0 +1,24 @@
+---
+# Bewusste, eng begrenzte Ausnahme: Keycloak-OIDC-Endpunkte öffentlich
+# erreichbar machen, damit externe Nutzer sich gegen Overleaf (und künftige
+# public-Dienste) einloggen können. NUR /realms/* (Login, Token, Well-Known)
+# und /resources/* (Theme-Assets fürs Login-Formular) - explizit NICHT
+# /admin. CiliumNetworkPolicy in "auth" schränkt das später zusätzlich auf
+# L7-Ebene ein (nicht nur Traefik-Pfad-Matching).
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: keycloak-public-exception
+  namespace: public
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`auth.svc.johannesmoseler.de`) && (PathPrefix(`/realms`) || PathPrefix(`/resources`))
+      kind: Rule
+      services:
+        - name: keycloak-keycloakx-http
+          namespace: auth
+          port: 80
+  tls:
+    secretName: svc-wildcard-tls

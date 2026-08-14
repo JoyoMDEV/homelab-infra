@@ -1,0 +1,145 @@
+---
+# Zweite, unabhängige Traefik-Instanz für *.svc.johannesmoseler.de.
+# Bewusst NICHT über die k3s-eigene HelmChartConfig (die patcht nur das EINE
+# von k3s verwaltete "traefik"-Chart in kube-system) - das hier ist ein
+# komplett separater Helm-Release, eigener Chart aus dem offiziellen
+# Traefik-Repo.
+#
+# Isolation:
+# - hostNetwork + Traefiks eigene --entryPoints.*.address-Argumente binden
+#   NUR an die öffentliche IPv4 von CX53 (validiert per manuellem Test - siehe
+#   Chat-Verlauf). Bindet NICHT an 0.0.0.0, also auch nicht an Tailscale.
+#   (ports.<name>.hostIP existiert in diesem Chart-Schema nicht für
+#   web/websecure, daher additionalArguments statt hostIP-Feld.)
+# - providers.kubernetesCRD.namespaces beschränkt auf "public"/"overleaf" -
+#   sieht dadurch nie die IngressRoute/TLSStore-Objekte des internen Traefik
+#   und umgekehrt (löst auch die sonst kollidierende "TLSStore default").
+# - Eigene ingressClass "traefik-public", damit spätere IngressRoute-Objekte
+#   explizit zuordenbar sind (auch wenn das Namespace-Scoping allein schon
+#   für Isolation sorgt).
+#
+# WICHTIG - Scheduler-Falle: Kubernetes' hostNetwork-Port-Konfliktprüfung
+# schaut NUR auf (Node, Port, Protokoll) - nicht auf die IP, an die der
+# Prozess tatsächlich bindet. Mit den "echten" Ports 80/443 deklariert,
+# lehnt der Scheduler den Pod kategorisch ab, weil das interne Traefik auf
+# demselben Node ja schon 80/443 (und 8080/9100) hostNetwork-belegt.
+# Deshalb: hier bewusst UNGENUTZTE Fantasie-Portnummern deklarieren (nur für
+# die Scheduler-Buchhaltung relevant) und die ECHTE Bind-Adresse weiterhin
+# über additionalArguments auf die realen Ports 80/443 legen (Duplicate-Flag,
+# letzter Wert gewinnt - siehe Chat-Verlauf/helm-template-Test).
+#
+# TODO: <PUBLIC_IPV4> durch die echte CX53-Adresse ersetzen
+# (terraform output k3s_server_ip).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik-public
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://traefik.github.io/charts
+    chart: traefik
+    targetRevision: "41.2.0"
+    helm:
+      values: |
+        deployment:
+          kind: Deployment
+          replicas: 1
+          # Custom Pod DNS Policy, hängt laut Chart-Schema unter deployment,
+          # NICHT auf Root-Ebene. Nötig wegen hostNetwork: true.
+          dnsPolicy: ClusterFirstWithHostNet
+
+        # NICHT hostNetwork über die üblichen k8s-Mechanismen (hostPort) -
+        # das ist bei uns durch KPR=false kaputt (siehe Chat-Verlauf zum
+        # GitLab-SSH-Vorfall). hostNetwork + additionalArguments (s.u.) ist
+        # der Weg, der bei uns nachweislich funktioniert.
+        hostNetwork: true
+
+        # Pinnt die Instanz auf CX53 - der einzige Node mit einer echten
+        # öffentlichen IP.
+        nodeSelector:
+          kubernetes.io/hostname: k3s-server
+
+        # LoadBalancer bliebe bei euch ewig "Pending" (kein servicelb) - über
+        # hostNetwork brauchen wir den Service eigentlich gar nicht für die
+        # Erreichbarkeit, aber ClusterIP hält das Objekt wenigstens sauber.
+        service:
+          type: ClusterIP
+
+        # Admin-Dashboard/Metrics-Entrypoints ebenfalls umnummeriert - der
+        # Chart-Default (8080/9100) kollidiert sonst mit dem internen
+        # Traefik, das dieselben Defaults nutzt und auf demselben Node läuft.
+        # Kein Sicherheitsproblem, da wir sie nirgends nach außen binden.
+        ports:
+          traefik:
+            port: 18080
+          metrics:
+            port: 19100
+          web:
+            # Fantasie-Port für die Scheduler-Buchhaltung (s.o.) - die echte
+            # Bind-Adresse kommt aus additionalArguments.
+            port: 18000
+            http:
+              redirections:
+                entryPoint:
+                  to: websecure
+                  scheme: https
+                  permanent: true
+                  priority: 10
+          websecure:
+            # Ebenfalls Fantasie-Port, s.o.
+            port: 18443
+            http:
+              tls:
+                enabled: true
+
+        # ports.<name>.hostIP existiert in diesem Chart NICHT für web/websecure
+        # (nur für den "traefik"-Admin-Port) - per `helm template` gegen die
+        # Chart-Version verifiziert, bevor deployed wurde. Offiziell von
+        # Traefik selbst dokumentierter Weg, einen Entrypoint an eine
+        # bestimmte Adresse zu binden: additionalArguments überschreibt die
+        # Entrypoint-Adresse direkt als Startparameter - das ist der Schritt,
+        # der die Fantasie-Ports von oben durch die echten 80/443 ersetzt,
+        # nur eben NACH der Scheduler-Prüfung, zur Laufzeit im Container.
+        additionalArguments:
+          - "--entryPoints.web.address=<PUBLIC_IPV4>:80/tcp"
+          - "--entryPoints.websecure.address=<PUBLIC_IPV4>:443/tcp"
+
+        securityContext:
+          capabilities:
+            drop: [ALL]
+            add: [NET_BIND_SERVICE]
+
+        providers:
+          kubernetesCRD:
+            # Jetzt true (war erst false) - für die eine bewusste Ausnahme:
+            # die Overleaf-IngressRoute muss auf Keycloaks Service im
+            # "auth"-Namespace zeigen können (OIDC-Endpunkte für den
+            # oauth2-proxy-Login-Redirect). "namespaces:" unten bleibt
+            # trotzdem auf public/overleaf beschränkt - das hier erlaubt nur
+            # das Service-Ziel außerhalb, nicht dass IngressRoute-Objekte aus
+            # "auth" plötzlich mit beobachtet würden.
+            allowCrossNamespace: true
+            namespaces:
+              - public
+              - overleaf
+          kubernetesIngress:
+            enabled: false # nur CRD-basiertes Routing für den Public-Tier
+
+        ingressClass:
+          enabled: true
+          isDefaultClass: false
+          name: traefik-public
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: public
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
