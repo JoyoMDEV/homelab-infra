@@ -42,7 +42,7 @@ spec:
   source:
     repoURL: https://traefik.github.io/charts
     chart: traefik
-    targetRevision: "41.2.0"
+    targetRevision: "" # TODO: `helm search repo traefik/traefik --versions`
     helm:
       values: |
         deployment:
@@ -117,8 +117,8 @@ spec:
         # der die Fantasie-Ports von oben durch die echten 80/443 ersetzt,
         # nur eben NACH der Scheduler-Prüfung, zur Laufzeit im Container.
         additionalArguments:
-          - "--entryPoints.web.address=<PUBLIC_IPV4>:80/tcp"
-          - "--entryPoints.websecure.address=<PUBLIC_IPV4>:443/tcp"
+          - "--entryPoints.web.address=46.225.182.8:80/tcp"
+          - "--entryPoints.websecure.address=46.225.182.8:443/tcp"
 
         securityContext:
           capabilities:
