@@ -42,7 +42,7 @@ spec:
   source:
     repoURL: https://traefik.github.io/charts
     chart: traefik
-    targetRevision: "" # TODO: `helm search repo traefik/traefik --versions`
+    targetRevision: "41.2.0"
     helm:
       values: |
         deployment:
