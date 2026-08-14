@@ -52,6 +52,18 @@ spec:
           # NICHT auf Root-Ebene. Nötig wegen hostNetwork: true.
           dnsPolicy: ClusterFirstWithHostNet
 
+        # Zwei hostNetwork-Pods mit denselben (Fantasie-)Ports können nie
+        # gleichzeitig auf dem einzigen Node (k3s-server, per nodeSelector)
+        # existieren - der Chart-Default (RollingUpdate, surge zuerst) würde
+        # deshalb dauerhaft deadlocken (neuer Pod bleibt für immer Pending,
+        # weil der alte die Ports noch hält). Alten Pod zuerst killen, dann
+        # neuen starten.
+        updateStrategy:
+          type: RollingUpdate
+          rollingUpdate:
+            maxUnavailable: 1
+            maxSurge: 0
+
         # NICHT hostNetwork über die üblichen k8s-Mechanismen (hostPort) -
         # das ist bei uns durch KPR=false kaputt (siehe Chat-Verlauf zum
         # GitLab-SSH-Vorfall). hostNetwork + additionalArguments (s.u.) ist
