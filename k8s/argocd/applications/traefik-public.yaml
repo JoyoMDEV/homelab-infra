@@ -107,6 +107,11 @@ spec:
             http:
               tls:
                 enabled: true
+          minecraft:
+            port: 25565
+            expose:
+              default: true
+            protocol: TCP
 
         # ports.<name>.hostIP existiert in diesem Chart NICHT für web/websecure
         # (nur für den "traefik"-Admin-Port) - per `helm template` gegen die
@@ -119,6 +124,7 @@ spec:
         additionalArguments:
           - "--entryPoints.web.address=46.225.182.8:80/tcp"
           - "--entryPoints.websecure.address=46.225.182.8:443/tcp"
+          - "--entryPoints.minecraft.address=46.225.182.8:25565/tcp"
 
         securityContext:
           capabilities:
@@ -138,7 +144,7 @@ spec:
             namespaces:
               - public
               - overleaf
-              - auth
+              - minecraft
           kubernetesIngress:
             enabled: false # nur CRD-basiertes Routing für den Public-Tier
 
