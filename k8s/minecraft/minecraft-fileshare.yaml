@@ -1,0 +1,107 @@
+---
+# Winziger PVC nur für die Modpack-Zip - getrennt von minecraft-data, damit
+# ihr die Zip jederzeit unabhängig vom Weltdaten-Volume aktualisieren könnt.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minecraft-fileshare
+  namespace: minecraft
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Reiner Static-File-Server - kein eigenes Auth im Container, das übernimmt
+# komplett die Traefik-BasicAuth-Middleware davor (siehe
+# k8s/public/minecraft-fileshare-ingressroute.yaml). nginx bekommt hier also
+# nie unautorisierten Traffic zu Gesicht.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minecraft-fileshare
+  namespace: minecraft
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minecraft-fileshare
+  template:
+    metadata:
+      labels:
+        app: minecraft-fileshare
+    spec:
+      securityContext:
+        runAsUser: 101 # nginx-unprivileged-Standard-User
+        runAsGroup: 0 # Image nutzt die OpenShift-"arbitrary UID, group 0"-
+        # Konvention - Verzeichnisse wie /var/cache/nginx sind für Gruppe 0
+        # beschreibbar gemacht, nicht für eine spezifische GID wie 101.
+        fsGroup: 101 # gilt nur für unsere eigenen Volumes (files/config),
+        # unabhängig von der obigen Gruppen-Konvention des Images.
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: false
+          ports:
+            - containerPort: 8080
+              name: http
+          volumeMounts:
+            - name: files
+              mountPath: /usr/share/nginx/html
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "200m"
+              memory: "64Mi"
+      volumes:
+        - name: files
+          persistentVolumeClaim:
+            claimName: minecraft-fileshare
+        - name: nginx-config
+          configMap:
+            name: minecraft-fileshare-nginx-config
+---
+# Port 8080 statt 80, damit der Container ohne root (non-privileged port)
+# laufen kann - passt zum non-root securityContext oben. Autoindex an, damit
+# ihr Dateien einfach reinlegt und sie ohne weitere Config sichtbar sind.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minecraft-fileshare-nginx-config
+  namespace: minecraft
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        server_name _;
+        root /usr/share/nginx/html;
+        autoindex on;
+        location / {
+            try_files $uri $uri/ =404;
+        }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minecraft-fileshare
+  namespace: minecraft
+spec:
+  type: ClusterIP
+  selector:
+    app: minecraft-fileshare
+  ports:
+    - port: 8080
+      targetPort: 8080

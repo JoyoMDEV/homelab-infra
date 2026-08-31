@@ -1,0 +1,104 @@
+---
+# Analog zu k8s/security/network-policies/public-tier.yaml (public/overleaf) -
+# gleiches additive Cilium-Modell: default-deny als Sicherheitsnetz, dann
+# explizite Allow-Regeln pro Pod.
+
+# ── Sicherheitsnetz: alles in "minecraft", das nicht explizit unten
+#    erfasst ist, defaultet auf komplett zu. ────────────────────────────────
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: minecraft-default-deny
+  namespace: minecraft
+spec:
+  endpointSelector: {}
+  ingress: []
+  egress: []
+
+---
+# ── Minecraft-Server: Ingress bewusst "all" statt podSelector auf Traefik -
+#    exakt dieselbe Begründung wie bei authelia/overleaf-app in
+#    public-tier.yaml: hostNetwork-Traffic von traefik-public wird von
+#    Cilium nicht zuverlässig als fromEndpoints erkannt (kubeProxyReplacement
+#    =false, gleiche Ursache wie GitLab-SSH-Vorfall). Die eigentliche
+#    Zugriffskontrolle läuft hier ohnehin über Hetzner-Firewall + UFW +
+#    Traefik-IPAllowList + Minecraft-Spieler-Whitelist, nicht über diese
+#    L3/L4-Policy.
+#
+#    Egress: DNS + "world" - Modrinth-/CurseForge-Mod-Downloads beim Start
+#    und Mojang-Session-Auth (ONLINE_MODE) brauchen offenes Internet, exakt
+#    dieselbe Begründung wie bei overleaf-app (LaTeX-Paket-Nachladen).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: minecraft-app
+  namespace: minecraft
+spec:
+  endpointSelector:
+    matchLabels:
+      app: minecraft
+  ingress:
+    - fromEntities:
+        - all
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - world
+
+# RCON (25575) bekommt bewusst KEINE Ingress-Freigabe - weder von
+# außen noch clusterintern. Die default-deny-Baseline oben sorgt dafür,
+# dass er dicht bleibt, bis es mal ein konkretes Admin-Tool gibt, das ihn
+# braucht (dann hier eine weitere fromEndpoints-Regel ergänzen, keine
+# eigene "all"-Freigabe).
+
+---
+# ── Fileshare (Modpack-Download): Ingress "all" statt podSelector auf
+#    Traefik - gleicher Grund wie bei authelia/minecraft-app: das
+#    hostNetwork-Erkennungsproblem betrifft ALLE Entrypoints von
+#    traefik-public, nicht nur den TCP-Passthrough (Authelia hängt auch am
+#    normalen websecure-Entrypoint und brauchte trotzdem "all" - hätte ich
+#    mir beim ersten Entwurf hier gleich denken können). Perimeter läuft
+#    über HTTPS + BasicAuth, nicht über diese L3/L4-Policy. Kein
+#    Internet-Egress nötig (reiner Static-File-Server), daher nur DNS. ────
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: minecraft-fileshare
+  namespace: minecraft
+spec:
+  endpointSelector:
+    matchLabels:
+      app: minecraft-fileshare
+  ingress:
+    - fromEntities:
+        - all
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP

@@ -1,0 +1,14 @@
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: homelab
+spec:
+  type: team
+  children: []
+---
+apiVersion:
+kind: User
+metadata:
+  name: johannes
+spec:
+  memberOf: [homelab]

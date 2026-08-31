@@ -1,0 +1,141 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: minecraft
+  namespace: minecraft
+spec:
+  serviceName: minecraft
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minecraft
+  template:
+    metadata:
+      labels:
+        app: minecraft
+    spec:
+      # itzg-Image läuft nicht als root, wenn UID/GID vorgegeben werden -
+      # 1000:1000 ist der im Image dokumentierte Standard-User.
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: minecraft
+          image: itzg/minecraft-server:java17
+          ports:
+            - containerPort: 25565
+              name: minecraft
+            - containerPort: 25575
+              name: rcon
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: false # Server schreibt laufend ins /data-Volume
+          env:
+            - name: EULA
+              value: "TRUE"
+            - name: TYPE
+              value: "FORGE"
+            - name: VERSION
+              value: "1.20.1"
+            - name: FORGE_VERSION
+              value: "47.4.10" # muss exakt zur Client-Modpack-Version passen
+            - name: MEMORY
+              value: "10G"
+            - name: MODRINTH_PROJECTS
+              value: "@/extras/modrinth-mods.txt"
+            - name: MODRINTH_DOWNLOAD_DEPENDENCIES
+              value: "required"
+            - name: DIFFICULTY
+              value: "normal"
+            - name: MOTD
+              value: "Vanilla+ Server \u00a7a[Mining/Automation/Magic] \n Neue Modpack Version seit: 31.08"
+            - name: MAX_PLAYERS
+              value: "10"
+            # Verifiziert Spieler-Accounts gegen Mojang - bewusst NICHT auf
+            # false stellen, sonst kann sich jeder unter jedem Namen
+            # verbinden (Voraussetzung, damit WHITELIST unten überhaupt
+            # etwas taugt).
+            - name: ONLINE_MODE
+              value: "true"
+            # TODO: echte Minecraft-Namen der Whitelist eintragen, bevor der
+            # Server ans Netz geht - so wie hier steht, kann NIEMAND joinen.
+            - name: WHITELIST
+              value: "Leander_02,Sternenkxnd,Nilo224,Joyyyo"
+            - name: OPS
+              value: "Joyyyo"
+            - name: USE_AIKAR_FLAGS
+              value: "true"
+            - name: ENFORCE_WHITELIST
+              value: "true"
+            - name: ENABLE_RCON
+              value: "true"
+            - name: RCON_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minecraft-secret
+                  key: RCON_PASSWORD
+            # Applied Botanics Addon (AE2 x Botania) ist bei 1.20.1 die
+            # STABILE Version (war bei 1.21.1 nur Alpha) - kann jetzt
+            # regulär mit rein, falls nicht schon auf Modrinth verfügbar
+            # per Slug oben in der ConfigMap. Falls nur auf CurseForge:
+            # - name: CF_SLUG
+            #   value: |
+            #     applied-botanics-addon
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: modlist
+              mountPath: /extras
+          resources:
+            requests:
+              cpu: "2"
+              memory: "7Gi"
+            limits:
+              cpu: "5"
+              memory: "12Gi"
+          readinessProbe:
+            tcpSocket:
+              port: 25565
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 25565
+            initialDelaySeconds: 120
+            periodSeconds: 30
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: minecraft-data
+        - name: modlist
+          configMap:
+            name: minecraft-modlist
+---
+# ClusterIP reicht - Erreichbarkeit von außen läuft über den dedizierten
+# TCP-Entrypoint der traefik-public-Instanz (siehe
+# k8s/public/minecraft-ingressroute.yaml), nicht über einen eigenen
+# LoadBalancer/NodePort. LoadBalancer würde in diesem Cluster ohnehin ewig
+# "Pending" bleiben (kein servicelb, siehe Kommentar in traefik-public.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: minecraft
+  namespace: minecraft
+spec:
+  type: ClusterIP
+  selector:
+    app: minecraft
+  ports:
+    - name: minecraft
+      port: 25565
+      targetPort: 25565
+    - name: rcon
+      port: 25575
+      targetPort: 25575

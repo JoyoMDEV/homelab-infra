@@ -1,0 +1,8 @@
+apiVersion: backstage.io/v1alpha1
+kind: Location
+metadata:
+  name: homelab-catalog
+spec:
+  targets:
+    - ./org/homelab.yaml
+    - ./nextcloud/catalog-info.yaml

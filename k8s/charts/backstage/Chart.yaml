@@ -1,0 +1,6 @@
+apiVersion: v2
+name: backstage
+description: Backstage Developer Portal
+type: application
+version: 0.1.0
+appVersion: "1.54.0"

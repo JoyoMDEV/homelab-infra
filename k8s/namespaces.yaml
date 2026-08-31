@@ -102,3 +102,19 @@ metadata:
   labels:
     managed-by: argocd
     homelab.local/inject-ca: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minecraft
+  labels:
+    managed-by: argocd
+    tier: public
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: backstage
+  labels:
+    managed-by: argocd
+    homelab.local/inject-ca: "true"

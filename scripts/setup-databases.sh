@@ -38,6 +38,20 @@ kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -d gitlab -c "
 "
 echo "    GitLab database created"
 
+# Backstage DB
+BACKSTAGE_DB_PW=$(openssl rand -base64 24)
+kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "CREATE DATABASE backstage;" 2>/dev/null || echo "    backstage database already exists"
+kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "
+  DO \$\$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'backstage') THEN
+      CREATE ROLE backstage WITH LOGIN PASSWORD '$BACKSTAGE_DB_PW';
+    END IF;
+  END \$\$;
+  GRANT ALL PRIVILEGES ON DATABASE backstage TO backstage;
+  ALTER DATABASE backstage OWNER TO backstage;
+"
+echo "    Backstage database created"
+
 # Nextcloud DB
 NEXTCLOUD_DB_PW=$(openssl rand -base64 24)
 kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "CREATE DATABASE nextcloud;" 2>/dev/null || echo "    nextcloud database already exists"

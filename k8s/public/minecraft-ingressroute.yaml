@@ -1,0 +1,34 @@
+---
+# Grobe Anti-DoS-Bremse: begrenzt gleichzeitige offene Verbindungen pro
+# Router. Ersetzt kein Rate-Limiting (das gibt es für TCP-Middlewares in
+# Traefik nicht, nur für HTTP) - hilft aber gegen simple Connection-Floods.
+apiVersion: traefik.io/v1alpha1
+kind: MiddlewareTCP
+metadata:
+  name: minecraft-inflight
+  namespace: public
+spec:
+  inFlightConn:
+    amount: 30
+---
+# Reines TCP-Passthrough, kein TLS/SNI (Minecraft-Client spricht das nicht) -
+# daher HostSNI(`*`) als Catch-All auf dem dedizierten "minecraft"-Entrypoint.
+# Service-Ziel liegt bewusst im "minecraft"-Namespace (nicht "public") -
+# funktioniert dank providers.kubernetesCRD.allowCrossNamespace: true in der
+# traefik-public-Application (siehe dortigen Kommentar zum Auth-Beispiel).
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: minecraft
+  namespace: public
+spec:
+  entryPoints:
+    - minecraft
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: minecraft
+          namespace: minecraft
+          port: 25565
+      middlewares:
+        - name: minecraft-inflight

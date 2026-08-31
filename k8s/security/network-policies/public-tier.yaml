@@ -1,0 +1,272 @@
+---
+# Isolations-Policies für den Public-Tier (public + overleaf Namespaces).
+# Ziel: diese beiden Namespaces können NICHTS im restlichen Cluster
+# erreichen (kein GitLab, kein Nextcloud, keine interne Postgres/Redis
+# außer ihren eigenen dedizierten Instanzen) - und umgekehrt kann der Rest
+# des Clusters nichts hier drin erreichen außer explizit erlaubt.
+#
+# Cilium-Policies sind additiv: sobald IRGENDEINE Policy einen Pod für eine
+# Richtung (Ingress/Egress) auswählt, gilt nur noch, was IRGENDEINE
+# passende Policy explizit erlaubt - alles andere ist verboten. Die
+# leeren "*-default-deny"-Policies unten sind ein Sicherheitsnetz für
+# künftige, noch nicht einzeln benannte Pods in diesen Namespaces.
+#
+# WICHTIG: Das hier ist eine bewusste, auf unserer bekannten Architektur
+# basierende Baseline - KEIN Ersatz für die geplante Hubble-gestützte
+# Analyse der restlichen Cluster-Namespaces nach den 14 Tagen. Die hier
+# betreffen nur public/overleaf, weil wir deren Traffic-Muster durch den
+# eigenen Aufbau schon genau kennen.
+
+# ── Sicherheitsnetz: alles in "public"/"overleaf", das nicht explizit
+#    unten erfasst ist, defaultet auf komplett zu. ──────────────────────────
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: public-default-deny
+  namespace: public
+spec:
+  endpointSelector: {}
+  ingress: []
+  egress: []
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: overleaf-default-deny
+  namespace: overleaf
+spec:
+  endpointSelector: {}
+  ingress: []
+  egress: []
+
+---
+# ── traefik-public: nur Egress einschränken (Ingress läuft über
+#    hostNetwork + expliziten IP-Bind, nicht über normales Pod-Networking -
+#    das ist bereits über den Bind/die Firewall kontrolliert, siehe
+#    Chat-Verlauf). Egress: DNS, Authelia, Overleaf-Backend UND
+#    Minecraft-Backend (siehe minecraft-tier.yaml) - Traefik routet auf
+#    diesem Weg zu allen drei public-Diensten. ─────────────────────────────
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: traefik-public-egress
+  namespace: public
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app: authelia
+      toPorts:
+        - ports:
+            - port: "9091"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: overleaf
+            app: overleaf
+      toPorts:
+        - ports:
+            - port: "80"
+              protocol: TCP
+    # NEU: Traefiks TCP-Entrypoint (Port 25565) routet direkt zum
+    # Minecraft-Service im "minecraft"-Namespace - ohne diese Freigabe
+    # käme kein Spieler-Traffic durch, selbst wenn DNS/Whitelist/Firewall
+    # alle stimmen.
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: minecraft
+            app: minecraft
+      toPorts:
+        - ports:
+            - port: "25565"
+              protocol: TCP
+    # NEU: Fileshare für den Modpack-Download (HTTPS, websecure-Entrypoint,
+    # daher hier - nicht beim TCP-Entrypoint - relevant).
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: minecraft
+            app: minecraft-fileshare
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+
+---
+# ── Authelia: nur vom Gateway erreichbar, keine Egress außer DNS (file-
+#    basierte Auth, lokales SQLite, kein SMTP aktuell konfiguriert). ───────
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: authelia
+  namespace: public
+spec:
+  endpointSelector:
+    matchLabels:
+      app: authelia
+  ingress:
+    # Ingress-Beschränkung fällt weg, s. Chat-Verlauf: Traefiks
+    # hostNetwork-Traffic wird von Cilium unzuverlässig identifiziert
+    # (weder fromEndpoints noch fromEntities:world griff sauber - vermutlich
+    # zusammenhängend mit kubeProxyReplacement=false, gleiche Ursache wie
+    # der GitLab-SSH-Vorfall). Explizites "all" nötig, NICHT einfach
+    # weglassen - sonst würde die *-default-deny-Baseline-Policy (erfasst
+    # ALLE Pods im Namespace) den Ingress trotzdem komplett blockieren.
+    # Kein echtes Sicherheitsloch: die eigentliche Außengrenze läuft über
+    # DNS+IP-Bind+Firewall, Egress-Isolation (das eigentliche Ziel) bleibt
+    # unverändert bestehen.
+    - fromEntities:
+        - all
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+---
+# ── Overleaf: Egress eigene Mongo/Redis, DNS, UND Internet (bewusst
+#    erlaubt - LaTeX-Paket-Nachladen), aber NICHT der restliche Cluster
+#    ("world"-Entity schließt Cluster-interne Ziele aus, genau die richtige
+#    Grenze hier). Ingress unbeschränkt, s. Kommentar bei Authelia oben. ──
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: overleaf-app
+  namespace: overleaf
+spec:
+  endpointSelector:
+    matchLabels:
+      app: overleaf
+  ingress:
+    - fromEntities:
+        - all
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app: overleaf-mongo
+      toPorts:
+        - ports:
+            - port: "27017"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app: overleaf-redis
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+    - toEntities:
+        - world
+
+---
+# ── Mongo: nur von Overleaf selbst erreichbar, keine Egress außer DNS. ────
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: overleaf-mongo
+  namespace: overleaf
+spec:
+  endpointSelector:
+    matchLabels:
+      app: overleaf-mongo
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: overleaf
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+---
+# ── Redis: nur von Overleaf selbst erreichbar, keine Egress außer DNS. ────
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: overleaf-redis
+  namespace: overleaf
+spec:
+  endpointSelector:
+    matchLabels:
+      app: overleaf-redis
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: overleaf
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+---
+# ── Mongo-Init-Job: braucht kurzzeitig Zugriff auf Mongo für rs.initiate().
+#    "job-name" wird von Kubernetes automatisch an Job-Pods vergeben. ──────
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: overleaf-mongo-init
+  namespace: overleaf
+spec:
+  endpointSelector:
+    matchLabels:
+      job-name: overleaf-mongo-init-replicaset
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app: overleaf-mongo
+      toPorts:
+        - ports:
+            - port: "27017"
+              protocol: TCP

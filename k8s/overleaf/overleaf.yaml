@@ -81,7 +81,7 @@ spec:
               memory: 3Gi
           readinessProbe:
             httpGet:
-              path: /health_check
+              path: /status
               port: 80
             initialDelaySeconds: 30
             periodSeconds: 10

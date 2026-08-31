@@ -1,0 +1,110 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: authelia-data
+  namespace: public
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authelia
+  namespace: public
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: authelia
+  template:
+    metadata:
+      labels:
+        app: authelia
+    spec:
+      # Kubernetes injiziert sonst automatisch AUTHELIA_SERVICE_*/
+      # AUTHELIA_PORT_*-Env-Vars (Standardverhalten für jeden Service dieses
+      # Namens) - kollidiert mit Authelias eigenem AUTHELIA_-Prefix-Env-Var-
+      # Config-Scanning und führte zum Fatal-Error beim Start.
+      enableServiceLinks: false
+      containers:
+        - name: authelia
+          image: authelia/authelia:latest
+          ports:
+            - containerPort: 9091
+          volumeMounts:
+            - name: config
+              mountPath: /config/configuration.yml
+              subPath: configuration.yml
+              readOnly: true
+            - name: users
+              mountPath: /config/users_database.yml
+              subPath: users_database.yml
+              readOnly: true
+            - name: secrets
+              mountPath: /secrets
+              readOnly: true
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 9091
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: authelia-config
+        - name: users
+          secret:
+            secretName: authelia-users
+        - name: secrets
+          secret:
+            secretName: authelia-secrets
+        - name: data
+          persistentVolumeClaim:
+            claimName: authelia-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authelia
+  namespace: public
+spec:
+  selector:
+    app: authelia
+  ports:
+    - port: 9091
+      targetPort: 9091
+---
+# WICHTIG (laut Authelia-Doku ausdrücklich): auf diese IngressRoute selbst
+# KEINE forwardAuth-Middleware anwenden, sonst Henne-Ei-Problem beim Login.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: authelia
+  namespace: public
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`login.svc.johannesmoseler.de`)
+      kind: Rule
+      services:
+        - name: authelia
+          port: 9091
+  tls:
+    secretName: svc-wildcard-tls

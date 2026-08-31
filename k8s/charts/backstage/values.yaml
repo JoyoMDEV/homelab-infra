@@ -1,0 +1,14 @@
+image:
+  repository: registry.homelab.local/homelab/projects/backstage
+  tag: latest
+  pullPolicy: Always
+
+hostname: backstage.homelab.local
+
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 250m
+  limits:
+    memory: 1Gi
+    cpu: 500m

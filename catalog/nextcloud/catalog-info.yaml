@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: nextcloud
+  description: File-Sync & Sharing
+  annotations:
+    argocd/app-name: nextcloud
+    backstage.io/kubernetes-id: nextcloud
+  links:
+    - url: https://nextcloud.homelab.local
+      title: Nextcloud
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

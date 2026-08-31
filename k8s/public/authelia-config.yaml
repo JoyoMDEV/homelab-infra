@@ -1,0 +1,79 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authelia-config
+  namespace: public
+data:
+  configuration.yml: |
+    server:
+      address: 'tcp://0.0.0.0:9091'
+
+    log:
+      level: 'info'
+
+    # {{ secret "/path" }} ist Authelias eigene Templating-Funktion, um
+    # Secret-Werte aus gemounteten Dateien zu lesen, statt sie im Klartext
+    # in der Config zu haben (Werte kommen aus dem authelia-secrets-Secret,
+    # per ExternalSecret aus Vault).
+    identity_validation:
+      reset_password:
+        jwt_secret: '{{ secret "/secrets/jwt_secret" }}'
+
+    totp:
+      issuer: 'johannesmoseler.de'
+      period: 30
+      skew: 1
+
+    authentication_backend:
+      file:
+        path: '/config/users_database.yml'
+        password:
+          algorithm: 'argon2'
+          argon2:
+            variant: 'argon2id'
+            iterations: 3
+            memory: 65536
+            parallelism: 4
+            key_length: 32
+            salt_length: 16
+
+    # default_policy deny + explizite Ausnahme nur für die Login-Seite
+    # selbst (bypass, sonst Henne-Ei-Problem) - alles andere unter
+    # *.svc.johannesmoseler.de verlangt 2FA. Pro Dienst könnte man hier
+    # später auch feiner differenzieren (z.B. one_factor für weniger
+    # sensible Sachen), erstmal einheitlich two_factor.
+    access_control:
+      default_policy: 'deny'
+      rules:
+        - domain: 'login.svc.johannesmoseler.de'
+          policy: 'bypass'
+        - domain: '*.svc.johannesmoseler.de'
+          policy: 'two_factor'
+
+    session:
+      secret: '{{ secret "/secrets/session_secret" }}'
+      cookies:
+        # KEIN führender Punkt - moderne Browser behandeln "domain: X" schon
+        # als alle Subdomains von X umfassend. Genau das wollen wir: EINE
+        # Session für login/overleaf/künftige public-Dienste.
+        - domain: 'svc.johannesmoseler.de'
+          authelia_url: 'https://login.svc.johannesmoseler.de'
+          default_redirection_url: 'https://overleaf.svc.johannesmoseler.de'
+
+    regulation:
+      max_retries: 5
+      find_time: '2 minutes'
+      ban_time: '5 minutes'
+
+    storage:
+      encryption_key: '{{ secret "/secrets/storage_encryption_key" }}'
+      local:
+        path: '/data/db.sqlite3'
+
+    # Kein SMTP konfiguriert - Passwort-Reset-Mails landen erstmal in einer
+    # Datei im Pod (ausreichend für den kleinen, bekannten Nutzerkreis;
+    # SMTP kann später ergänzt werden, falls gewünscht).
+    notifier:
+      filesystem:
+        filename: '/data/notification.txt'

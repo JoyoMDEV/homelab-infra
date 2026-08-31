@@ -2,17 +2,21 @@
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: overleaf-oauth2-forwardauth
+  name: authelia-forwardauth
   namespace: public
 spec:
   forwardAuth:
-    address: http://oauth2-proxy.overleaf.svc.cluster.local:4180/ouath2/auth
+    address: http://authelia.public.svc.cluster.local:9091/api/authz/forward-auth
     trustForwardHeader: true
     authResponseHeaders:
-      - X-Auth_Request-User
-      - X-Auth-Request-Email
-      - Set-Cookie
+      - Remote-User
+      - Remote-Groups
+      - Remote-Email
+      - Remote-Name
 ---
+# Nur noch EINE Route - kein separater /oauth2/-Callback-Pfad mehr nötig:
+# Authelias Session-Cookie gilt für die ganze svc.johannesmoseler.de-Domain,
+# der Login läuft komplett auf login.svc.johannesmoseler.de selbst ab.
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -22,22 +26,10 @@ spec:
   entryPoints:
     - websecure
   routes:
-    # Höhere Priorität - muss vor der Catch-All-Regel unten matchen.
-    # Das ist der Login-Callback-Flow selbst, läuft OHNE die
-    # forwardAuth-Middleware (sonst Henne-Ei-Problem: Auth-Check würde den
-    # Auth-Callback selbst blockieren).
-    - match: Host(`overleaf.svc.johannesmoseler.de`) && PathPrefix(`/oauth2/`)
-      kind: Rule
-      priority: 20
-      services:
-        - name: oauth2-proxy
-          namespace: overleaf
-          port: 4180
     - match: Host(`overleaf.svc.johannesmoseler.de`)
       kind: Rule
-      priority: 10
       middlewares:
-        - name: overleaf-oauth2-forwardauth
+        - name: authelia-forwardauth
       services:
         - name: overleaf
           namespace: overleaf

@@ -71,6 +71,7 @@ data:
             # IP is the Traefik ClusterIP, read dynamically by setup-coredns.sh
             ${TRAEFIK_IP} auth.homelab.local
             ${TRAEFIK_IP} gitlab.homelab.local
+            ${TRAEFIK_IP} registry.homelab.local
             ${TRAEFIK_IP} argocd.homelab.local
             ${TRAEFIK_IP} grafana.homelab.local
             ${TRAEFIK_IP} nextcloud.homelab.local
@@ -79,6 +80,7 @@ data:
             ${TRAEFIK_IP} hcvault.homelab.local
             ${TRAEFIK_IP} paperless.homelab.local
             ${TRAEFIK_IP} nocodb.homelab.local
+            ${TRAEFIK_IP} backstage.homelab.local
             ${TRAEFIK_IP} homelab.local
             fallthrough
         }
@@ -115,6 +117,7 @@ else
     hosts {
         ${TRAEFIK_IP} auth.homelab.local
         ${TRAEFIK_IP} gitlab.homelab.local
+        ${TRAEFIK_IP} registry.homelab.local
         ${TRAEFIK_IP} argocd.homelab.local
         ${TRAEFIK_IP} grafana.homelab.local
         ${TRAEFIK_IP} nextcloud.homelab.local
@@ -123,6 +126,7 @@ else
         ${TRAEFIK_IP} hcvault.homelab.local
         ${TRAEFIK_IP} paperless.homelab.local
         ${TRAEFIK_IP} nocodb.homelab.local
+        ${TRAEFIK_IP} backstage.homelab.local
         ${TRAEFIK_IP} homelab.local
         fallthrough
     }
