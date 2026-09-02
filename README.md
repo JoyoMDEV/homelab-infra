@@ -9,15 +9,12 @@ Hybrid Kubernetes cluster: 1 Hetzner Cloud server + 2 home nodes, managed with T
 │                    Tailscale Mesh VPN                   │
 ├──────────────────┬──────────────────┬───────────────────┤
 │  Hetzner CX53    │  Home: Mini-PC   │  Home: Raspberry  │
-│  k3s-server      │  k3s-worker-     │  Pi 4B             │
-│  32 GB / 16 vCPU │  minipc          │  k3s-worker-pi     │
-│  Control Plane   │  Worker          │  Worker (throttled │
-│  Samba AD DC     │                  │  in summer - light │
-│                  │                  │  workloads only)   │
+│  k3s-server      │  k3s-worker-     │  Pi 4B            │
+│  32 GB / 16 vCPU │  minipc          │  k3s-worker-pi    │
+│  Control Plane   │  Worker          │  Worker           │
+│  Samba AD DC     │                  │                   │
+│                  │                  │                   │
 └──────────────────┴──────────────────┴───────────────────┘
-
-  (A second Hetzner CX43 worker is defined but commented out in
-  terraform/servers.tf - not currently provisioned.)
 
 CNI:     Cilium (migrated from Flannel, see docs/cilium-migration.md;
          kube-proxy still active, replacement not yet done)
@@ -395,6 +392,4 @@ public Traefik instance + Authelia for the few internet-facing ones.
 - [x] Renovate (automated dependency updates)
 - [x] Velero (cluster backup/restore) + quarterly recovery tests
 - [x] Authelia + public IngressRoutes (Overleaf, Minecraft) on a separate public Traefik instance
-- [ ] Second Hetzner worker (CX43) - defined in Terraform, not yet provisioned
 - [ ] kube-proxy replacement (Cilium-native)
-- [ ] Phase 2: Stalwart Mail
