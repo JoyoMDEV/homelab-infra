@@ -15,6 +15,15 @@ spec:
       labels:
         app: minecraft
     spec:
+      # Fest auf den k3s-server gepinnt - analog zur traefik-public-Instanz
+      # (siehe deren Kommentar zum CX53-Node). Noetig, weil die minecraft-data
+      # PVC ueber "local-path" (hostPath-basiert) laeuft: das zugehoerige PV
+      # bekommt eine nodeAffinity auf den Node, auf dem es zuerst provisioniert
+      # wurde - der Pod MUSS also immer auf demselben Node landen, sonst
+      # scheitert das Scheduling oder es wird faelschlich ein neues, leeres
+      # Volume auf einem anderen Node angelegt.
+      nodeSelector:
+        kubernetes.io/hostname: k3s-server
       # itzg-Image läuft nicht als root, wenn UID/GID vorgegeben werden -
       # 1000:1000 ist der im Image dokumentierte Standard-User.
       securityContext:
@@ -47,7 +56,7 @@ spec:
             - name: FORGE_VERSION
               value: "47.4.10" # muss exakt zur Client-Modpack-Version passen
             - name: MEMORY
-              value: "10G"
+              value: "6G"
             - name: MODRINTH_PROJECTS
               value: "@/extras/modrinth-mods.txt"
             - name: MODRINTH_DOWNLOAD_DEPENDENCIES
@@ -99,7 +108,7 @@ spec:
               memory: "7Gi"
             limits:
               cpu: "5"
-              memory: "12Gi"
+              memory: "10Gi"
           readinessProbe:
             tcpSocket:
               port: 25565

@@ -32,6 +32,7 @@ data:
     supplementaries
     sophisticated-storage:1.20.1-1.4.83.2111
     sophisticated-core:1.20.1-1.3.81.2280
+    sophisticated-backpacks:1.20.1-3.24.67.2109
 
     # Utility / QoL
     jei:beta
@@ -40,3 +41,8 @@ data:
     appleskin
     clumps
     mouse-tweaks
+    veinminer:1.1.0+mod
+
+    # Optimization
+    entityculling:1.10.5
+    ferrite-core:6.0.1
