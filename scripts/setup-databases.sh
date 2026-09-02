@@ -26,7 +26,7 @@ kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "CREATE DATAB
 kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "
   DO \$\$ BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'gitlab') THEN
-      CREATE ROLE gitlab WITH LOGIN PASSWORD '$GITLAB_DB_PW' SUPERUSER;
+      CREATE ROLE gitlab WITH LOGIN PASSWORD '$GITLAB_DB_PW';
     END IF;
   END \$\$;
   GRANT ALL PRIVILEGES ON DATABASE gitlab TO gitlab;

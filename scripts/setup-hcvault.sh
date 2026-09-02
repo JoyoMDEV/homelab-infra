@@ -317,17 +317,19 @@ vault_exec write auth/kubernetes/config \
 
 success "Kubernetes Auth konfiguriert."
 
-# Rollen für Namespaces anlegen
-# ServiceAccounts in diesen Namespaces können sich mit 'ns-<namespace>' Policy authentifizieren
-for NS in gitlab auth productivity monitoring security automation dashboard infrastructure; do
-  vault_exec write "auth/kubernetes/role/${NS}" \
-    bound_service_account_names="*" \
-    bound_service_account_namespaces="${NS}" \
-    policies="ns-${NS},reader" \
-    ttl=1h \
-    2>/dev/null || true
-  success "Kubernetes Role '${NS}' angelegt."
-done
+# Hinweis: Es gibt bewusst KEINE generischen "auth/kubernetes/role/<namespace>"
+# Rollen mit bound_service_account_names="*" mehr. Die frühere Variante band
+# zusätzlich die "reader"-Policy (Lesezugriff auf secret/data/* - ganz Vault)
+# an jede Namespace-Rolle, wodurch jeder Pod in einem der Namespaces effektiv
+# ganz Vault lesen konnte - die "ns-<namespace>"-Policy-Scoping war dadurch
+# wirkungslos. Kein Workload authentifiziert sich aktuell über diese Rollen
+# (kein Vault Agent Injector, kein "vault write auth/kubernetes/login" im
+# Repo) - Secrets laufen ausschließlich über den External Secrets Operator,
+# der seine eigene, eng gescopte "external-secrets"-Rolle unten nutzt.
+# Falls künftig ein Pod sich direkt per Kubernetes-Auth authentifizieren
+# soll, dafür eine eigene Rolle mit einem konkreten ServiceAccount-Namen
+# (kein "*") und ausschließlich der passenden "ns-<namespace>"-Policy
+# anlegen - nicht "reader" beimischen.
 
 # Spezielle Rolle für External Secrets Operator
 vault_exec write auth/kubernetes/role/external-secrets \
