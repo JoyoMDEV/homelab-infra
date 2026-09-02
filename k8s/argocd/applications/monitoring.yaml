@@ -172,6 +172,13 @@ spec:
         # ── Node Exporter ────────────────────────────────────────────────────
         nodeExporter:
           enabled: true
+        
+        prometheus-node-exporter:
+          service:
+            port: 9101
+            targetPort: 9101
+          containerPort:
+            metrics: 9101
 
         # ── kube-state-metrics ───────────────────────────────────────────────
         kubeStateMetrics:
