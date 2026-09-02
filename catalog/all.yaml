@@ -5,4 +5,26 @@ metadata:
 spec:
   targets:
     - ./org/homelab.yaml
+    - ./alloy/catalog-info.yaml
+    - ./backstage/catalog-info.yaml
+    - ./cert-manager-webhook-hetzner/catalog-info.yaml
+    - ./external-secrets/catalog-info.yaml
+    - ./gitlab/catalog-info.yaml
+    - ./gitlab-runner/catalog-info.yaml
+    - ./infrastructure/catalog-info.yaml
+    - ./keycloak/catalog-info.yaml
+    - ./loki/catalog-info.yaml
+    - ./minio/catalog-info.yaml
+    - ./monitoring/catalog-info.yaml
     - ./nextcloud/catalog-info.yaml
+    - ./nocodb/catalog-info.yaml
+    - ./overleaf/catalog-info.yaml
+    - ./paperless/catalog-info.yaml
+    - ./public/catalog-info.yaml
+    - ./redis/catalog-info.yaml
+    - ./renovate/catalog-info.yaml
+    - ./security-manifests/catalog-info.yaml
+    - ./traefik-public/catalog-info.yaml
+    - ./vault/catalog-info.yaml
+    - ./vaultwarden/catalog-info.yaml
+    - ./velero/catalog-info.yaml

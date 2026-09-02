@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: security-manifests
+  description: Cluster security manifests (network policies, ExternalSecrets, Vault ClusterSecretStore)
+  annotations:
+    argocd/app-name: security-manifests
+    backstage.io/kubernetes-id: security-manifests
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

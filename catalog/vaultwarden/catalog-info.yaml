@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: vaultwarden
+  description: Self-hosted Bitwarden-compatible password manager
+  annotations:
+    argocd/app-name: vaultwarden
+    backstage.io/kubernetes-id: vaultwarden
+  links:
+    - url: https://vault.homelab.local
+      title: Vaultwarden
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

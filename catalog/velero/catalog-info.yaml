@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: velero
+  description: Cluster backup/restore (Velero)
+  annotations:
+    argocd/app-name: velero
+    backstage.io/kubernetes-id: velero
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

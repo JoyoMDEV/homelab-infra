@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: paperless
+  description: Paperless-ngx document management
+  annotations:
+    argocd/app-name: paperless
+    backstage.io/kubernetes-id: paperless
+  links:
+    - url: https://paperless.homelab.local
+      title: Paperless-ngx
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: gitlab
+  description: Self-hosted GitLab (source control + CI/CD)
+  annotations:
+    argocd/app-name: gitlab
+    backstage.io/kubernetes-id: gitlab
+  links:
+    - url: https://gitlab.homelab.local
+      title: GitLab
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

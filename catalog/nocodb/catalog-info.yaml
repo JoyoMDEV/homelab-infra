@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: nocodb
+  description: No-code database / Airtable-like UI
+  annotations:
+    argocd/app-name: nocodb
+    backstage.io/kubernetes-id: nocodb
+  links:
+    - url: https://nocodb.homelab.local
+      title: NocoDB
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

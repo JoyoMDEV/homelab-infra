@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: overleaf
+  description: Self-hosted Overleaf (collaborative LaTeX editor)
+  annotations:
+    argocd/app-name: overleaf
+    backstage.io/kubernetes-id: overleaf
+  links:
+    - url: https://overleaf.svc.johannesmoseler.de
+      title: Overleaf
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

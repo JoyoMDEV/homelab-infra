@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: alloy
+  description: Log and metrics shipping agent (Grafana Alloy)
+  annotations:
+    argocd/app-name: alloy
+    backstage.io/kubernetes-id: alloy
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

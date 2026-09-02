@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: traefik-public
+  description: Public-facing Traefik ingress controller instance
+  annotations:
+    argocd/app-name: traefik-public
+    backstage.io/kubernetes-id: traefik-public
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

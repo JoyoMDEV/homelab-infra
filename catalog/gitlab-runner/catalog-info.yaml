@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: gitlab-runner
+  description: GitLab CI runner for this cluster
+  annotations:
+    argocd/app-name: gitlab-runner
+    backstage.io/kubernetes-id: gitlab-runner
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

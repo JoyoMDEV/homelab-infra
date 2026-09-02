@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: keycloak
+  description: SSO / identity provider (OIDC)
+  annotations:
+    argocd/app-name: keycloak
+    backstage.io/kubernetes-id: keycloak
+  links:
+    - url: https://auth.homelab.local
+      title: Keycloak
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: loki
+  description: Log aggregation backend for Grafana
+  annotations:
+    argocd/app-name: loki
+    backstage.io/kubernetes-id: loki
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: public
+  description: Public-facing ingress bundle (Authelia + public IngressRoutes for minecraft/overleaf)
+  annotations:
+    argocd/app-name: public
+    backstage.io/kubernetes-id: public
+  links:
+    - url: https://login.svc.johannesmoseler.de
+      title: Authelia
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

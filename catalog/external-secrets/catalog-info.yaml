@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: external-secrets
+  description: External Secrets Operator - syncs Vault secrets into Kubernetes
+  annotations:
+    argocd/app-name: external-secrets
+    backstage.io/kubernetes-id: external-secrets
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

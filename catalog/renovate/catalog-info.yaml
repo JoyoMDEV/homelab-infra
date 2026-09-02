@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: renovate
+  description: Automated dependency update bot
+  annotations:
+    argocd/app-name: renovate
+    backstage.io/kubernetes-id: renovate
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

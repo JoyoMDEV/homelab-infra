@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: cert-manager-webhook-hetzner
+  description: Hetzner DNS webhook for cert-manager DNS-01 challenges
+  annotations:
+    argocd/app-name: cert-manager-webhook-hetzner
+    backstage.io/kubernetes-id: cert-manager-webhook-hetzner
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

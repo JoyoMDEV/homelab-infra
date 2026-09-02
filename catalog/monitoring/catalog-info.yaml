@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: monitoring
+  description: Prometheus + Grafana + Alertmanager stack
+  annotations:
+    argocd/app-name: monitoring
+    backstage.io/kubernetes-id: monitoring
+  links:
+    - url: https://grafana.homelab.local
+      title: Grafana
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

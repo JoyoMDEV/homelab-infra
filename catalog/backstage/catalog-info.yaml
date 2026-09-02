@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: backstage
+  description: Internal developer portal / software catalog
+  annotations:
+    argocd/app-name: backstage
+    backstage.io/kubernetes-id: backstage
+  links:
+    - url: https://backstage.homelab.local
+      title: Backstage
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

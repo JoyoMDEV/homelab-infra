@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: minio
+  description: S3-compatible object storage
+  annotations:
+    argocd/app-name: minio
+    backstage.io/kubernetes-id: minio
+  links:
+    - url: https://minio-console.homelab.local
+      title: MinIO Console
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

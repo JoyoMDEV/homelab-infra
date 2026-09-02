@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: redis
+  description: Shared Redis cache
+  annotations:
+    argocd/app-name: redis
+    backstage.io/kubernetes-id: redis
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab

@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: infrastructure
+  description: Shared cluster infrastructure (Postgres cluster, cert-manager issuer, wildcard cert, MinIO backup job)
+  annotations:
+    argocd/app-name: infrastructure
+    backstage.io/kubernetes-id: infrastructure
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab/johannes
+  system: homelab
