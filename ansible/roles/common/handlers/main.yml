@@ -3,3 +3,12 @@
   ansible.builtin.service:
     name: sshd
     state: restarted
+
+- name: update ca certificates and restart k3s
+  shell: update-ca-certificates
+  notify: restart k3s
+
+- name: restart k3s
+  ansible.builtin.service:
+    name: "{{ 'k3s' if k3s_role == 'server' else 'k3s-agent' }}"
+    state: restarted

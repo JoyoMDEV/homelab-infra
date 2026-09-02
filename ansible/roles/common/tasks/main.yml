@@ -105,6 +105,13 @@
     name: unattended-upgrades
     selection: install
 
+- name: Copy homelab internal CA to node trust store
+  copy:
+    src: "{{ playbook_dir }}/../certs/homelab-ca.crt"
+    dest: /usr/local/share/ca-certificates/homelab-ca.crt
+    mode: "0644"
+  notify: update ca certificates and restart k3s
+
 - name: Reboot if kernel was updated
   ansible.builtin.stat:
     path: /var/run/reboot-required
