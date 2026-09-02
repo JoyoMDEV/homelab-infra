@@ -3,27 +3,60 @@ set -euo pipefail
 
 # =============================================================================
 #  setup-minio.sh
-#  Erstellt das Kubernetes Secret für MinIO mit Credentials und
-#  Storage Box Passwort für den Restic-Backup-CronJob.
+#  Schreibt die MinIO Root Credentials + Storage Box Passwort nach Vault.
+#  Das ExternalSecret 'minio-secret' (Namespace infrastructure) übernimmt
+#  von dort aus die Erstellung/Pflege des Kubernetes Secrets.
 #
 #  VORAUSSETZUNGEN:
 #  - kubectl konfiguriert und Cluster erreichbar
-#  - Namespace 'infrastructure' existiert
+#  - VAULT_TOKEN als Env-Var gesetzt
+#
+#  IDEMPOTENT: Wenn in Vault schon alle drei Werte gesetzt sind, wird nichts
+#  überschrieben - zum bewussten Rotieren einzelne Keys manuell setzen:
+#    kubectl exec -n security vault-0 -- env VAULT_ADDR=http://127.0.0.1:8200 \
+#      VAULT_TOKEN=$VAULT_TOKEN vault kv put secret/homelab/infrastructure/minio \
+#      rootUser=... rootPassword=... storage-box-password=...
 #
 #  USAGE:
+#    export VAULT_TOKEN="..."
 #    ./scripts/setup-minio.sh
 # =============================================================================
 
-NAMESPACE="infrastructure"
-SECRET_NAME="minio-secret"
+VAULT_NS="security"
+VAULT_POD="vault-0"
+VAULT_PATH="infrastructure/minio"
+
+: "${VAULT_TOKEN:?Bitte VAULT_TOKEN als Env-Var setzen}"
+
+vault_kv_get() {
+  kubectl exec -n "$VAULT_NS" "$VAULT_POD" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" \
+    vault kv get -field="$2" "secret/$1" 2>/dev/null || true
+}
+
+vault_kv_put() {
+  local path="$1"; shift
+  kubectl exec -n "$VAULT_NS" "$VAULT_POD" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" \
+    vault kv put "secret/${path}" "$@" >/dev/null
+}
 
 echo ""
 echo "============================================"
-echo "  MinIO – Secret Setup"
+echo "  MinIO – Vault Secret Setup"
 echo "============================================"
 echo ""
 
-# ─── MinIO Credentials ───────────────────────────────────────────────────────
+EXISTING_USER=$(vault_kv_get "${VAULT_PATH}" "rootUser")
+EXISTING_PW=$(vault_kv_get "${VAULT_PATH}" "rootPassword")
+EXISTING_SB_PW=$(vault_kv_get "${VAULT_PATH}" "storage-box-password")
+
+if [[ -n "${EXISTING_USER}" ]] && [[ -n "${EXISTING_PW}" ]] && [[ -n "${EXISTING_SB_PW}" ]]; then
+  echo "==> Vault-Pfad 'homelab/${VAULT_PATH}' ist bereits vollständig befüllt."
+  echo "    Nichts zu tun. Zum Rotieren siehe Kommentar am Skriptanfang."
+  exit 0
+fi
+
 echo "==> MinIO Root Credentials"
 echo "    Werden für MinIO Admin-Zugang und CNPG Barman verwendet."
 echo "    Außerdem als Restic-Repository-Passwort für die Storage Box."
@@ -42,7 +75,6 @@ if [[ ${#MINIO_PASSWORD} -lt 8 ]]; then
   exit 1
 fi
 
-# ─── Storage Box Passwort ────────────────────────────────────────────────────
 echo ""
 echo "==> Hetzner Storage Box Passwort"
 echo "    Wird vom Restic CronJob für den Offsite-Backup verwendet."
@@ -56,31 +88,27 @@ if [[ -z "${STORAGE_BOX_PASSWORD}" ]]; then
   exit 1
 fi
 
-# ─── Secret anlegen oder aktualisieren ───────────────────────────────────────
 echo ""
-echo "==> Erstelle Secret '${SECRET_NAME}' in Namespace '${NAMESPACE}'..."
+echo "==> Schreibe Credentials nach Vault ('homelab/${VAULT_PATH}')..."
+vault_kv_put "${VAULT_PATH}" \
+  "rootUser=${MINIO_USER}" \
+  "rootPassword=${MINIO_PASSWORD}" \
+  "storage-box-password=${STORAGE_BOX_PASSWORD}"
+echo "    Geschrieben mit Keys: rootUser, rootPassword, storage-box-password"
 
-if kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" &>/dev/null; then
-  echo "    Secret existiert bereits – wird aktualisiert..."
-  kubectl delete secret "${SECRET_NAME}" -n "${NAMESPACE}"
-fi
+echo ""
+echo "==> Stoße sofortigen Sync des ExternalSecret an..."
+kubectl annotate externalsecret minio-secret -n infrastructure \
+  force-sync="$(date +%s)" --overwrite 2>/dev/null || \
+  echo "    (ExternalSecret noch nicht deployt - wird beim nächsten ArgoCD-Sync abgeholt)"
 
-kubectl create secret generic "${SECRET_NAME}" \
-  --from-literal=rootUser="${MINIO_USER}" \
-  --from-literal=rootPassword="${MINIO_PASSWORD}" \
-  --from-literal=storage-box-password="${STORAGE_BOX_PASSWORD}" \
-  -n "${NAMESPACE}"
-
-echo "    Secret erstellt mit Keys: rootUser, rootPassword, storage-box-password"
-
-# ─── Fertig ───────────────────────────────────────────────────────────────────
 echo ""
 echo "============================================"
 echo "  Setup abgeschlossen!"
 echo ""
 echo "  Nächste Schritte:"
 echo ""
-echo "  1. MinIO deployen:"
+echo "  1. MinIO deployen (falls noch nicht geschehen):"
 echo "     git add k8s/argocd/applications/minio.yaml"
 echo "     git add k8s/infrastructure/minio-backup-restic.yaml"
 echo "     git commit -m 'feat: add MinIO + Restic backup to Storage Box'"

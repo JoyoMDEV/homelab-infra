@@ -3,26 +3,46 @@ set -euo pipefail
 
 # =============================================================================
 #  setup-velero.sh
-#  Erstellt das Kubernetes Secret für Velero (MinIO Credentials)
-#  und verifiziert die BackupStorageLocation nach dem Deployment.
+#  Schreibt das Velero Secret (MinIO Credentials im AWS-Format) nach Vault
+#  und verifiziert die BackupStorageLocation nach dem Deployment. Das
+#  ExternalSecret 'velero-secret' (Namespace backup) übernimmt von Vault aus
+#  die Pflege des Kubernetes Secrets.
 #
 #  VORAUSSETZUNGEN:
 #  - kubectl konfiguriert und Cluster erreichbar
 #  - MinIO läuft: kubectl get pods -n infrastructure | grep minio
-#  - minio-secret existiert in Namespace infrastructure
+#  - homelab/infrastructure/minio bereits in Vault (siehe setup-minio.sh)
 #  - Bucket 'velero-backups' existiert in MinIO
-#    (wird automatisch von bootstrap-argocd.sh angelegt – siehe minio.yaml)
+#  - VAULT_TOKEN als Env-Var gesetzt
 #
 #  USAGE:
+#    export VAULT_TOKEN="..."
 #    ./scripts/setup-velero.sh
 # =============================================================================
 
+VAULT_NS="security"
+VAULT_POD="vault-0"
+VAULT_PATH="backup/velero-secret"
 NAMESPACE="backup"
-SECRET_NAME="velero-secret"
+
+: "${VAULT_TOKEN:?Bitte VAULT_TOKEN als Env-Var setzen}"
+
+vault_kv_get() {
+  kubectl exec -n "$VAULT_NS" "$VAULT_POD" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" \
+    vault kv get -field="$2" "secret/$1" 2>/dev/null || true
+}
+
+vault_kv_put() {
+  local path="$1"; shift
+  kubectl exec -n "$VAULT_NS" "$VAULT_POD" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" \
+    vault kv put "secret/${path}" "$@" >/dev/null
+}
 
 echo ""
 echo "============================================"
-echo "  Velero – Secret Setup"
+echo "  Velero – Vault Secret Setup"
 echo "============================================"
 echo ""
 
@@ -36,24 +56,15 @@ if ! kubectl get pods -n infrastructure -l app=minio 2>/dev/null | grep -q Runni
 fi
 echo "    MinIO: OK"
 
-if ! kubectl get secret minio-secret -n infrastructure &>/dev/null; then
-  echo "    FEHLER: minio-secret nicht gefunden."
+MINIO_ACCESS_KEY=$(vault_kv_get "infrastructure/minio" "rootUser")
+MINIO_SECRET_KEY=$(vault_kv_get "infrastructure/minio" "rootPassword")
+
+if [[ -z "${MINIO_ACCESS_KEY}" ]] || [[ -z "${MINIO_SECRET_KEY}" ]]; then
+  echo "    FEHLER: MinIO Credentials nicht in Vault ('homelab/infrastructure/minio')."
   echo "    Führe zuerst aus: ./scripts/setup-minio.sh"
   exit 1
 fi
-echo "    minio-secret: OK"
-
-# ─── MinIO Credentials aus bestehendem Secret lesen ──────────────────────────
-echo ""
-echo "==> Lese MinIO Credentials aus minio-secret..."
-
-MINIO_ACCESS_KEY=$(kubectl get secret minio-secret -n infrastructure \
-  -o jsonpath='{.data.rootUser}' | base64 -d)
-MINIO_SECRET_KEY=$(kubectl get secret minio-secret -n infrastructure \
-  -o jsonpath='{.data.rootPassword}' | base64 -d)
-
-echo "    MinIO Access Key: ${MINIO_ACCESS_KEY}"
-echo "    MinIO Secret Key: gelesen."
+echo "    MinIO Credentials (aus Vault): OK"
 
 # ─── Namespace anlegen falls noch nicht vorhanden ────────────────────────────
 echo ""
@@ -62,26 +73,24 @@ kubectl get namespace "${NAMESPACE}" &>/dev/null || \
   kubectl create namespace "${NAMESPACE}"
 echo "    Namespace: OK"
 
-# ─── Velero Secret anlegen ───────────────────────────────────────────────────
+# ─── Velero Secret nach Vault schreiben ──────────────────────────────────────
 # Velero erwartet eine AWS credentials-Datei im Secret
 # Key: cloud (Dateiname im Pod: /credentials/cloud)
 echo ""
-echo "==> Erstelle Velero Secret '${SECRET_NAME}'..."
+echo "==> Schreibe Velero Secret nach Vault ('homelab/${VAULT_PATH}')..."
 
 CREDENTIALS_CONTENT="[default]
 aws_access_key_id=${MINIO_ACCESS_KEY}
 aws_secret_access_key=${MINIO_SECRET_KEY}"
 
-if kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" &>/dev/null; then
-  echo "    Secret existiert bereits – wird aktualisiert..."
-  kubectl delete secret "${SECRET_NAME}" -n "${NAMESPACE}"
-fi
+vault_kv_put "${VAULT_PATH}" "cloud=${CREDENTIALS_CONTENT}"
+echo "    Geschrieben."
 
-kubectl create secret generic "${SECRET_NAME}" \
-  --from-literal=cloud="${CREDENTIALS_CONTENT}" \
-  -n "${NAMESPACE}"
-
-echo "    Secret erstellt."
+echo ""
+echo "==> Stoße sofortigen Sync des ExternalSecret an..."
+kubectl annotate externalsecret velero-secret -n "${NAMESPACE}" \
+  force-sync="$(date +%s)" --overwrite 2>/dev/null || \
+  echo "    (ExternalSecret noch nicht deployt - wird beim nächsten ArgoCD-Sync abgeholt)"
 
 # ─── Warten bis Velero deployed ist ──────────────────────────────────────────
 echo ""
@@ -140,23 +149,6 @@ else
   echo ""
   echo "    kubectl create job --from=cronjob/velero-daily-cluster-backup \\"
   echo "      velero-test-\$(date +%s) -n ${NAMESPACE}"
-  echo ""
-  echo "    Oder via kubectl:"
-  cat <<'EOF'
-    kubectl apply -f - <<YAML
-apiVersion: velero.io/v1
-kind: Backup
-metadata:
-  name: initial-test-backup
-  namespace: backup
-spec:
-  ttl: 336h
-  storageLocation: default
-  excludedNamespaces:
-    - kube-system
-  defaultVolumesToFsBackup: true
-YAML
-EOF
 fi
 
 # ─── Fertig ───────────────────────────────────────────────────────────────────
@@ -171,25 +163,15 @@ echo "  PVC-Backup:         Kopia (node-agent)"
 echo ""
 echo "  Nächste Schritte:"
 echo ""
-echo "  1. velero.yaml committen und pushen:"
+echo "  1. velero.yaml committen und pushen (falls noch nicht geschehen):"
 echo "     git add k8s/argocd/applications/velero.yaml"
 echo "     git commit -m 'feat: deploy Velero for cluster state backup'"
 echo "     git push"
 echo ""
-echo "  2. Dieses Script ausführen nachdem ArgoCD synct:"
-echo "     ./scripts/setup-velero.sh"
-echo ""
-echo "  3. Kritische Secrets in Ansible Vault sichern:"
-echo "     kubectl get secret gitlab-rails-secrets -n gitlab \\"
-echo "       -o jsonpath='{.data}' | python3 -m json.tool"
-echo "     kubectl get secret homelab-ca-keypair -n cert-manager \\"
-echo "       -o jsonpath='{.data.tls\\.crt}' | base64 -d"
-echo "     make vault-edit"
-echo ""
-echo "  4. Backup-Status prüfen:"
+echo "  2. Backup-Status prüfen:"
 echo "     kubectl get backup -n backup"
 echo "     kubectl get backupstoragelocation -n backup"
 echo ""
-echo "  5. Recovery-Test (Szenario B aus docs/backup-strategy.md):"
+echo "  3. Recovery-Test (Szenario B aus docs/backup-strategy.md):"
 echo "     ./scripts/test-velero-recovery.sh"
 echo "============================================"

@@ -3,29 +3,52 @@ set -euo pipefail
 
 # =============================================================================
 #  setup-nocodb.sh
-#  Richtet PostgreSQL-Datenbank und Kubernetes Secret für NocoDB ein.
+#  Richtet PostgreSQL-Datenbank für NocoDB ein und schreibt die Credentials
+#  nach Vault. Das ExternalSecret 'nocodb-secret' (Namespace productivity)
+#  übernimmt von dort die Pflege des Kubernetes Secrets.
 #
 #  VORAUSSETZUNGEN:
 #  - kubectl konfiguriert und Cluster erreichbar
 #  - PostgreSQL (CNPG) läuft: kubectl get cluster -n infrastructure
 #  - Namespace 'productivity' existiert
+#  - VAULT_TOKEN als Env-Var gesetzt
 #
-#  IDEMPOTENT: Erneutes Ausführen synct DB-Passwort und Secret zusammen.
+#  IDEMPOTENT: Wenn in Vault schon ein DB-Passwort hinterlegt ist, wird
+#  dieses wiederverwendet (Postgres-Rolle und Vault bleiben so synchron)
+#  statt bei jedem Lauf ein neues zu generieren.
 #
 #  USAGE:
+#    export VAULT_TOKEN="..."
 #    ./scripts/setup-nocodb.sh
 # =============================================================================
 
+VAULT_NS="security"
+VAULT_POD="vault-0"
+VAULT_PATH="productivity/nocodb-secret"
 NAMESPACE="productivity"
-SECRET_NAME="nocodb-secret"
 DB_HOST="homelab-pg-rw.infrastructure.svc.cluster.local"
 DB_PORT="5432"
 DB_NAME="nocodb"
 DB_USER="nocodb"
 
+: "${VAULT_TOKEN:?Bitte VAULT_TOKEN als Env-Var setzen}"
+
+vault_kv_get() {
+  kubectl exec -n "$VAULT_NS" "$VAULT_POD" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" \
+    vault kv get -field="$2" "secret/$1" 2>/dev/null || true
+}
+
+vault_kv_put() {
+  local path="$1"; shift
+  kubectl exec -n "$VAULT_NS" "$VAULT_POD" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" \
+    vault kv put "secret/${path}" "$@" >/dev/null
+}
+
 echo ""
 echo "============================================"
-echo "  NocoDB – Datenbank & Secret Setup"
+echo "  NocoDB – Datenbank & Vault Secret Setup"
 echo "============================================"
 echo ""
 
@@ -47,11 +70,22 @@ echo "==> Warte bis PostgreSQL bereit ist..."
 kubectl wait --for=condition=Ready pod/homelab-pg-1 -n infrastructure --timeout=120s
 echo "    PostgreSQL bereit."
 
-# ─── Passwort generieren ─────────────────────────────────────────────────────
+# ─── Passwort aus Vault wiederverwenden oder neu generieren ──────────────────
 echo ""
-echo "==> Generiere Credentials..."
-NOCODB_DB_PW=$(openssl rand -base64 24)
-NOCODB_JWT_SECRET=$(openssl rand -base64 48)
+echo "==> Prüfe Vault auf bestehendes DB-Passwort..."
+NOCODB_DB_PW=$(vault_kv_get "${VAULT_PATH}" "db-password")
+
+if [[ -n "${NOCODB_DB_PW}" ]]; then
+  echo "    Bestehendes Passwort aus Vault wird wiederverwendet."
+else
+  echo "    Kein bestehendes Passwort - generiere neues."
+  NOCODB_DB_PW=$(openssl rand -base64 24)
+fi
+
+NOCODB_JWT_SECRET=$(vault_kv_get "${VAULT_PATH}" "jwt-secret")
+if [[ -z "${NOCODB_JWT_SECRET}" ]]; then
+  NOCODB_JWT_SECRET=$(openssl rand -base64 48)
+fi
 
 # NC_DB URL komplett zusammenbauen – Passwort und URL werden synchron gespeichert.
 # Das verhindert den 28P01 Auth-Fehler durch URL/Secret-Mismatch.
@@ -66,7 +100,8 @@ kubectl exec homelab-pg-1 -n infrastructure -c postgres -- psql -U postgres -c \
   && echo "    Datenbank '${DB_NAME}' erstellt." \
   || echo "    Datenbank '${DB_NAME}' existiert bereits."
 
-# ALTER ROLE setzt das Passwort auch wenn der User bereits existiert → idempotent
+# ALTER ROLE setzt das Passwort auch wenn der User bereits existiert -
+# mit dem aus Vault wiederverwendeten Passwort bleibt das idempotent.
 kubectl exec homelab-pg-1 -n infrastructure -c postgres -- psql -U postgres -c "
   DO \$\$ BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${DB_USER}') THEN
@@ -74,7 +109,7 @@ kubectl exec homelab-pg-1 -n infrastructure -c postgres -- psql -U postgres -c "
       RAISE NOTICE 'User ${DB_USER} erstellt.';
     ELSE
       ALTER ROLE ${DB_USER} WITH PASSWORD '${NOCODB_DB_PW}';
-      RAISE NOTICE 'User ${DB_USER} existiert – Passwort aktualisiert.';
+      RAISE NOTICE 'User ${DB_USER} existiert – Passwort synchronisiert.';
     END IF;
   END \$\$;
   GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};
@@ -82,23 +117,22 @@ kubectl exec homelab-pg-1 -n infrastructure -c postgres -- psql -U postgres -c "
 "
 echo "    Berechtigungen gesetzt."
 
-# ─── Kubernetes Secret anlegen (altes löschen für saubere Synchronisation) ───
+# ─── Nach Vault schreiben ─────────────────────────────────────────────────────
 echo ""
-echo "==> Erstelle Kubernetes Secret '${SECRET_NAME}'..."
+echo "==> Schreibe Credentials nach Vault ('homelab/${VAULT_PATH}')..."
 
-if kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" &>/dev/null; then
-  echo "    Secret existiert – wird neu erstellt (Passwort-Sync)..."
-  kubectl delete secret "${SECRET_NAME}" -n "${NAMESPACE}"
-fi
+vault_kv_put "${VAULT_PATH}" \
+  "db-password=${NOCODB_DB_PW}" \
+  "db-url=${NOCODB_DB_URL}" \
+  "jwt-secret=${NOCODB_JWT_SECRET}"
 
-kubectl create secret generic "${SECRET_NAME}" \
-  --from-literal=db-password="${NOCODB_DB_PW}" \
-  --from-literal=db-url="${NOCODB_DB_URL}" \
-  --from-literal=jwt-secret="${NOCODB_JWT_SECRET}" \
-  -n "${NAMESPACE}"
+echo "    Geschrieben mit Keys: db-password, db-url, jwt-secret"
 
-echo "    Secret '${SECRET_NAME}' erstellt."
-echo "    Keys: db-password, db-url, jwt-secret"
+echo ""
+echo "==> Stoße sofortigen Sync des ExternalSecret an..."
+kubectl annotate externalsecret nocodb-secret -n "${NAMESPACE}" \
+  force-sync="$(date +%s)" --overwrite 2>/dev/null || \
+  echo "    (ExternalSecret noch nicht deployt - wird beim nächsten ArgoCD-Sync abgeholt)"
 
 # ─── Zusammenfassung ──────────────────────────────────────────────────────────
 echo ""
@@ -108,8 +142,6 @@ echo ""
 echo "  PostgreSQL:"
 echo "    Datenbank: ${DB_NAME}"
 echo "    User:      ${DB_USER}"
-echo "    Passwort:  ${NOCODB_DB_PW}"
-echo "    → In Ansible Vault sichern: make vault-edit"
 echo ""
 echo "  Nächste Schritte:"
 echo ""

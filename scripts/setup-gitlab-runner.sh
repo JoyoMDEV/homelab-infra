@@ -3,7 +3,9 @@ set -euo pipefail
 
 # =============================================================================
 #  setup-gitlab-runner.sh
-#  Richtet den GitLab Instance Runner im k3s Cluster ein.
+#  Schreibt das GitLab Instance Runner Token nach Vault. Das ExternalSecret
+#  'gitlab-runner-secret' (Namespace gitlab) übernimmt von dort die Pflege
+#  des Kubernetes Secrets.
 #
 #  VORAUSSETZUNGEN:
 #  - kubectl konfiguriert und Cluster erreichbar
@@ -11,8 +13,10 @@ set -euo pipefail
 #  - homelab-ca Secret existiert im gitlab Namespace
 #  - Instance Runner Token aus GitLab Admin Area vorhanden
 #    (Admin Area → CI/CD → Runners → New instance runner)
+#  - VAULT_TOKEN als Env-Var gesetzt
 #
 #  USAGE:
+#    export VAULT_TOKEN="..."
 #    export GITLAB_RUNNER_TOKEN="glrt-xxxxxxxxxxxxxxxxxxxx"
 #    ./scripts/setup-gitlab-runner.sh
 #
@@ -20,8 +24,19 @@ set -euo pipefail
 #    ./scripts/setup-gitlab-runner.sh --token glrt-xxxxxxxxxxxxxxxxxxxx
 # =============================================================================
 
+VAULT_NS="security"
+VAULT_POD="vault-0"
+VAULT_PATH="gitlab/runner-secret"
 NAMESPACE="gitlab"
-SECRET_NAME="gitlab-runner-secret"
+
+: "${VAULT_TOKEN:?Bitte VAULT_TOKEN als Env-Var setzen}"
+
+vault_kv_put() {
+  local path="$1"; shift
+  kubectl exec -n "$VAULT_NS" "$VAULT_POD" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" \
+    vault kv put "secret/${path}" "$@" >/dev/null
+}
 
 # ─── Token aus Argument oder Env ─────────────────────────────────────────────
 TOKEN=""
@@ -90,21 +105,24 @@ if ! kubectl get secret homelab-ca -n "${NAMESPACE}" &>/dev/null; then
 fi
 echo "    homelab-ca Secret: OK"
 
-# ─── Secret anlegen oder aktualisieren ───────────────────────────────────────
+# ─── Token nach Vault schreiben ──────────────────────────────────────────────
 echo ""
-echo "==> Erstelle gitlab-runner-secret..."
+echo "==> Schreibe Runner Token nach Vault ('homelab/${VAULT_PATH}')..."
 
-if kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" &>/dev/null; then
-  echo "    Secret existiert bereits, wird aktualisiert..."
-  kubectl delete secret "${SECRET_NAME}" -n "${NAMESPACE}"
-fi
+# runner-registration-token bleibt leer - GitLab vergibt darüber nur
+# einmalig neue Registrierungen, der eigentliche Runner läuft über
+# runner-token weiter.
+vault_kv_put "${VAULT_PATH}" \
+  "runner-registration-token=" \
+  "runner-token=${TOKEN}"
 
-kubectl create secret generic "${SECRET_NAME}" \
-  --from-literal=runner-registration-token="" \
-  --from-literal=runner-token="${TOKEN}" \
-  -n "${NAMESPACE}"
+echo "    Geschrieben."
 
-echo "    Secret erstellt."
+echo ""
+echo "==> Stoße sofortigen Sync des ExternalSecret an..."
+kubectl annotate externalsecret gitlab-runner-secret -n "${NAMESPACE}" \
+  force-sync="$(date +%s)" --overwrite 2>/dev/null || \
+  echo "    (ExternalSecret noch nicht deployt - wird beim nächsten ArgoCD-Sync abgeholt)"
 
 # ─── Hinweis ArgoCD ───────────────────────────────────────────────────────────
 echo ""

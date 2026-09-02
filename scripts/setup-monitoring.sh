@@ -3,18 +3,22 @@ set -euo pipefail
 
 # =============================================================================
 #  setup-monitoring.sh
-#  Erstellt Secrets für den Monitoring-Stack (Grafana + Alertmanager).
+#  Schreibt Secrets für den Monitoring-Stack (Grafana + Alertmanager) nach
+#  Vault. Das ExternalSecret 'grafana-keycloak-secret' (Namespace monitoring)
+#  übernimmt von dort die Pflege des Kubernetes Secrets.
 #
 #  VORAUSSETZUNGEN:
 #  - Kubernetes-Cluster läuft: make status
 #  - Keycloak Client 'grafana' angelegt (siehe docs/keycloak-setup.md Abschnitt 6)
 #  - Discord Webhook URL bereit (optional – Alertmanager)
+#  - VAULT_TOKEN als Env-Var gesetzt
 #
 #  USAGE:
+#    export VAULT_TOKEN="..."
 #    ./scripts/setup-monitoring.sh
 #
-#  WAS DIESES SCRIPT ERSTELLT:
-#  - grafana-keycloak-secret (Namespace: monitoring)
+#  WAS DIESES SCRIPT SCHREIBT:
+#  - homelab/monitoring/grafana-keycloak-secret
 #      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET  → Keycloak Client Secret für Grafana
 #      ALERTMANAGER_DISCORD_WEBHOOK_URL     → Discord Webhook für Alertmanager
 #
@@ -24,12 +28,23 @@ set -euo pipefail
 #  ist einfacher als zwei separate Secrets zu verwalten.
 # =============================================================================
 
+VAULT_NS="security"
+VAULT_POD="vault-0"
+VAULT_PATH="monitoring/grafana-keycloak-secret"
 NAMESPACE="monitoring"
-SECRET_NAME="grafana-keycloak-secret"
+
+: "${VAULT_TOKEN:?Bitte VAULT_TOKEN als Env-Var setzen}"
+
+vault_kv_put() {
+  local path="$1"; shift
+  kubectl exec -n "$VAULT_NS" "$VAULT_POD" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" \
+    vault kv put "secret/${path}" "$@" >/dev/null
+}
 
 echo ""
 echo "============================================"
-echo "  Monitoring Stack – Secret Setup"
+echo "  Monitoring Stack – Vault Secret Setup"
 echo "============================================"
 echo ""
 
@@ -43,7 +58,6 @@ if ! kubectl get namespace "${NAMESPACE}" &>/dev/null; then
   echo "    Namespace erstellt und CA-Injection aktiviert."
 else
   echo "==> Namespace '${NAMESPACE}' existiert bereits."
-  # CA-Injection Label sicherstellen
   kubectl label namespace "${NAMESPACE}" \
     homelab.local/inject-ca=true \
     managed-by=argocd \
@@ -73,39 +87,38 @@ echo ""
 read -rsp "    Discord Webhook URL (leer = überspringen): " DISCORD_URL
 echo ""
 
-# ─── Bestehendes Secret löschen falls vorhanden ──────────────────────────────
-if kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" &>/dev/null; then
-  echo ""
-  echo "==> Secret '${SECRET_NAME}' existiert bereits, wird aktualisiert..."
-  kubectl delete secret "${SECRET_NAME}" -n "${NAMESPACE}"
-fi
-
-# ─── Secret erstellen ────────────────────────────────────────────────────────
+# ─── Nach Vault schreiben ─────────────────────────────────────────────────────
 echo ""
-echo "==> Erstelle Secret '${SECRET_NAME}'..."
+echo "==> Schreibe Secrets nach Vault ('homelab/${VAULT_PATH}')..."
 
 if [[ -n "${DISCORD_URL}" ]]; then
-  kubectl create secret generic "${SECRET_NAME}" \
-    --from-literal=GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET="${OIDC_SECRET}" \
-    --from-literal=ALERTMANAGER_DISCORD_WEBHOOK_URL="${DISCORD_URL}" \
-    -n "${NAMESPACE}"
-  echo "    Secret erstellt (OIDC + Discord Webhook)."
+  vault_kv_put "${VAULT_PATH}" \
+    "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${OIDC_SECRET}" \
+    "ALERTMANAGER_DISCORD_WEBHOOK_URL=${DISCORD_URL}"
+  echo "    Geschrieben (OIDC + Discord Webhook)."
 else
   # Ohne Discord: Placeholder eintragen damit der Alertmanager-Mount nicht fehlschlägt
-  kubectl create secret generic "${SECRET_NAME}" \
-    --from-literal=GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET="${OIDC_SECRET}" \
-    --from-literal=ALERTMANAGER_DISCORD_WEBHOOK_URL="https://discord.com/api/webhooks/REPLACE_ME" \
-    -n "${NAMESPACE}"
-  echo "    Secret erstellt (nur OIDC – Discord Webhook ist Placeholder)."
+  vault_kv_put "${VAULT_PATH}" \
+    "GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${OIDC_SECRET}" \
+    "ALERTMANAGER_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/REPLACE_ME"
+  echo "    Geschrieben (nur OIDC – Discord Webhook ist Placeholder)."
   echo ""
   echo "    ⚠ Discord Webhook ist Placeholder."
   echo "    Alertmanager-Alerts werden NICHT gesendet bis du ihn ersetzt:"
-  echo "      kubectl patch secret ${SECRET_NAME} -n ${NAMESPACE} \\"
-  echo "        --type merge \\"
-  echo "        -p '{\"stringData\":{\"ALERTMANAGER_DISCORD_WEBHOOK_URL\":\"https://discord.com/api/webhooks/...\"}}"
+  echo "      kubectl exec -n security vault-0 -- env VAULT_ADDR=http://127.0.0.1:8200 \\"
+  echo "        VAULT_TOKEN=\$VAULT_TOKEN vault kv patch secret/homelab/${VAULT_PATH} \\"
+  echo "        ALERTMANAGER_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/..."
 fi
 
+echo ""
+echo "==> Stoße sofortigen Sync des ExternalSecret an..."
+kubectl annotate externalsecret grafana-keycloak-secret -n "${NAMESPACE}" \
+  force-sync="$(date +%s)" --overwrite 2>/dev/null || \
+  echo "    (ExternalSecret noch nicht deployt - wird beim nächsten ArgoCD-Sync abgeholt)"
+
 # ─── CA-Secret seeden falls cert-sync noch nicht gelaufen ist ────────────────
+# (Bootstrap-Mechanismus, kein Operator-Secret - läuft weiterhin direkt über
+# kubectl, siehe CLAUDE.md "Never edit directly" Ausnahmen für Bootstrap-Flow.)
 echo ""
 echo "==> Prüfe homelab-ca Secret im Namespace monitoring..."
 if ! kubectl get secret homelab-ca -n "${NAMESPACE}" &>/dev/null; then

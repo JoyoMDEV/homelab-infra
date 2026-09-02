@@ -3,28 +3,66 @@ set -euo pipefail
 
 # =============================================================================
 #  setup-restic-ssh.sh
-#  Generiert ein SSH Key-Paar für den Restic Backup CronJob und
-#  hinterlegt den Public Key auf der Hetzner Storage Box.
+#  Generiert ein SSH Key-Paar für den Restic Backup CronJob, hinterlegt den
+#  Public Key auf der Hetzner Storage Box, und schreibt Key-Paar + Storage
+#  Box Verbindungsdaten nach Vault. Das ExternalSecret 'restic-ssh-key'
+#  (Namespace infrastructure) übernimmt von dort die Pflege des Kubernetes
+#  Secrets.
 #
 #  VORAUSSETZUNGEN:
 #  - kubectl konfiguriert und Cluster erreichbar
-#  - ssh-keygen verfügbar
-#  - curl verfügbar
+#  - ssh-keygen, curl verfügbar
+#  - VAULT_TOKEN als Env-Var gesetzt
+#
+#  IDEMPOTENT: Wenn in Vault bereits ein Key-Paar hinterlegt ist, wird nichts
+#  neu generiert (ein neuer Key würde den alten Public Key auf der Storage
+#  Box nicht ungültig machen, aber Restic könnte den alten Private Key aus
+#  dem laufenden Secret nicht mehr nutzen sobald ESO synct). Für ein
+#  bewusstes Rotieren: ./scripts/setup-restic-ssh.sh --force
 #
 #  USAGE:
-#    ./scripts/setup-restic-ssh.sh
+#    export VAULT_TOKEN="..."
+#    ./scripts/setup-restic-ssh.sh [--force]
 # =============================================================================
 
+VAULT_NS="security"
+VAULT_POD="vault-0"
+VAULT_PATH="infrastructure/restic-ssh"
 NAMESPACE="infrastructure"
-SECRET_NAME="restic-ssh-key"
 SFTP_PORT="23"
 KEY_FILE="/tmp/restic_storage_box"
+FORCE=0
+
+: "${VAULT_TOKEN:?Bitte VAULT_TOKEN als Env-Var setzen}"
+
+for arg in "$@"; do
+  [[ "$arg" == "--force" ]] && FORCE=1
+done
+
+vault_kv_get() {
+  kubectl exec -n "$VAULT_NS" "$VAULT_POD" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" \
+    vault kv get -field="$2" "secret/$1" 2>/dev/null || true
+}
+
+vault_kv_put() {
+  local path="$1"; shift
+  kubectl exec -n "$VAULT_NS" "$VAULT_POD" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" \
+    vault kv put "secret/${path}" "$@" >/dev/null
+}
 
 echo ""
 echo "============================================"
 echo "  Restic SSH Key Setup"
 echo "============================================"
 echo ""
+
+if [[ ${FORCE} -eq 0 ]] && [[ -n "$(vault_kv_get "${VAULT_PATH}" "ssh-privatekey")" ]]; then
+  echo "==> Vault-Pfad 'homelab/${VAULT_PATH}' hat bereits ein Key-Paar."
+  echo "    Nichts zu tun. Zum bewussten Rotieren: $0 --force"
+  exit 0
+fi
 
 # ─── Storage Box Verbindungsdaten abfragen ───────────────────────────────────
 echo "==> Storage Box Verbindungsdaten"
@@ -60,13 +98,11 @@ echo "==> Hinterlege Public Key auf Storage Box..."
 
 PUBLIC_KEY=$(cat "${KEY_FILE}.pub")
 
-# .ssh Verzeichnis anlegen falls nicht vorhanden
 curl -sf \
   -u "${STORAGE_BOX_USER}:${STORAGE_BOX_PASSWORD}" \
   -X MKCOL \
   "https://${STORAGE_BOX_HOST}/.ssh/" 2>/dev/null || true
 
-# Bestehende authorized_keys lesen
 EXISTING_KEYS=$(curl -sf \
   -u "${STORAGE_BOX_USER}:${STORAGE_BOX_PASSWORD}" \
   "https://${STORAGE_BOX_HOST}/.ssh/authorized_keys" 2>/dev/null || echo "")
@@ -100,24 +136,24 @@ curl -sf \
   && echo "    Verzeichnis /restic-minio/ angelegt. ✅" \
   || echo "    Verzeichnis /restic-minio/ existiert bereits. ✅"
 
-# ─── Kubernetes Secret anlegen ───────────────────────────────────────────────
+# ─── Nach Vault schreiben ─────────────────────────────────────────────────────
 echo ""
-echo "==> Erstelle Kubernetes Secret '${SECRET_NAME}'..."
+echo "==> Schreibe Key-Paar + Verbindungsdaten nach Vault ('homelab/${VAULT_PATH}')..."
 
-if kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" &>/dev/null; then
-  echo "    Secret existiert bereits – wird aktualisiert..."
-  kubectl delete secret "${SECRET_NAME}" -n "${NAMESPACE}"
-fi
+vault_kv_put "${VAULT_PATH}" \
+  "ssh-privatekey=$(cat "${KEY_FILE}")" \
+  "ssh-publickey=${PUBLIC_KEY}" \
+  "storage-box-host=${STORAGE_BOX_HOST}" \
+  "storage-box-user=${STORAGE_BOX_USER}" \
+  "storage-box-port=${SFTP_PORT}"
 
-kubectl create secret generic "${SECRET_NAME}" \
-  --from-file=ssh-privatekey="${KEY_FILE}" \
-  --from-file=ssh-publickey="${KEY_FILE}.pub" \
-  --from-literal=storage-box-host="${STORAGE_BOX_HOST}" \
-  --from-literal=storage-box-user="${STORAGE_BOX_USER}" \
-  --from-literal=storage-box-port="${SFTP_PORT}" \
-  -n "${NAMESPACE}"
+echo "    Geschrieben."
 
-echo "    Secret '${SECRET_NAME}' erstellt. ✅"
+echo ""
+echo "==> Stoße sofortigen Sync des ExternalSecret an..."
+kubectl annotate externalsecret restic-ssh-key -n "${NAMESPACE}" \
+  force-sync="$(date +%s)" --overwrite 2>/dev/null || \
+  echo "    (ExternalSecret noch nicht deployt - wird beim nächsten ArgoCD-Sync abgeholt)"
 
 # ─── SSH Keys sicher löschen ─────────────────────────────────────────────────
 echo ""
@@ -132,16 +168,7 @@ echo "  Setup abgeschlossen!"
 echo ""
 echo "  Nächste Schritte:"
 echo ""
-echo "  1. Committen und deployen:"
-echo "     git add k8s/infrastructure/minio-backup-restic.yaml"
-echo "     git add scripts/setup-restic-ssh.sh"
-echo "     git commit -m 'feat(backup): add Restic SFTP backup to Storage Box'"
-echo "     git push"
-echo ""
-echo "  2. Restic Backup manuell testen:"
+echo "  1. Restic Backup manuell testen:"
 echo "     kubectl create job restic-test-\$(date +%s) \\"
 echo "       --from=cronjob/minio-backup-restic -n ${NAMESPACE}"
-echo ""
-echo "  HINWEIS: SSH Key liegt nur im Kubernetes Secret '${SECRET_NAME}'."
-echo "  Später zu Vault migrieren (Issue #7)."
 echo "============================================"

@@ -3,30 +3,52 @@ set -euo pipefail
 
 # =============================================================================
 #  setup-vaultwarden.sh
-#  Verwaltet die Kubernetes Secrets für Vaultwarden:
+#  Schreibt die Vaultwarden Secrets nach Vault:
 #
-#    - vaultwarden-secret  (admin-token)
+#    - homelab/security/vaultwarden-secret  (admin-token)
+#      → ExternalSecret 'vaultwarden-secret', Kubernetes Secret 'vaultwarden-secret'
 #      → referenziert in values.yaml unter adminToken.existingSecret
 #
-#    - vaultwarden         (SMTP_USERNAME, SMTP_PASSWORD)
-#      → chart-eigenes Secret, wird von ArgoCD/Helm angelegt
-#      → dieses Script patcht nur die Credentials rein
+#    - homelab/security/vaultwarden-smtp    (SMTP_USERNAME, SMTP_PASSWORD)
+#      → ExternalSecret 'vaultwarden-smtp', Kubernetes Secret 'vaultwarden'
+#        (chart-eigener Name, siehe values.yaml)
 #
 #  IDEMPOTENT:
-#  - Existierender Admin-Token wird NICHT überschrieben
+#  - Bestehender Admin-Token in Vault wird NICHT überschrieben
 #  - SMTP-Credentials werden immer aktualisiert
 #
+#  VORAUSSETZUNGEN:
+#  - VAULT_TOKEN als Env-Var gesetzt
+#
 #  USAGE:
+#    export VAULT_TOKEN="..."
 #    ./scripts/setup-vaultwarden.sh
 # =============================================================================
 
+VAULT_NS="security"
+VAULT_POD="vault-0"
+ADMIN_PATH="security/vaultwarden-secret"
+SMTP_PATH="security/vaultwarden-smtp"
 NAMESPACE="security"
-ADMIN_SECRET="vaultwarden-secret"
-CHART_SECRET="vaultwarden"
+
+: "${VAULT_TOKEN:?Bitte VAULT_TOKEN als Env-Var setzen}"
+
+vault_kv_get() {
+  kubectl exec -n "$VAULT_NS" "$VAULT_POD" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" \
+    vault kv get -field="$2" "secret/$1" 2>/dev/null || true
+}
+
+vault_kv_put() {
+  local path="$1"; shift
+  kubectl exec -n "$VAULT_NS" "$VAULT_POD" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" \
+    vault kv put "secret/${path}" "$@" >/dev/null
+}
 
 echo ""
 echo "============================================"
-echo "  Vaultwarden Secret Setup"
+echo "  Vaultwarden – Vault Secret Setup"
 echo "============================================"
 echo ""
 
@@ -46,10 +68,12 @@ else
     --overwrite 2>/dev/null || true
 fi
 
-# ─── Admin-Token: nur generieren wenn Secret noch nicht existiert ─────────────
+# ─── Admin-Token: nur generieren wenn in Vault noch nicht vorhanden ──────────
 echo ""
-if kubectl get secret "${ADMIN_SECRET}" -n "${NAMESPACE}" &>/dev/null; then
-  echo "==> Secret '${ADMIN_SECRET}' existiert bereits – Admin-Token wird NICHT überschrieben."
+EXISTING_ADMIN_TOKEN=$(vault_kv_get "${ADMIN_PATH}" "admin-token")
+
+if [[ -n "${EXISTING_ADMIN_TOKEN}" ]]; then
+  echo "==> Admin-Token existiert bereits in Vault – wird NICHT überschrieben."
 else
   echo "==> Generiere neuen Admin-Token..."
   ADMIN_TOKEN=$(openssl rand -base64 48)
@@ -68,10 +92,8 @@ else
   read -rsp "    Enter drücken um fortzufahren (Token wurde gesichert)..." _
   echo ""
 
-  kubectl create secret generic "${ADMIN_SECRET}" \
-    --from-literal=admin-token="${ADMIN_TOKEN}" \
-    -n "${NAMESPACE}"
-  echo "    Secret '${ADMIN_SECRET}' mit Admin-Token erstellt."
+  vault_kv_put "${ADMIN_PATH}" "admin-token=${ADMIN_TOKEN}"
+  echo "    Admin-Token nach Vault geschrieben ('homelab/${ADMIN_PATH}')."
 fi
 
 # ─── SMTP-Credentials abfragen ────────────────────────────────────────────────
@@ -93,32 +115,21 @@ if [[ -z "${SMTP_PASSWORD}" ]]; then
   exit 1
 fi
 
-# ─── SMTP ins chart-eigene Secret 'vaultwarden' schreiben ────────────────────
-# Das Chart legt dieses Secret selbst an (Keys: SMTP_USERNAME, SMTP_PASSWORD).
-# Falls es noch nicht existiert (erster Run vor ArgoCD-Sync), vorab anlegen.
 echo ""
-echo "==> Schreibe SMTP-Credentials ins Secret '${CHART_SECRET}'..."
-if kubectl get secret "${CHART_SECRET}" -n "${NAMESPACE}" &>/dev/null; then
-  kubectl patch secret "${CHART_SECRET}" -n "${NAMESPACE}" \
-    --type merge \
-    -p "{\"stringData\":{\"SMTP_USERNAME\":\"${SMTP_USERNAME}\",\"SMTP_PASSWORD\":\"${SMTP_PASSWORD}\"}}"
-  echo "    SMTP-Credentials gepatcht."
-else
-  echo "    Secret '${CHART_SECRET}' existiert noch nicht – wird vorab angelegt."
-  kubectl create secret generic "${CHART_SECRET}" \
-    --from-literal=SMTP_USERNAME="${SMTP_USERNAME}" \
-    --from-literal=SMTP_PASSWORD="${SMTP_PASSWORD}" \
-    -n "${NAMESPACE}"
-  echo "    Secret '${CHART_SECRET}' erstellt."
-fi
+echo "==> Schreibe SMTP-Credentials nach Vault ('homelab/${SMTP_PATH}')..."
+vault_kv_put "${SMTP_PATH}" \
+  "SMTP_USERNAME=${SMTP_USERNAME}" \
+  "SMTP_PASSWORD=${SMTP_PASSWORD}"
+echo "    Geschrieben."
 
-# ─── Altes separates SMTP Secret aufräumen falls vorhanden ───────────────────
-if kubectl get secret vaultwarden-smtp-secret -n "${NAMESPACE}" &>/dev/null; then
-  echo ""
-  echo "==> Altes 'vaultwarden-smtp-secret' wird entfernt..."
-  kubectl delete secret vaultwarden-smtp-secret -n "${NAMESPACE}"
-  echo "    Entfernt."
-fi
+echo ""
+echo "==> Stoße sofortigen Sync der ExternalSecrets an..."
+kubectl annotate externalsecret vaultwarden-secret -n "${NAMESPACE}" \
+  force-sync="$(date +%s)" --overwrite 2>/dev/null || \
+  echo "    (vaultwarden-secret ExternalSecret noch nicht deployt)"
+kubectl annotate externalsecret vaultwarden-smtp -n "${NAMESPACE}" \
+  force-sync="$(date +%s)" --overwrite 2>/dev/null || \
+  echo "    (vaultwarden-smtp ExternalSecret noch nicht deployt)"
 
 # ─── Fertig ───────────────────────────────────────────────────────────────────
 echo ""
