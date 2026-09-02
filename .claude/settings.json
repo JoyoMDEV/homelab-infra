@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' | { read -r f; case \"$f\" in */kubeconfig|*/terraform/*.tfstate*|*/certs/*) printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Blocked: %s is a gitignored, high-blast-radius file (kubeconfig / terraform state / internal CA cert). Edit it outside Claude Code.\"}}' \"$f\" ;; esac; }",
+            "statusMessage": "Checking for sensitive file edit..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; out=\"\"; case \"$f\" in *.yml|*.yaml) command -v yamllint >/dev/null 2>&1 && out=$(yamllint -c .yamllint.yml \"$f\" 2>&1) ;; *.tf) command -v terraform >/dev/null 2>&1 && out=$(terraform fmt \"$f\" 2>&1) ;; esac; if [ -n \"$out\" ]; then printf '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":%s}}' \"$(printf '%s' \"$out\" | jq -Rs .)\"; fi; }",
+            "statusMessage": "Linting/formatting changed file...",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}
