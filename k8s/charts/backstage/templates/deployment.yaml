@@ -14,7 +14,9 @@ spec:
     metadata:
       labels:
         app: backstage
+        backstage.io/kubernetes-id: backstage
     spec:
+      serviceAccountName: backstage-kubernetes-viewer
       imagePullSecrets:
         - name: backstage-registry-pull
       containers:
@@ -45,6 +47,11 @@ spec:
                 secretKeyRef:
                   name: backstage-secret
                   key: oidc-client-secret
+            - name: ARGOCD_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-secret
+                  key: argocd-token
           ports:
             - name: http
               containerPort: 7007

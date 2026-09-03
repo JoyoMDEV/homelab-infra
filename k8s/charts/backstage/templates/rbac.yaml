@@ -1,0 +1,22 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backstage-kubernetes-viewer
+  namespace: backstage
+---
+# Read-only access across all namespaces so the Kubernetes plugin can find
+# resources labeled backstage.io/kubernetes-id in any service's namespace.
+# The built-in "view" ClusterRole explicitly excludes Secret contents.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backstage-kubernetes-viewer
+subjects:
+  - kind: ServiceAccount
+    name: backstage-kubernetes-viewer
+    namespace: backstage
+roleRef:
+  kind: ClusterRole
+  name: view
+  apiGroup: rbac.authorization.k8s.io

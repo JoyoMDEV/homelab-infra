@@ -44,6 +44,11 @@ configs:
     timeout.reconciliation: 180s
     url: https://argocd.homelab.local
 
+    # Token-only local account for Backstage's ArgoCD plugin (no login
+    # capability). Gets ArgoCD's built-in role:readonly via the rbac
+    # policy.default below - no explicit RBAC grant needed.
+    accounts.backstage: apiKey
+
     oidc.config: |
       name: Keycloak
       issuer: https://auth.homelab.local/realms/homelab
