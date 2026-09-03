@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: minio
     backstage.io/kubernetes-id: minio
+    backstage.io/techdocs-ref: dir:.
   links:
     - url: https://minio-console.homelab.local
       title: MinIO Console

@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: cert-manager-webhook-hetzner
     backstage.io/kubernetes-id: cert-manager-webhook-hetzner
+    backstage.io/techdocs-ref: dir:.
 spec:
   type: service
   lifecycle: production

@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: vaultwarden
     backstage.io/kubernetes-id: vaultwarden
+    backstage.io/techdocs-ref: dir:.
   links:
     - url: https://vault.homelab.local
       title: Vaultwarden

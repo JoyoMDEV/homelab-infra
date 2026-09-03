@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: gitlab
     backstage.io/kubernetes-id: gitlab
+    backstage.io/techdocs-ref: dir:.
   links:
     - url: https://gitlab.homelab.local
       title: GitLab

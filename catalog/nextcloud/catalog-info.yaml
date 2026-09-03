@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: nextcloud
     backstage.io/kubernetes-id: nextcloud
+    backstage.io/techdocs-ref: dir:.
   links:
     - url: https://nextcloud.homelab.local
       title: Nextcloud

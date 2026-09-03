@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: nocodb
     backstage.io/kubernetes-id: nocodb
+    backstage.io/techdocs-ref: dir:.
   links:
     - url: https://nocodb.homelab.local
       title: NocoDB

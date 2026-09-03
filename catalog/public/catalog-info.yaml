@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: public
     backstage.io/kubernetes-id: public
+    backstage.io/techdocs-ref: dir:.
   links:
     - url: https://login.svc.johannesmoseler.de
       title: Authelia

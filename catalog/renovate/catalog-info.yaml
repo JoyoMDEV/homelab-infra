@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: renovate
     backstage.io/kubernetes-id: renovate
+    backstage.io/techdocs-ref: dir:.
 spec:
   type: service
   lifecycle: production

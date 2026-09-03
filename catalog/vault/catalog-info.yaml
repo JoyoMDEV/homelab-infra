@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: vault
     backstage.io/kubernetes-id: vault
+    backstage.io/techdocs-ref: dir:.
   links:
     - url: https://hcvault.homelab.local
       title: Vault

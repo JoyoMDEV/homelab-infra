@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: monitoring
     backstage.io/kubernetes-id: monitoring
+    backstage.io/techdocs-ref: dir:.
   links:
     - url: https://grafana.homelab.local
       title: Grafana

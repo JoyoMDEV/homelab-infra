@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: overleaf
     backstage.io/kubernetes-id: overleaf
+    backstage.io/techdocs-ref: dir:.
   links:
     - url: https://overleaf.svc.johannesmoseler.de
       title: Overleaf

@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: keycloak
     backstage.io/kubernetes-id: keycloak
+    backstage.io/techdocs-ref: dir:.
   links:
     - url: https://auth.homelab.local
       title: Keycloak

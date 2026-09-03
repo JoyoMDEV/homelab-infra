@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: backstage
     backstage.io/kubernetes-id: backstage
+    backstage.io/techdocs-ref: dir:.
   links:
     - url: https://backstage.homelab.local
       title: Backstage

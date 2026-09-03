@@ -6,6 +6,7 @@ metadata:
   annotations:
     argocd/app-name: paperless
     backstage.io/kubernetes-id: paperless
+    backstage.io/techdocs-ref: dir:.
   links:
     - url: https://paperless.homelab.local
       title: Paperless-ngx
