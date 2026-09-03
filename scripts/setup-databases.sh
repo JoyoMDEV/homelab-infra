@@ -137,14 +137,18 @@ kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "CREATE DATAB
 kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "
   DO \$\$ BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'backstage') THEN
-      CREATE ROLE backstage WITH LOGIN PASSWORD '$BACKSTAGE_DB_PW';
+      CREATE ROLE backstage WITH LOGIN PASSWORD '$BACKSTAGE_DB_PW' CREATEDB;
     ELSE
-      ALTER ROLE backstage WITH PASSWORD '$BACKSTAGE_DB_PW';
+      ALTER ROLE backstage WITH PASSWORD '$BACKSTAGE_DB_PW' CREATEDB;
     END IF;
   END \$\$;
   GRANT ALL PRIVILEGES ON DATABASE backstage TO backstage;
   ALTER DATABASE backstage OWNER TO backstage;
 "
+# Backstage's backend auto-creates one database per plugin on startup
+# (backstage_plugin_app, backstage_plugin_catalog, ...), which requires
+# CREATEDB on the role - unlike the other services above that use a single
+# pre-created database.
 echo "    Backstage database created"
 
 # ─── Nextcloud DB + Secret (nur initial) ──────────────────────────────────────
