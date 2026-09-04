@@ -29,7 +29,7 @@ set -euo pipefail
 
 VAULT_NS="security"
 VAULT_POD="vault-0"
-VAULT_PATH="minecraft/rcon"
+VAULT_PATH="homelab/minecraft/rcon"
 
 : "${VAULT_TOKEN:?Bitte VAULT_TOKEN als Env-Var setzen}"
 
@@ -54,9 +54,9 @@ echo ""
 
 EXISTING_RCON_PW=$(vault_kv_get "${VAULT_PATH}" "RCON_PASSWORD")
 if [[ -z "${EXISTING_RCON_PW}" ]]; then
-  echo "    FEHLER: 'secret/homelab/${VAULT_PATH}' hat noch kein RCON_PASSWORD."
+  echo "    FEHLER: 'secret/${VAULT_PATH}' hat noch kein RCON_PASSWORD."
   echo "    Erst den Minecraft-Server-RCON einrichten, z.B.:"
-  echo "      vault kv put secret/homelab/${VAULT_PATH} RCON_PASSWORD=<zufälliges-passwort>"
+  echo "      vault kv put secret/${VAULT_PATH} RCON_PASSWORD=<zufälliges-passwort>"
   exit 1
 fi
 
@@ -64,7 +64,7 @@ EXISTING_USER=$(vault_kv_get "${VAULT_PATH}" "RWA_USERNAME")
 EXISTING_PW=$(vault_kv_get "${VAULT_PATH}" "RWA_PASSWORD")
 
 if [[ -n "${EXISTING_USER}" ]] && [[ -n "${EXISTING_PW}" ]]; then
-  echo "==> Vault-Pfad 'homelab/${VAULT_PATH}' hat bereits RWA_USERNAME/RWA_PASSWORD."
+  echo "==> Vault-Pfad '${VAULT_PATH}' hat bereits RWA_USERNAME/RWA_PASSWORD."
   echo "    Nichts zu tun. Zum Rotieren siehe Kommentar am Skriptanfang."
   exit 0
 fi
@@ -88,7 +88,7 @@ if [[ ${#RWA_PASSWORD} -lt 8 ]]; then
 fi
 
 echo ""
-echo "==> Patche Credentials nach Vault ('homelab/${VAULT_PATH}')..."
+echo "==> Patche Credentials nach Vault ('${VAULT_PATH}')..."
 vault_kv_patch "${VAULT_PATH}" \
   "RWA_USERNAME=${RWA_USERNAME}" \
   "RWA_PASSWORD=${RWA_PASSWORD}"
