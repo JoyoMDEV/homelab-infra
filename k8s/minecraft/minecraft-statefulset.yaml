@@ -131,14 +131,13 @@ spec:
         # CiliumNetworkPolicy in k8s/security/network-policies/, keeping port
         # 25575 itself never reachable from anywhere else. Only its own web
         # port (4326) is opened up, via k8s/minecraft/minecraft-rcon-ingress.yaml.
-        # Erbt den runAsUser/runAsGroup 1000 vom Pod-securityContext oben
-        # (gilt fuer alle Container im Pod, kein eigener Override hier) -
-        # ob itzg/rcon unter dieser UID sauber startet, ist NICHT verifiziert
-        # (anders als beim minecraft-Container, dessen 1000:1000-Standard im
-        # Image dokumentiert ist). Nach dem ersten Sync prüfen:
-        #   kubectl get pods -n minecraft
-        # Falls CrashLoopBackOff/Permission denied: hier einen eigenen
-        # securityContext mit passender runAsUser setzen.
+        # Läuft (anders als der minecraft-Container) NICHT unter dem
+        # Pod-Standard 1000:1000 - verifiziert per Deploy: itzg/rcon schreibt
+        # seine Settings-DB nach /opt/rcon-web-admin-*/db/settings.json, ein
+        # im Image root-eigenes Verzeichnis, ohne dokumentierten non-root
+        # Standard-User (anders als itzg/minecraft-server). Eigener
+        # securityContext-Override auf UID/GID 0 nötig, sonst
+        # "EACCES: permission denied" beim Start.
         - name: rcon-web-admin
           image: itzg/rcon
           ports:
@@ -147,6 +146,9 @@ spec:
             - containerPort: 4327
               name: rcon-ws
           securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            runAsNonRoot: false
             allowPrivilegeEscalation: false
             capabilities:
               drop: [ALL]
