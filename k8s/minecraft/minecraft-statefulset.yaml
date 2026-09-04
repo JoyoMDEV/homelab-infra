@@ -174,13 +174,12 @@ spec:
                 secretKeyRef:
                   name: minecraft-secret
                   key: RWA_PASSWORD
-            # Best-effort browser-side fix so the websocket (live console
-            # output) tries to connect back over the same HTTPS origin
-            # instead of a bare :4327 the Ingress doesn't route. NOT
-            # confirmed to fully work server-side for this project (see
-            # comment in minecraft-rcon-ingress.yaml) - verify after deploy.
+            # rcon-web-admin's whole frontend (not just console output) runs
+            # over this one websocket - point it at the /ws path that
+            # minecraft-rcon-ingress.yaml routes to this container's 4327
+            # port (see that file's comment for why plain "/" doesn't work).
             - name: RWA_WEBSOCKET_URL_SSL
-              value: "wss://minecraft-rcon.homelab.local/"
+              value: "wss://minecraft-rcon.homelab.local/ws"
           resources:
             requests:
               cpu: "50m"

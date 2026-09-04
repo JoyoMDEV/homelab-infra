@@ -6,16 +6,21 @@
 # game port. rcon-web-admin has its own login (RWA_USERNAME/RWA_PASSWORD),
 # so no extra BasicAuth middleware is layered on top.
 #
-# WebSocket port 4327 (live console output) is NOT routed through this
-# Ingress - standard k8s Ingress only handles 80/443, and rcon-web-admin's
-# default client connects to a separate bare port the Ingress can't proxy.
-# RWA_WEBSOCKET_URL_SSL (set on the sidecar) tries to point the browser back
-# at this same origin instead, but whether rcon-web-admin actually serves
-# the websocket on the same port as the web UI when configured that way is
-# NOT confirmed in the project's docs (see open, unanswered issue
-# rcon-web-admin/rcon-web-admin#36). If the live console doesn't connect
-# after deploying: `kubectl port-forward -n minecraft svc/minecraft
-# 4327:4327` and point the browser at that instead.
+# WebSocket port 4327 is NOT just "live console output" - rcon-web-admin's
+# entire frontend (login included, see public/scripts/socket.js) runs over
+# this one raw `ws` connection, opened standalone on config.port+1 and never
+# attached to the Express HTTP server on 4326. Confirmed by reading the
+# shipped source in the image (rcon-web-admin/rcon-web-admin#36 was
+# inconclusive on this): a plain WS upgrade to this Ingress's "/" path lands
+# on port 4326 and gets an ordinary 200 back (no 101), while the same
+# handshake against svc/minecraft:4327 directly succeeds. Without a route to
+# 4327, the browser's socket never opens and the UI loops on "Verbindung zum
+# Backend geschlossen, erneuter Versuch in 5 Sekunden" forever.
+#
+# Fix: a second path on this same host+TLS Ingress, forwarded to the 4327
+# service port - standard k8s Ingress supports per-path backends, and
+# Traefik proxies the WS upgrade on it transparently. RWA_WEBSOCKET_URL_SSL
+# on the sidecar must point at this exact path (see minecraft-statefulset.yaml).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -31,6 +36,16 @@ spec:
     - host: minecraft-rcon.homelab.local
       http:
         paths:
+          # More specific path first - the raw `ws` server doesn't care
+          # about the path itself, it's only here to give Traefik something
+          # to route on separately from the port-4326 static/HTTP path below.
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: minecraft
+                port:
+                  number: 4327
           - path: /
             pathType: Prefix
             backend:
