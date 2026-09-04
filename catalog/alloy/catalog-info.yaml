@@ -10,5 +10,5 @@ metadata:
 spec:
   type: service
   lifecycle: production
-  owner: group:homelab/johannes
+  owner: group:homelab
   system: homelab
