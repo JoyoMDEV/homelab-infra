@@ -16,14 +16,25 @@ spec:
   egress: []
 
 ---
-# ── Minecraft-Server: Ingress bewusst "all" statt podSelector auf Traefik -
-#    exakt dieselbe Begründung wie bei authelia/overleaf-app in
-#    public-tier.yaml: hostNetwork-Traffic von traefik-public wird von
+# ── Minecraft-Server (+ rcon-web-admin-Sidecar, selber Pod): Ingress bewusst
+#    "all" statt podSelector auf Traefik - exakt dieselbe Begründung wie bei
+#    authelia/overleaf-app in public-tier.yaml: hostNetwork-Traffic von
+#    Traefik (sowohl traefik-public als auch das k3s-eigene interne Traefik -
+#    beide laufen mit hostNetwork: true, per kubectl verifiziert) wird von
 #    Cilium nicht zuverlässig als fromEndpoints erkannt (kubeProxyReplacement
 #    =false, gleiche Ursache wie GitLab-SSH-Vorfall). Die eigentliche
 #    Zugriffskontrolle läuft hier ohnehin über Hetzner-Firewall + UFW +
-#    Traefik-IPAllowList + Minecraft-Spieler-Whitelist, nicht über diese
-#    L3/L4-Policy.
+#    Traefik-IPAllowList + Minecraft-Spieler-Whitelist (bzw. rcon-web-admins
+#    eigenen Login für dessen Web-UI), nicht über diese L3/L4-Policy.
+#
+#    toPorts grenzt trotzdem genau ein, WELCHE Ports das betrifft: 25565
+#    (Spiel) und 4326/4327 (rcon-web-admin-Web-UI + dessen Websocket, siehe
+#    minecraft-rcon-ingress.yaml). RCON selbst (25575) bekommt WEITERHIN
+#    keine eigene Regel - braucht keine, weil rcon-web-admin als Sidecar im
+#    selben Pod läuft und darüber nur per localhost spricht; Cilium sieht
+#    Pod-interne Container-zu-Container-Kommunikation gar nicht erst, die
+#    default-deny-Baseline oben greift also gar nicht dafür. Damit bleibt
+#    RCON de facto nie von außerhalb dieses Pods erreichbar.
 #
 #    Egress: DNS + "world" - Modrinth-/CurseForge-Mod-Downloads beim Start
 #    und Mojang-Session-Auth (ONLINE_MODE) brauchen offenes Internet, exakt
@@ -40,6 +51,18 @@ spec:
   ingress:
     - fromEntities:
         - all
+      toPorts:
+        - ports:
+            - port: "25565"
+              protocol: TCP
+    - fromEntities:
+        - all
+      toPorts:
+        - ports:
+            - port: "4326"
+              protocol: TCP
+            - port: "4327"
+              protocol: TCP
   egress:
     - toEndpoints:
         - matchLabels:
@@ -53,12 +76,6 @@ spec:
               protocol: TCP
     - toEntities:
         - world
-
-# RCON (25575) bekommt bewusst KEINE Ingress-Freigabe - weder von
-# außen noch clusterintern. Die default-deny-Baseline oben sorgt dafür,
-# dass er dicht bleibt, bis es mal ein konkretes Admin-Tool gibt, das ihn
-# braucht (dann hier eine weitere fromEndpoints-Regel ergänzen, keine
-# eigene "all"-Freigabe).
 
 ---
 # ── Fileshare (Modpack-Download): Ingress "all" statt podSelector auf

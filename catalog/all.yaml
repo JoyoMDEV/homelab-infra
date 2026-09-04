@@ -14,6 +14,7 @@ spec:
     - ./infrastructure/catalog-info.yaml
     - ./keycloak/catalog-info.yaml
     - ./loki/catalog-info.yaml
+    - ./minecraft/catalog-info.yaml
     - ./minio/catalog-info.yaml
     - ./monitoring/catalog-info.yaml
     - ./nextcloud/catalog-info.yaml

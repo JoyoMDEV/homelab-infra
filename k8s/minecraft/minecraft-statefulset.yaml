@@ -14,6 +14,10 @@ spec:
     metadata:
       labels:
         app: minecraft
+        # Damit Backstages Kubernetes-Plugin (siehe catalog/minecraft/catalog-info.yaml)
+        # diesen Pod dem Component zuordnen kann - selbes Muster wie
+        # k8s/charts/backstage/templates/deployment.yaml.
+        backstage.io/kubernetes-id: minecraft
     spec:
       # Fest auf den k3s-server gepinnt - analog zur traefik-public-Instanz
       # (siehe deren Kommentar zum CX53-Node). Noetig, weil die minecraft-data
@@ -119,6 +123,69 @@ spec:
               port: 25565
             initialDelaySeconds: 120
             periodSeconds: 30
+        # rcon-web-admin: browser console for the RCON port above, so admin
+        # commands (whitelist/op/kick/gamerule/...) don't need a local
+        # rcon-cli/SSH session. Runs as a true sidecar (same pod) so it talks
+        # to RCON over localhost - that traffic never crosses a pod boundary,
+        # so it's not subject to (and doesn't need a rule in) the
+        # CiliumNetworkPolicy in k8s/security/network-policies/, keeping port
+        # 25575 itself never reachable from anywhere else. Only its own web
+        # port (4326) is opened up, via k8s/minecraft/minecraft-rcon-ingress.yaml.
+        # Erbt den runAsUser/runAsGroup 1000 vom Pod-securityContext oben
+        # (gilt fuer alle Container im Pod, kein eigener Override hier) -
+        # ob itzg/rcon unter dieser UID sauber startet, ist NICHT verifiziert
+        # (anders als beim minecraft-Container, dessen 1000:1000-Standard im
+        # Image dokumentiert ist). Nach dem ersten Sync prüfen:
+        #   kubectl get pods -n minecraft
+        # Falls CrashLoopBackOff/Permission denied: hier einen eigenen
+        # securityContext mit passender runAsUser setzen.
+        - name: rcon-web-admin
+          image: itzg/rcon
+          ports:
+            - containerPort: 4326
+              name: rcon-web
+            - containerPort: 4327
+              name: rcon-ws
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          env:
+            - name: RWA_RCON_HOST
+              value: "localhost"
+            - name: RWA_RCON_PORT
+              value: "25575"
+            - name: RWA_RCON_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minecraft-secret
+                  key: RCON_PASSWORD
+            - name: RWA_ADMIN
+              value: "TRUE"
+            - name: RWA_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: minecraft-secret
+                  key: RWA_USERNAME
+            - name: RWA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: minecraft-secret
+                  key: RWA_PASSWORD
+            # Best-effort browser-side fix so the websocket (live console
+            # output) tries to connect back over the same HTTPS origin
+            # instead of a bare :4327 the Ingress doesn't route. NOT
+            # confirmed to fully work server-side for this project (see
+            # comment in minecraft-rcon-ingress.yaml) - verify after deploy.
+            - name: RWA_WEBSOCKET_URL_SSL
+              value: "wss://minecraft-rcon.homelab.local/"
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
       volumes:
         - name: data
           persistentVolumeClaim:
@@ -137,6 +204,8 @@ kind: Service
 metadata:
   name: minecraft
   namespace: minecraft
+  labels:
+    backstage.io/kubernetes-id: minecraft
 spec:
   type: ClusterIP
   selector:
@@ -148,3 +217,9 @@ spec:
     - name: rcon
       port: 25575
       targetPort: 25575
+    - name: rcon-web
+      port: 4326
+      targetPort: 4326
+    - name: rcon-ws
+      port: 4327
+      targetPort: 4327

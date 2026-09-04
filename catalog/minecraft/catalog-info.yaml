@@ -1,0 +1,17 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: minecraft
+  description: Modded Minecraft (Forge) server, with a browser-based RCON admin console
+  annotations:
+    argocd/app-name: minecraft
+    backstage.io/kubernetes-id: minecraft
+    backstage.io/techdocs-ref: dir:.
+  links:
+    - url: https://minecraft-rcon.homelab.local
+      title: RCON Admin Console
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab
+  system: homelab

@@ -1,0 +1,40 @@
+---
+# Web-UI for the rcon-web-admin sidecar in the minecraft StatefulSet (see its
+# comment) - full server administration via console commands, so this
+# deliberately goes through the internal (k3s-built-in) Traefik under
+# *.homelab.local, NOT the public traefik-public entrypoint used for the
+# game port. rcon-web-admin has its own login (RWA_USERNAME/RWA_PASSWORD),
+# so no extra BasicAuth middleware is layered on top.
+#
+# WebSocket port 4327 (live console output) is NOT routed through this
+# Ingress - standard k8s Ingress only handles 80/443, and rcon-web-admin's
+# default client connects to a separate bare port the Ingress can't proxy.
+# RWA_WEBSOCKET_URL_SSL (set on the sidecar) tries to point the browser back
+# at this same origin instead, but whether rcon-web-admin actually serves
+# the websocket on the same port as the web UI when configured that way is
+# NOT confirmed in the project's docs (see open, unanswered issue
+# rcon-web-admin/rcon-web-admin#36). If the live console doesn't connect
+# after deploying: `kubectl port-forward -n minecraft svc/minecraft
+# 4327:4327` and point the browser at that instead.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minecraft-rcon
+  namespace: minecraft
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - minecraft-rcon.homelab.local
+      secretName: homelab-wildcard-tls
+  rules:
+    - host: minecraft-rcon.homelab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: minecraft
+                port:
+                  number: 4326

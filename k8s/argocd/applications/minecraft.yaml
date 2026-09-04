@@ -1,0 +1,30 @@
+---
+# Wraps the pre-existing raw manifests in k8s/minecraft/ (StatefulSet,
+# Service, PVCs, ExternalSecret, modlist ConfigMap, rcon-web-admin ingress)
+# under ArgoCD, matching the overleaf/public/infrastructure pattern of
+# pointing straight at a directory instead of a Helm chart. Adopting an
+# already-running Deployment is safe here: content in git already matches
+# what's live, so the first sync is a no-op reconcile, not a recreate - no
+# risk to minecraft-data/minecraft-fileshare PVCs.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minecraft
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/JoyoMDEV/homelab-infra.git
+    targetRevision: main
+    path: k8s/minecraft
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: minecraft
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
