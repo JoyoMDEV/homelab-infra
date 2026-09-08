@@ -23,12 +23,13 @@ Keycloak läuft bereits unter **https://auth.homelab.local**.
 3. [LDAP-Federation mit Samba AD](#3-ldap-federation-mit-samba-ad)
 4. [OIDC-Client: GitLab](#4-oidc-client-gitlab)
 5. [OIDC-Client: ArgoCD](#5-oidc-client-argocd)
-6. [OIDC-Client: Grafana](#6-oidc-client-grafana-vorbereitung)
-7. [OIDC-Client: Nextcloud](#7-oidc-client-nextcloud-vorbereitung)
-8. [GitLab OIDC aktivieren](#8-gitlab-oidc-aktivieren)
-9. [ArgoCD OIDC aktivieren](#9-argocd-oidc-aktivieren)
-10. [Verifikation](#10-verifikation)
-11. [Troubleshooting](#11-troubleshooting)
+6. [OIDC-Client: Coder](#6-oidc-client-coder)
+7. [OIDC-Client: Grafana](#7-oidc-client-grafana-vorbereitung)
+8. [OIDC-Client: Nextcloud](#8-oidc-client-nextcloud-vorbereitung)
+9. [GitLab OIDC aktivieren](#9-gitlab-oidc-aktivieren)
+10. [ArgoCD OIDC aktivieren](#10-argocd-oidc-aktivieren)
+11. [Verifikation](#11-verifikation)
+12. [Troubleshooting](#12-troubleshooting)
 
 ---
 
@@ -238,7 +239,68 @@ Damit AD-Benutzer Admin-Rechte in ArgoCD bekommen:
 
 ---
 
-## 6. OIDC-Client: Grafana (Vorbereitung)
+## 6. OIDC-Client: Coder
+
+**Navigation:** Realm `homelab` → **Clients** → **"Create client"**
+
+### 6.1 General Settings
+
+| Feld | Wert |
+|------|------|
+| Client type | `OpenID Connect` |
+| Client ID | `coder` |
+| Name | `Coder` |
+
+→ **Next**
+
+### 6.2 Capability Config
+
+| Feld | Wert |
+|------|------|
+| Client authentication | ON (confidential client) |
+| Standard flow | ON |
+| Direct access grants | OFF |
+
+→ **Next**
+
+### 6.3 Login Settings
+
+| Feld | Wert |
+|------|------|
+| Root URL | `https://coder.homelab.local` |
+| Home URL | `https://coder.homelab.local` |
+| Valid redirect URIs | `https://coder.homelab.local/api/v2/users/oidc/callback` |
+| Valid post logout redirect URIs | `https://coder.homelab.local` |
+| Web origins | `https://coder.homelab.local` |
+
+→ **Save**
+
+### 6.4 Client Secret in Vault eintragen
+
+1. Tab **"Credentials"** öffnen
+2. **"Client secret"** kopieren
+3. In Vault hinterlegen (ersetzt den `REPLACE_AFTER_KEYCLOAK_SETUP`-Platzhalter aus `scripts/setup-coder.sh`):
+
+```bash
+kubectl exec -n security vault-0 -- env VAULT_ADDR=http://127.0.0.1:8200 \
+  VAULT_TOKEN=$VAULT_TOKEN vault kv patch secret/homelab/coder/coder-secret \
+  oidc-client-secret='<DEIN_SECRET_HIER>'
+
+kubectl annotate externalsecret coder-secret -n coder \
+  force-sync="$(date +%s)" --overwrite
+```
+
+4. Coder neu starten, damit der neue Secret-Wert (als Env-Var injiziert, wird
+   nicht automatisch neu geladen) greift:
+
+```bash
+kubectl rollout restart deployment/coder -n coder
+kubectl rollout status deployment/coder -n coder --timeout=300s
+```
+
+---
+
+## 7. OIDC-Client: Grafana (Vorbereitung)
 
 > Noch nicht deployed – Client jetzt schon anlegen damit er beim Deployment bereit ist.
 
@@ -262,7 +324,7 @@ kubectl create secret generic grafana-keycloak-secret \
 
 ---
 
-## 7. OIDC-Client: Nextcloud (Vorbereitung)
+## 8. OIDC-Client: Nextcloud (Vorbereitung)
 
 > Noch nicht deployed – Client jetzt schon anlegen.
 
@@ -286,7 +348,7 @@ kubectl create secret generic nextcloud-keycloak-secret \
 
 ---
 
-## 8. GitLab OIDC aktivieren
+## 9. GitLab OIDC aktivieren
 
 In `k8s/argocd/applications/gitlab.yaml` den OIDC-Block aktivieren:
 
@@ -317,7 +379,7 @@ kubectl rollout status deployment/gitlab -n gitlab --timeout=300s
 
 ---
 
-## 9. ArgoCD OIDC aktivieren
+## 10. ArgoCD OIDC aktivieren
 
 In `k8s/values/argocd.yaml` ergänzen:
 
@@ -368,7 +430,7 @@ helm upgrade argocd argo/argo-cd \
 
 ---
 
-## 10. Verifikation
+## 11. Verifikation
 
 ### Keycloak erreichbar
 
@@ -401,7 +463,7 @@ kubectl logs -n auth -l app.kubernetes.io/name=keycloakx --tail=50 | grep -i lda
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 **OIDC-Fehler: "getaddrinfo: name or service not known"**
 ```bash
