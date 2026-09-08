@@ -4,6 +4,10 @@ terraform/*.tfstate*
 terraform/*.tfvars
 terraform/.terraform.lock.hcl
 
+# Terraform (Coder workspace templates)
+**/.terraform/
+**/.terraform.lock.hcl
+
 # Secrets
 *.pem
 *.key
