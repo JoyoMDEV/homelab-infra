@@ -1,0 +1,84 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: coder
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://helm.coder.com/v2
+    chart: coder
+    targetRevision: "2.37.0"
+    helm:
+      values: |
+        coder:
+          env:
+            - name: CODER_ACCESS_URL
+              value: "https://coder.homelab.local"
+            - name: CODER_PG_CONNECTION_URL
+              valueFrom:
+                secretKeyRef:
+                  name: coder-secret
+                  key: pg-connection-url
+            - name: CODER_OIDC_ISSUER_URL
+              value: "https://auth.homelab.local/realms/homelab"
+            - name: CODER_OIDC_CLIENT_ID
+              value: "coder"
+            - name: CODER_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: coder-secret
+                  key: oidc-client-secret
+            - name: CODER_OIDC_SIGN_IN_TEXT
+              value: "Sign in with Keycloak"
+            - name: CODER_DISABLE_PASSWORD_AUTH
+              value: "true"
+            - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
+              value: "false"
+            - name: SSL_CERT_DIR
+              value: /usr/local/share/ca-certificates
+
+          ingress:
+            enable: true
+            className: traefik
+            host: coder.homelab.local
+            tls:
+              enable: true
+              secretName: homelab-wildcard-tls
+
+          resources:
+            requests:
+              memory: 512Mi
+              cpu: 250m
+            limits:
+              memory: 1Gi
+
+          # Trust the internal CA when validating CODER_OIDC_ISSUER_URL
+          # (auth.homelab.local's cert is signed by it) - same pattern as
+          # k8s/argocd/applications/vault.yaml for the identical Keycloak-OIDC
+          # TLS-trust problem. Requires the `coder` namespace to carry the
+          # homelab.local/inject-ca=true label (added to k8s/namespaces.yaml)
+          # so the cert-sync CronJob (k8s/infrastructure/cert-sync-cronjob.yaml)
+          # populates the `homelab-ca` secret into it.
+          volumes:
+            - name: homelab-ca
+              secret:
+                secretName: homelab-ca
+
+          volumeMounts:
+            - name: homelab-ca
+              mountPath: /usr/local/share/ca-certificates/homelab-ca.crt
+              subPath: homelab-ca.crt
+              readOnly: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: coder
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
