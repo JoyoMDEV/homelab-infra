@@ -25,8 +25,8 @@ set -euo pipefail
 
 VAULT_NS="security"
 VAULT_POD="vault-0"
-VAULT_PATH="coder/coder-secret"
-REGISTRY_VAULT_PATH="coder/registry-pull-secret"
+VAULT_PATH="homelab/coder/coder-secret"
+REGISTRY_VAULT_PATH="homelab/coder/registry-pull-secret"
 
 : "${VAULT_TOKEN:?Bitte VAULT_TOKEN als Env-Var setzen}"
 
@@ -76,7 +76,7 @@ kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "
 echo "    Coder database created"
 
 if vault_kv_path_exists "${VAULT_PATH}"; then
-  echo "    homelab/${VAULT_PATH} existiert bereits - Secret wird nicht neu angelegt (nur db-password oben synchronisiert)."
+  echo "    ${VAULT_PATH} existiert bereits - Secret wird nicht neu angelegt (nur db-password oben synchronisiert)."
 else
   echo ""
   echo "==> SSH-Deploy-Key für Git-Zugriff (GitHub + self-hosted GitLab)"
@@ -101,7 +101,7 @@ fi
 
 echo ""
 if vault_kv_path_exists "${REGISTRY_VAULT_PATH}"; then
-  echo "    homelab/${REGISTRY_VAULT_PATH} existiert bereits - nichts zu tun."
+  echo "    ${REGISTRY_VAULT_PATH} existiert bereits - nichts zu tun."
 else
   echo "==> GitLab Registry-Pull-Credentials (für registry.homelab.local)"
   echo "    Personal/Deploy Access Token mit 'read_registry'-Scope für das"

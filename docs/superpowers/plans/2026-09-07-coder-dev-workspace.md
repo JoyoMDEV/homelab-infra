@@ -65,8 +65,8 @@ set -euo pipefail
 
 VAULT_NS="security"
 VAULT_POD="vault-0"
-VAULT_PATH="coder/coder-secret"
-REGISTRY_VAULT_PATH="coder/registry-pull-secret"
+VAULT_PATH="homelab/coder/coder-secret"
+REGISTRY_VAULT_PATH="homelab/coder/registry-pull-secret"
 
 : "${VAULT_TOKEN:?Bitte VAULT_TOKEN als Env-Var setzen}"
 
@@ -116,7 +116,7 @@ kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "
 echo "    Coder database created"
 
 if vault_kv_path_exists "${VAULT_PATH}"; then
-  echo "    homelab/${VAULT_PATH} existiert bereits - Secret wird nicht neu angelegt (nur db-password oben synchronisiert)."
+  echo "    ${VAULT_PATH} existiert bereits - Secret wird nicht neu angelegt (nur db-password oben synchronisiert)."
 else
   echo ""
   echo "==> SSH-Deploy-Key für Git-Zugriff (GitHub + self-hosted GitLab)"
@@ -141,7 +141,7 @@ fi
 
 echo ""
 if vault_kv_path_exists "${REGISTRY_VAULT_PATH}"; then
-  echo "    homelab/${REGISTRY_VAULT_PATH} existiert bereits - nichts zu tun."
+  echo "    ${REGISTRY_VAULT_PATH} existiert bereits - nichts zu tun."
 else
   echo "==> GitLab Registry-Pull-Credentials (für registry.homelab.local)"
   echo "    Personal/Deploy Access Token mit 'read_registry'-Scope für das"
@@ -221,7 +221,7 @@ spec:
       # pg-connection-url - default template behavior would replace them.
       mergePolicy: Merge
       data:
-        pg-connection-url: "postgres://coder:{{ .[\"db-password\"] }}@homelab-pg-rw.infrastructure.svc.cluster.local:5432/coder?sslmode=disable"
+        pg-connection-url: "postgres://coder:{{ index . \"db-password\" }}@homelab-pg-rw.infrastructure.svc.cluster.local:5432/coder?sslmode=disable"
   data:
     - secretKey: db-password
       remoteRef:
@@ -375,9 +375,10 @@ Do not push yet — Task 4 pushes everything together. Once pushed, the existing
 
 **Files:**
 - Create: `k8s/argocd/applications/coder.yaml`
+- Modify: `k8s/namespaces.yaml` (add the `coder` namespace with the `homelab.local/inject-ca` label — see Step 3a; a live-verified plan correction, not present in the original brief text)
 
 **Interfaces:**
-- Consumes: `Secret coder-secret` keys `pg-connection-url`, `oidc-client-secret` (Task 2).
+- Consumes: `Secret coder-secret` keys `pg-connection-url`, `oidc-client-secret` (Task 2); `Secret homelab-ca` (produced live by `k8s/infrastructure/cert-sync-cronjob.yaml` once the namespace carries the `inject-ca` label, Step 3a).
 - Produces: the `coder` namespace (via `CreateNamespace=true`) and the running Coder server, consumed by Task 7/8/9 (workspace template push targets this server).
 
 - [ ] **Step 1: Write the Application**
@@ -422,6 +423,8 @@ spec:
               value: "true"
             - name: CODER_OAUTH2_GITHUB_DEFAULT_PROVIDER_ENABLE
               value: "false"
+            - name: SSL_CERT_DIR
+              value: /usr/local/share/ca-certificates
 
           ingress:
             enable: true
@@ -437,6 +440,24 @@ spec:
               cpu: 250m
             limits:
               memory: 1Gi
+
+          # Trust the internal CA when validating CODER_OIDC_ISSUER_URL
+          # (auth.homelab.local's cert is signed by it) - same pattern as
+          # k8s/argocd/applications/vault.yaml for the identical Keycloak-OIDC
+          # TLS-trust problem. Requires the `coder` namespace to carry the
+          # homelab.local/inject-ca=true label (added to k8s/namespaces.yaml)
+          # so the cert-sync CronJob (k8s/infrastructure/cert-sync-cronjob.yaml)
+          # populates the `homelab-ca` secret into it.
+          volumes:
+            - name: homelab-ca
+              secret:
+                secretName: homelab-ca
+
+          volumeMounts:
+            - name: homelab-ca
+              mountPath: /usr/local/share/ca-certificates/homelab-ca.crt
+              subPath: homelab-ca.crt
+              readOnly: true
 
   destination:
     server: https://kubernetes.default.svc
@@ -462,6 +483,32 @@ kubectl get serviceaccount coder-workspace-admin -n coder
 ```
 
 Expected: all three exist (Task 2/3 already applied them live). If not, stop and complete those tasks first — the Coder pod will crash-loop without `coder-secret`.
+
+- [ ] **Step 3a: Add `coder` to `k8s/namespaces.yaml` and enable CA injection live**
+
+`k8s/namespaces.yaml` lists every managed namespace with a `homelab.local/inject-ca: "true"` label consumed by `k8s/infrastructure/cert-sync-cronjob.yaml` (a daily CronJob that copies the internal CA into every labeled namespace as a `homelab-ca` Secret). `coder` was created ad-hoc by Task 2 without this label — without it, Coder's Go OIDC client cannot validate `auth.homelab.local`'s certificate at startup (`x509: certificate signed by unknown authority`) and crash-loops before ever listening. Add an entry to `k8s/namespaces.yaml` (same two labels as every other entry there, e.g. `backstage`'s):
+
+```yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: coder
+  labels:
+    managed-by: argocd
+    homelab.local/inject-ca: "true"
+```
+
+Then apply the label to the already-live namespace directly (faster than waiting for `k8s/namespaces.yaml` to be re-applied) and trigger cert-sync immediately rather than waiting for its 03:00 schedule:
+
+```bash
+kubectl label namespace coder homelab.local/inject-ca=true managed-by=argocd --overwrite
+kubectl create job --from=cronjob/cert-sync cert-sync-manual-$(date +%s) -n kube-system
+kubectl wait --for=condition=complete job -l job-name -n kube-system --timeout=60s 2>/dev/null || sleep 10
+kubectl get secret homelab-ca -n coder
+```
+
+Expected: the final command shows a `homelab-ca` Secret now exists in the `coder` namespace.
 
 - [ ] **Step 4: Render the chart with the embedded values**
 
@@ -496,7 +543,7 @@ Expected: no `FATAL`/OIDC-config errors in the logs (a clean startup log mention
 - [ ] **Step 7: Commit and push**
 
 ```bash
-git add k8s/argocd/applications/coder.yaml
+git add k8s/argocd/applications/coder.yaml k8s/namespaces.yaml
 git commit -m "feat(coder): deploy Coder server via ArgoCD"
 git push
 ```
@@ -691,8 +738,10 @@ RUN curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm
 # Ansible
 RUN pip install --break-system-packages --no-cache-dir ansible-core
 
-# Non-root user matching the workspace pod's securityContext (uid/gid 1000)
-RUN useradd --uid 1000 --create-home --shell /bin/bash coder
+# Non-root user matching the workspace pod's securityContext (uid/gid 1000).
+# node:24-bookworm-slim already ships a "node" user/group at uid/gid 1000,
+# so it must be removed first or useradd fails with "UID 1000 is not unique".
+RUN userdel -r node && useradd --uid 1000 --create-home --shell /bin/bash coder
 USER coder
 WORKDIR /home/coder
 ```
