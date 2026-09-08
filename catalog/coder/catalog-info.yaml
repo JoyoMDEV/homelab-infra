@@ -1,0 +1,17 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: coder
+  description: Persistent remote dev workspace (VS Code Remote SSH)
+  annotations:
+    argocd/app-name: coder
+    backstage.io/kubernetes-id: coder
+    backstage.io/techdocs-ref: dir:.
+  links:
+    - url: https://coder.homelab.local
+      title: Coder
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab
+  system: homelab

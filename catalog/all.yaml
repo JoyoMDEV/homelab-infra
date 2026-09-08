@@ -8,6 +8,7 @@ spec:
     - ./alloy/catalog-info.yaml
     - ./backstage/catalog-info.yaml
     - ./cert-manager-webhook-hetzner/catalog-info.yaml
+    - ./coder/catalog-info.yaml
     - ./external-secrets/catalog-info.yaml
     - ./gitlab/catalog-info.yaml
     - ./gitlab-runner/catalog-info.yaml
