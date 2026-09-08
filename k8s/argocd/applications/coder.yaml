@@ -42,6 +42,14 @@ spec:
             - name: CODER_PG_CONN_MAX_OPEN
               value: "5"
 
+          # ClusterIP, not the chart's LoadBalancer default - k3s's built-in
+          # ServiceLB would otherwise assign a node-facing external IP,
+          # bypassing the Tailscale-only/Traefik-Ingress-only reachability
+          # this repo's other ingress-fronted services rely on (see
+          # backstage/keycloak, both plain ClusterIP).
+          service:
+            type: ClusterIP
+
           ingress:
             enable: true
             className: traefik
