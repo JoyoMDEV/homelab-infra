@@ -39,6 +39,8 @@ spec:
               value: "false"
             - name: SSL_CERT_DIR
               value: /usr/local/share/ca-certificates
+            - name: CODER_PG_CONN_MAX_OPEN
+              value: "5"
 
           ingress:
             enable: true

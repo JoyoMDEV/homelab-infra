@@ -81,6 +81,7 @@ data:
             ${TRAEFIK_IP} paperless.homelab.local
             ${TRAEFIK_IP} nocodb.homelab.local
             ${TRAEFIK_IP} backstage.homelab.local
+            ${TRAEFIK_IP} coder.homelab.local
             ${TRAEFIK_IP} homelab.local
             fallthrough
         }
@@ -127,6 +128,7 @@ else
         ${TRAEFIK_IP} paperless.homelab.local
         ${TRAEFIK_IP} nocodb.homelab.local
         ${TRAEFIK_IP} backstage.homelab.local
+        ${TRAEFIK_IP} coder.homelab.local
         ${TRAEFIK_IP} homelab.local
         fallthrough
     }

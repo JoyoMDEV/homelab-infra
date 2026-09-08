@@ -23,6 +23,7 @@ TEMPLATE_DIR="${REPO_ROOT}/k8s/coder-templates/homelab-workspace"
 echo "==> Pushing Coder template from ${TEMPLATE_DIR}..."
 coder templates push homelab-workspace \
   --directory "${TEMPLATE_DIR}" \
+  --default-ttl 0h \
   --yes
 
 echo "    Template gepusht. Workspace erstellen mit:"

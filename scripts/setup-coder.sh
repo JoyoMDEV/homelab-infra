@@ -59,7 +59,7 @@ echo "==> Creating Coder Postgres database/role..."
 kubectl wait --for=condition=Ready pod/homelab-pg-1 -n infrastructure --timeout=120s
 
 CODER_DB_PW=$(vault_kv_get "${VAULT_PATH}" "db-password")
-[[ -z "${CODER_DB_PW}" ]] && CODER_DB_PW=$(openssl rand -base64 24)
+[[ -z "${CODER_DB_PW}" ]] && CODER_DB_PW=$(openssl rand -hex 32)
 
 kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "CREATE DATABASE coder;" 2>/dev/null || echo "    coder database already exists"
 kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "

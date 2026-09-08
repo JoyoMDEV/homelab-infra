@@ -59,12 +59,14 @@ funktioniert.
 3. Deployed SSH-Key/User-SSH-Key mit dem öffentlichen Schlüssel aus Schritt 1
    hinterlegen (**Settings → Repository → Deploy keys**, oder als eigener
    User-SSH-Key falls der Key einem GitLab-User zugeordnet werden soll)
-4. Push:
+4. Push (für dieses Rollout bereits erledigt - Repo unter
+   `~/Code/gitlab/coder-workspace` existiert, ist geremoted und gepusht;
+   Standardbranch dort ist `master`, nicht `main`):
 
 ```bash
 cd ~/Code/gitlab/coder-workspace
 git remote add origin git@gitlab.homelab.local:homelab/projects/coder-workspace.git
-git push -u origin main
+git push -u origin master
 ```
 
 5. Pipeline beobachten: `https://gitlab.homelab.local/homelab/projects/coder-workspace/-/pipelines`
@@ -107,12 +109,15 @@ coder create --template homelab-workspace homelab
 - [ ] Git-Zugriff:
   ```bash
   git clone git@github.com:JoyoMDEV/homelab-infra.git /tmp/test-github
-  git clone git@gitlab.homelab.local:homelab/projects/backstage.git /tmp/test-gitlab
+  git clone ssh://git@gitlab.homelab.local:2222/homelab/projects/backstage.git /tmp/test-gitlab
   ```
-  Beide ohne Passwort-/Fingerprint-Prompt erfolgreich.
-- [ ] Persistenz: eine Testdatei anlegen, Pod neu starten lassen
-      (`kubectl delete pod -n coder -l com.coder.resource=true`), Datei ist
-      nach dem Neustart noch da.
+  Beide ohne Passwort-/Fingerprint-Prompt erfolgreich. GitLab-SSH läuft über
+  Port 2222 (Traefik `IngressRouteTCP`), nicht über den Standard-Port 22.
+- [ ] Persistenz: eine Testdatei anlegen, Workspace neu starten lassen
+      (`coder restart homelab`), Datei ist nach dem Neustart noch da.
+      (Nicht `kubectl delete pod` - das Workspace-Pod hat keinen Controller,
+      der es neu erstellt; `coder restart` ist der korrekte, orchestrator-
+      gesteuerte Weg.)
 
 ---
 

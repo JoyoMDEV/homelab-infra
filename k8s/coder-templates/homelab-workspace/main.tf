@@ -25,7 +25,6 @@ locals {
 }
 
 data "coder_workspace" "me" {}
-data "coder_workspace_owner" "me" {}
 
 resource "coder_agent" "main" {
   os             = "linux"
@@ -40,12 +39,17 @@ resource "coder_agent" "main" {
     mkdir -p "$HOME/.ssh"
     chmod 700 "$HOME/.ssh"
     if [ ! -f "$HOME/.ssh/config" ]; then
-      cat <<-'SSHCFG' > "$HOME/.ssh/config"
-      Host github.com gitlab.homelab.local
-        IdentityFile /etc/coder/ssh/id_ed25519
-        UserKnownHostsFile /etc/ssh/ssh_known_hosts
-        IdentitiesOnly yes
-      SSHCFG
+      printf '%s\n' \
+        'Host github.com' \
+        '  IdentityFile /etc/coder/ssh/id_ed25519' \
+        '  UserKnownHostsFile /etc/ssh/ssh_known_hosts' \
+        '  IdentitiesOnly yes' \
+        'Host gitlab.homelab.local' \
+        '  IdentityFile /etc/coder/ssh/id_ed25519' \
+        '  UserKnownHostsFile /etc/ssh/ssh_known_hosts' \
+        '  IdentitiesOnly yes' \
+        '  Port 2222' \
+        > "$HOME/.ssh/config"
       chmod 600 "$HOME/.ssh/config"
     fi
   EOT
@@ -136,6 +140,16 @@ resource "kubernetes_pod_v1" "main" {
         value = coder_agent.main.token
       }
 
+      env {
+        name  = "SSL_CERT_FILE"
+        value = "/etc/ssl/certs/homelab-ca.crt"
+      }
+
+      env {
+        name  = "CURL_CA_BUNDLE"
+        value = "/etc/ssl/certs/homelab-ca.crt"
+      }
+
       resources {
         requests = {
           cpu    = "1"
@@ -157,6 +171,13 @@ resource "kubernetes_pod_v1" "main" {
         name       = "git-ssh-key"
         read_only  = true
       }
+
+      volume_mount {
+        mount_path = "/etc/ssl/certs/homelab-ca.crt"
+        name       = "homelab-ca"
+        sub_path   = "homelab-ca.crt"
+        read_only  = true
+      }
     }
 
     volume {
@@ -174,6 +195,17 @@ resource "kubernetes_pod_v1" "main" {
         items {
           key  = "git-ssh-private-key"
           path = "id_ed25519"
+        }
+      }
+    }
+
+    volume {
+      name = "homelab-ca"
+      secret {
+        secret_name = "homelab-ca"
+        items {
+          key  = "homelab-ca.crt"
+          path = "homelab-ca.crt"
         }
       }
     }
