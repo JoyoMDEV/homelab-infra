@@ -21,7 +21,7 @@ spec:
   source:
     repoURL: https://charts.hetzner.cloud
     chart: cert-manager-webhook-hetzner
-    targetRevision: "0.8.0"
+    targetRevision: "0.9.0"
     helm:
       values: |
         groupName: acme.johannesmoseler.de
