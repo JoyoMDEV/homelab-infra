@@ -52,6 +52,27 @@ resource "coder_agent" "main" {
         > "$HOME/.ssh/config"
       chmod 600 "$HOME/.ssh/config"
     fi
+
+    # Clone this repo automatically - lands on the persistent home PVC, so
+    # this only actually runs once per workspace lifetime (idempotent: skips
+    # if already cloned from a previous start).
+    if [ ! -d "$HOME/homelab-infra/.git" ]; then
+      git clone git@github.com:JoyoMDEV/homelab-infra.git "$HOME/homelab-infra" || \
+        echo "WARN: homelab-infra clone failed (check the git-ssh-private-key deploy key) - continuing"
+    fi
+
+    # Claude Code CLI - installed into the persistent home PVC (not
+    # /usr/local, which the non-root "coder" user can't write to) so it
+    # survives pod restarts without needing to reinstall every time.
+    mkdir -p "$HOME/.npm-global"
+    npm config set prefix "$HOME/.npm-global"
+    export PATH="$HOME/.npm-global/bin:$PATH"
+    if ! grep -q '.npm-global/bin' "$HOME/.bashrc" 2>/dev/null; then
+      echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> "$HOME/.bashrc"
+    fi
+    if ! command -v claude >/dev/null 2>&1; then
+      npm install -g @anthropic-ai/claude-code
+    fi
   EOT
 
   metadata {
