@@ -19,6 +19,14 @@
 - No Kubernetes-specific MCP server, no new in-cluster Deployment for any of the three servers (spec non-goals) — all three run as local processes inside the existing workspace container.
 - Grafana MCP server needs a Grafana **service account token**, viewer/query-only role — a one-time manual step in the Grafana UI, documented in Task 5's runbook, not automated here.
 
+## Prerequisites — generate these before Task 1 starts
+
+None of these depend on `scripts/setup-coder.sh` existing yet — go generate all three now and hold onto them. (Unlike context-hub's prerequisites, this plan can't front-load *everything*: the script that actually consumes these tokens doesn't exist until Task 1 writes it, so there's one unavoidable manual checkpoint — running that script — right after Task 1, before Task 2. Everything else needing you personally is front-loaded here.)
+
+1. **GitHub**: `https://github.com/settings/personal-access-tokens/new` — fine-grained PAT, repository access at least `homelab-infra`, permissions "Issues" + "Pull requests" (Read and write), "Contents" (Read-only).
+2. **GitLab**: `https://gitlab.homelab.local/-/user_settings/personal_access_tokens` — scope `api`.
+3. **Grafana**: `https://grafana.homelab.local/org/serviceaccounts` — new service account, role `Viewer`, then a token under it.
+
 ---
 
 ### Task 1: `scripts/setup-coder.sh` — seed the three MCP tokens
@@ -93,7 +101,20 @@ git add scripts/setup-coder.sh
 git commit -m "feat(coder): seed GitHub/GitLab/Grafana MCP tokens"
 ```
 
-Do **not** run this script — Johannes runs it personally as part of Task 5's runbook, after generating the three tokens in their respective UIs.
+Do **not** run this script yourself — see the manual checkpoint below.
+
+---
+
+## Manual checkpoint — before Task 2 starts
+
+Johannes runs this now, using the three tokens generated in Prerequisites:
+
+```bash
+export VAULT_TOKEN="..."
+./scripts/setup-coder.sh
+```
+
+Paste each token in at its prompt. Once this completes, `homelab/coder/coder-secret` in Vault has all seven keys and Task 2 can proceed.
 
 ---
 
@@ -335,7 +356,7 @@ git push
 **Files:**
 - Modify: `docs/coder-setup.md`
 
-**Interfaces:** none — this is where Johannes actually generates the three tokens, runs `scripts/setup-coder.sh`, pushes the template, and restarts the live workspace.
+**Interfaces:** none — by this point the manual checkpoint (tokens + Vault) is already done; this is where Johannes pushes the template and restarts the live workspace.
 
 - [ ] **Step 1: Update the runbook's section numbering**
 
@@ -347,29 +368,12 @@ In `docs/coder-setup.md`, renumber the existing `## 8. Troubleshooting` header t
 ## 8. MCP-Server hinzufügen (GitHub/GitLab/Grafana)
 
 **Voraussetzung:** Tasks 1-4 aus `docs/superpowers/plans/2026-09-13-coder-mcp-wiring.md`
-sind committed und gepusht; die `coder-workspace`-Pipeline (Task 3) ist grün.
+sind committed und gepusht; die `coder-workspace`-Pipeline (Task 3) ist grün;
+die drei Tokens wurden bereits generiert und per `scripts/setup-coder.sh`
+in Vault geschrieben (Prerequisites + Manual-Checkpoint des Implementation
+Plans).
 
-### 8.1 Tokens generieren
-
-- **GitHub**: `https://github.com/settings/personal-access-tokens/new` -
-  Fine-grained PAT, Repository access mind. `homelab-infra`, Permissions
-  "Issues" + "Pull requests" (Read and write), "Contents" (Read-only).
-- **GitLab**: `https://gitlab.homelab.local/-/user_settings/personal_access_tokens` -
-  Scope `api`.
-- **Grafana**: `https://grafana.homelab.local/org/serviceaccounts` -
-  neuen Service Account anlegen, Rolle `Viewer`, dann darunter einen Token
-  erzeugen.
-
-### 8.2 Vault befüllen
-
-```bash
-export VAULT_TOKEN="..."
-./scripts/setup-coder.sh
-```
-
-Bei den drei neuen Prompts die Tokens aus 8.1 einfügen.
-
-### 8.3 Template pushen und Workspace aktualisieren
+### 8.1 Template pushen und Workspace aktualisieren
 
 Das aktualisiert den bereits laufenden, persönlichen `homelab`-Workspace -
 der Pod startet dabei neu (kurze Unterbrechung, `/home/coder`-Zustand auf
@@ -382,7 +386,7 @@ coder login https://coder.homelab.local
 coder update homelab
 ```
 
-### 8.4 Verifikation
+### 8.2 Verifikation
 
 - [ ] `kubectl -n coder describe secret coder-secret` zeigt alle sieben Keys.
 - [ ] Im Workspace-Terminal: `env | grep MCP_TOKEN` zeigt alle drei Tokens.
