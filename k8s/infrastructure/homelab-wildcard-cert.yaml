@@ -4,6 +4,11 @@
 # The resulting secret 'homelab-wildcard-tls' is referenced by Traefik.
 #
 # To add more SANs (e.g. homelab.local bare domain), add them to dnsNames below.
+# NOTE: cert-manager reissues this cert into the 'infrastructure' namespace,
+# but Traefik actually reads a copy synced to 'kube-system' by the cert-sync
+# CronJob (k8s/infrastructure/cert-sync-cronjob.yaml, runs daily at 03:00).
+# After adding a SAN, either wait for that scheduled sync or trigger it now:
+#   kubectl create job --from=cronjob/cert-sync cert-sync-manual-$(date +%s) -n kube-system
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
