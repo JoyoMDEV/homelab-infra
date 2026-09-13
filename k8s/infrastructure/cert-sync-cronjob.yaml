@@ -100,7 +100,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: cert-sync
-              image: bitnami/kubectl:1.34
+              image: bitnami/kubectl:latest
               command:
                 - /bin/sh
                 - -c
