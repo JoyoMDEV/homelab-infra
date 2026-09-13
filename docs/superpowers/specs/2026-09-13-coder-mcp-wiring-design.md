@@ -56,6 +56,18 @@ curl-a-pinned-release pattern already used for `kubectl`/`vault`/
   file's own preference was the official server, used here as the
   starting point, not a fixed requirement.
 
+### Context-hub clone
+
+The context-hub design (`2026-09-13-context-hub-design.md`) deferred its
+own clone mechanism to this spec. Same treatment as the existing
+`homelab-infra` clone already in the startup script: a second idempotent
+block clones `context-hub` to `$HOME/Code/gitlab/context-hub` (skipped if
+`$HOME/Code/gitlab/context-hub/.git` already exists), using the same
+`git-ssh-private-key`/known_hosts already mounted for GitLab access over
+port 2222. This is what makes the `@~/Code/gitlab/context-hub/CLAUDE.md`
+import in homelab-infra's `CLAUDE.md` actually resolve inside the
+workspace.
+
 ### Config: global, not per-project
 
 A `mcpServers` block in Claude Code's user-scope config (`~/.claude.json`,
@@ -117,6 +129,10 @@ recreated against the new template version/image.
   homelab-infra; read/create an Issue in context-hub with a `project:*`
   label; query Loki for a log line from a known pod — via the respective
   MCP tools.
+- `$HOME/Code/gitlab/context-hub` exists after workspace start; a fresh
+  session confirms it can see content only present in context-hub's
+  `CLAUDE.md` (the same check called out in the context-hub spec's own
+  Testing section).
 
 ## Rollout order
 
@@ -127,7 +143,8 @@ recreated against the new template version/image.
 3. `Dockerfile`: add the three MCP server binaries/packages, pinned
    versions.
 4. `main.tf`: add the three `secretKeyRef` env vars; extend the startup
-   script to idempotently write/merge the global `mcpServers` config.
+   script to idempotently write/merge the global `mcpServers` config and
+   to clone `context-hub` alongside `homelab-infra`.
 5. `deploy-coder-template.sh` pushes the new template version;
    `coder update homelab`.
 6. Run through the Testing section above.
