@@ -20,6 +20,28 @@
 - **Correction versus the design spec — sidebar config.** The spec states Starlight's sidebar "auto-groups by folder... no extra sidebar config needed." That's only true once a top-level group is registered: Starlight requires one explicit `{label, autogenerate: {directory}}` entry per top-level project folder in `astro.config.mjs`. Within a registered project folder, the 6 subfolders and their files *do* nest automatically with zero further config. Net effect: adding a new project later means adding one line to `astro.config.mjs`, not zero — documented as such in `context-hub/CLAUDE.md`'s own "adding a new project" instructions (Task 2).
 - Every deployed *service* gets a Backstage catalog entry (CLAUDE.md) — **not applicable here**. `context-hub` is a GitLab project + static Pages site, not an ArgoCD-managed k8s service with a namespace/`kubernetes-id` to annotate; there is no natural `argocd/app-name` for it. No catalog entry is created in this plan (see Self-Review Notes).
 
+## Prerequisites — do these before Task 1 starts
+
+None of these depend on any file this plan creates — an empty GitLab project can hold CI variables, labels, and boards before a single commit lands in it. Doing them now means no task below stalls waiting on you mid-execution.
+
+1. **Create the project**: `https://gitlab.homelab.local` → **New project** → `homelab/projects/context-hub`.
+2. **Set the CI variable**: that project's **Settings → CI/CD → Variables** → add `HOMELAB_CA_CRT` as a **File** variable (same value as the `backstage`/`coder-workspace`/`supabase-functions` projects).
+3. **Create labels**: that project's **Issues → Labels → New label**, one per row:
+
+   | Label | Color (suggested) |
+   |---|---|
+   | `project:homelab-infra` | `#1f75cb` |
+   | `project:coder-workspace` | `#1f75cb` |
+   | `project:everything-app` | `#1f75cb` |
+   | `project:global` | `#1f75cb` |
+   | `type:task` | `#428bca` |
+   | `type:idea` | `#428bca` |
+   | `type:question` | `#428bca` |
+
+4. **Create boards**: **Issues → Boards → Create new board** — one board "By project" with one list per `project:*` label above, one board "By type" with one list per `type:*` label above.
+
+Once these four are done, Tasks 1-4 below can run (and push directly, since the remote now exists) without waiting on anything further from you. Task 5 is then just verification.
+
 ---
 
 ### Task 1: Enable GitLab Pages on the self-hosted instance
@@ -244,16 +266,16 @@ Conventional Commits, scoped by project folder:
 Run: `find ~/Code/gitlab/context-hub/src/content/docs/global -type f`
 Expected: 6 `.gitkeep` files, one per subfolder.
 
-- [ ] **Step 4: Initialize the local repo (project creation + push happen in Task 5)**
+- [ ] **Step 4: Initialize the local repo and push (the project already exists — Prerequisites step 1)**
 
 ```bash
 cd ~/Code/gitlab/context-hub
 git init
 git add CLAUDE.md src/
 git commit -m "feat: add context-hub folder skeleton + conventions"
+git remote add origin git@gitlab.homelab.local:homelab/projects/context-hub.git
+git push -u origin main
 ```
-
-Do not push — the GitLab project `homelab/projects/context-hub` doesn't exist yet; Task 5's runbook creates it and pushes.
 
 ---
 
@@ -336,15 +358,18 @@ pages:
 Run: `yamllint ~/Code/gitlab/context-hub/.gitlab-ci.yml` (default rules — this file lives outside `homelab-infra`)
 Expected: no output, or only cosmetic warnings.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Commit and push**
 
 ```bash
 cd ~/Code/gitlab/context-hub
 git add package.json astro.config.mjs .gitlab-ci.yml package-lock.json
 git commit -m "feat: add Starlight site + GitLab Pages CI job"
+git push
 ```
 
-Do not push yet — same reason as Task 2.
+- [ ] **Step 7: Watch the pipeline and note the Pages URL**
+
+Open `https://gitlab.homelab.local/homelab/projects/context-hub/-/pipelines`, confirm the `pages` job succeeds, then check that project's **Settings → Pages** for the URL GitLab generated — this is the real acceptance test for Task 1's infra work, so if the job fails or Pages shows no URL, go back to Task 1 Step 10 before continuing.
 
 ---
 
@@ -383,79 +408,40 @@ git push
 
 ---
 
-### Task 5: End-to-end rollout runbook
+### Task 5: Setup record + verification
 
 **Files:**
 - Create: `docs/context-hub-setup.md`
 
-**Interfaces:** none — this is the document Johannes follows to execute every remaining manual step (GitLab project creation, push, label/board setup) and verify the result, mirroring `docs/coder-setup.md`'s structure.
+**Interfaces:** none — by this point Prerequisites + Tasks 1-4 are all done and pushed; this doc records the setup and is where Johannes runs the final verification checklist, mirroring `docs/coder-setup.md`'s structure.
 
-- [ ] **Step 1: Write the runbook**
+- [ ] **Step 1: Write the doc**
 
 ```markdown
-# Context Hub Setup Runbook
+# Context Hub Setup
 
-One-time setup for the context-hub GitLab project. Prerequisite: Tasks 1-4
-of the implementation plan are committed (and Task 1 pushed/live).
-
-**Prerequisites:**
-- `kubectl` configured, cluster reachable
-- Access to the self-hosted GitLab instance (`gitlab.homelab.local`)
-- The local clone at `~/Code/gitlab/context-hub` (Tasks 2-3)
+One-time setup for the context-hub GitLab project. All GitLab-UI steps
+(project creation, CI variable, labels, boards) were done upfront as this
+plan's Prerequisites, before Tasks 1-4 ran — nothing manual is left except
+the verification below.
 
 ---
 
-## 1. Create the GitLab project
+## What's live
 
-1. `https://gitlab.homelab.local` → **New project** → `homelab/projects/context-hub`
-2. **Settings → CI/CD → Variables** → set `HOMELAB_CA_CRT` as a File variable
-   (same value as the `backstage`/`coder-workspace`/`supabase-functions` projects)
-3. Push:
+- GitLab Pages enabled instance-wide (Task 1): `*.pages.homelab.local`.
+- `homelab/projects/context-hub`: the 6-subfolder-per-project skeleton +
+  conventions (`CLAUDE.md`), a Starlight site, built by CI on every push
+  to `main` (Tasks 2-3).
+- homelab-infra's own `CLAUDE.md` imports context-hub's (Task 4).
 
-```bash
-cd ~/Code/gitlab/context-hub
-git remote add origin git@gitlab.homelab.local:homelab/projects/context-hub.git
-git push -u origin main
-```
+## Verification
 
-4. Watch the pipeline: `https://gitlab.homelab.local/homelab/projects/context-hub/-/pipelines`
-5. Once the `pages` job succeeds, note the Pages URL GitLab prints under
-   **Settings → Pages** — confirm it resolves and renders the `global`
-   section.
-
----
-
-## 2. Create labels
-
-**Project → Issues → Labels → New label**, one per row:
-
-| Label | Color (suggested) |
-|---|---|
-| `project:homelab-infra` | `#1f75cb` |
-| `project:coder-workspace` | `#1f75cb` |
-| `project:everything-app` | `#1f75cb` |
-| `project:global` | `#1f75cb` |
-| `type:task` | `#428bca` |
-| `type:idea` | `#428bca` |
-| `type:question` | `#428bca` |
-
----
-
-## 3. Create boards
-
-**Project → Issues → Boards → Create new board**:
-1. Board 1, "By project": add one list per `project:*` label above.
-2. Board 2, "By type": add one list per `type:*` label above.
-
----
-
-## 4. Verification
-
-- [ ] Pages URL from Step 1.5 renders and is searchable (Starlight's built-in
-      Pagefind search box returns results for a word from the `global`
-      section).
-- [ ] Both boards from Step 3 show up under **Issues → Boards**, switchable
-      via the board-picker dropdown.
+- [ ] The Pages URL noted in Task 3 Step 7 renders and is searchable
+      (Starlight's built-in Pagefind search box returns results for a word
+      from the `global` section).
+- [ ] Both boards created in Prerequisites step 4 show up under
+      **Issues → Boards**, switchable via the board-picker dropdown.
 - [ ] Create one test Issue with both a `project:*` and a `type:*` label;
       confirm it appears on both boards simultaneously.
 - [ ] Full `@import` verification from inside the Coder workspace is
@@ -466,13 +452,13 @@ git push -u origin main
 - [ ] **Step 2: Verify the doc's section count**
 
 Run: `grep -c "^## " docs/context-hub-setup.md`
-Expected: `4`.
+Expected: `2`.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add docs/context-hub-setup.md
-git commit -m "docs(context-hub): add rollout runbook"
+git commit -m "docs(context-hub): add setup record + verification checklist"
 git push
 ```
 
@@ -480,6 +466,7 @@ git push
 
 ## Self-Review Notes
 
-- **Spec coverage:** Pages enablement (Task 1, an open prerequisite the spec itself flagged); repo + 6-folder-per-project skeleton, labels/boards mirroring folders, Conventional Commits (Task 2 + runbook Step 2); Starlight/Pages rendering (Task 3 + runbook); `@import` consumption mechanism (Task 4); all four Testing bullets from the spec are covered across Task 1 Step 10, Task 4 Step 3, and the runbook's Verification section. Backstage catalog entry deliberately omitted — see Global Constraints — since `context-hub` isn't an ArgoCD-managed k8s service.
+- **Spec coverage:** Pages enablement (Task 1, an open prerequisite the spec itself flagged); repo + 6-folder-per-project skeleton, labels/boards mirroring folders, Conventional Commits (Prerequisites + Task 2); Starlight/Pages rendering (Task 3 + Task 5); `@import` consumption mechanism (Task 4); all four Testing bullets from the spec are covered across Task 1 Step 10, Task 3 Step 7, Task 4 Step 3, and Task 5's Verification checklist. Backstage catalog entry deliberately omitted — see Global Constraints — since `context-hub` isn't an ArgoCD-managed k8s service.
 - **Placeholder scan:** none — every file has literal, complete content. The spec's one deferred detail (exact clone mechanism into the Coder workspace) is explicitly left to the sibling MCP-wiring plan, not silently dropped.
-- **Type/name consistency checked:** the 6 folder names (`decisions`/`notes`/`runbooks`/`journal`/`references`/`ideas`) match across the spec, Task 2's `CLAUDE.md`, and Task 2's `mkdir` loop; the `project:*`/`type:*` label vocabulary matches across Task 2's `CLAUDE.md` and the Task 5 runbook's label table; the fixed clone path `~/Code/gitlab/context-hub` matches across Tasks 2, 3, 4.
+- **Type/name consistency checked:** the 6 folder names (`decisions`/`notes`/`runbooks`/`journal`/`references`/`ideas`) match across the spec, Task 2's `CLAUDE.md`, and Task 2's `mkdir` loop; the `project:*`/`type:*` label vocabulary matches across Prerequisites step 3 and Task 2's `CLAUDE.md`; the fixed clone path `~/Code/gitlab/context-hub` matches across Tasks 2, 3, 4.
+- **Reordering note:** manual GitLab-UI steps (project creation, CI variable, labels, boards) were moved to a front-loaded Prerequisites section per Johannes's request, so no task below stalls waiting on a manual action mid-execution — Tasks 2/3 now push directly instead of deferring to a later runbook task.
