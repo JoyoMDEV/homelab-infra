@@ -4,6 +4,7 @@ image:
   pullPolicy: IfNotPresent
 
 hostname: gitlab.homelab.local
+pagesHostname: pages.homelab.local
 
 resources:
   requests:

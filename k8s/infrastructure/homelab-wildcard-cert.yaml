@@ -19,6 +19,7 @@ spec:
   dnsNames:
     - "*.homelab.local"
     - "homelab.local"
+    - "*.pages.homelab.local"
   privateKey:
     algorithm: RSA
     size: 4096
