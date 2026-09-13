@@ -121,7 +121,46 @@ coder create --template homelab-workspace homelab
 
 ---
 
-## 8. Troubleshooting
+## 8. MCP-Server hinzufügen (GitHub/GitLab/Grafana)
+
+**Voraussetzung:** Tasks 1-4 aus `docs/superpowers/plans/2026-09-13-coder-mcp-wiring.md`
+sind committed und gepusht; die `coder-workspace`-Pipeline (Task 3) ist grün;
+die drei Tokens wurden bereits generiert und per `scripts/setup-coder.sh`
+in Vault geschrieben (Prerequisites + Manual-Checkpoint des Implementation
+Plans).
+
+### 8.1 Template pushen und Workspace aktualisieren
+
+Das aktualisiert den bereits laufenden, persönlichen `homelab`-Workspace -
+der Pod startet dabei neu (kurze Unterbrechung, `/home/coder`-Zustand auf
+dem PVC bleibt erhalten). Zu einem Zeitpunkt ausführen, an dem eine kurze
+Unterbrechung okay ist.
+
+```bash
+coder login https://coder.homelab.local
+./scripts/deploy-coder-template.sh
+coder update homelab
+```
+
+### 8.2 Verifikation
+
+- [ ] `kubectl -n coder describe secret coder-secret` zeigt alle sieben Keys.
+- [ ] Im Workspace-Terminal: `env | grep MCP_TOKEN` zeigt alle drei Tokens.
+- [ ] `claude mcp list` zeigt `github`, `gitlab`, `grafana` als verbunden.
+      Falls ein Server fehlt: `claude mcp add --help` prüfen, ob sich die
+      Flag-Syntax seit diesem Plan geändert hat, die betroffene Zeile in
+      `k8s/coder-templates/homelab-workspace/main.tf`s `startup_script`
+      anpassen, Task 4 Schritte 4-6 wiederholen.
+- [ ] In einer Claude-Code-Session im Workspace: ein GitHub-Issue in
+      `homelab-infra` lesen/kommentieren; ein GitLab-Issue in `context-hub`
+      mit einem `project:*`-Label anlegen; eine Loki-Logzeile eines
+      bekannten Pods über die Grafana-MCP-Tools abfragen.
+- [ ] `ls $HOME/Code/gitlab/context-hub` im Workspace zeigt den geklonten
+      Context-Hub-Checkout.
+
+---
+
+## 9. Troubleshooting
 
 **Coder Pod crasht mit "connect: connection refused" (Postgres)**
 ```bash
