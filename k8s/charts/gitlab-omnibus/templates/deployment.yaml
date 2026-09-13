@@ -65,6 +65,17 @@ spec:
                 registry['enable'] = true
                 registry_nginx['listen_port'] = 5050
                 registry_nginx['listen_https'] = false
+                # TLS terminates at Traefik (see k8s/traefik-tlsstore.yaml), never here.
+                # pages_nginx['listen_https'] MUST stay false: setting it true makes
+                # nginx try to load an auto-generated Pages TLS vhost cert that
+                # doesn't exist, which aborts nginx startup entirely and takes down
+                # the whole GitLab app + registry, not just Pages (this happened once
+                # already during context-hub's rollout — see
+                # .superpowers/sdd/2026-09-13-context-hub/progress.md).
+                # gitlab_pages['listen_proxy'] is pinned to localhost:8091 (not
+                # Omnibus's own default of localhost:8090) because 8090 is also
+                # pages_nginx['listen_port'] below, the externally-reachable Pages
+                # port — leaving listen_proxy at its default collides with it.
                 gitlab_pages['enable'] = true
                 gitlab_pages['listen_proxy'] = 'localhost:8091'
                 pages_nginx['enable'] = true
