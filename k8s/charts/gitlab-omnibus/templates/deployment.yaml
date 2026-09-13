@@ -85,10 +85,18 @@ spec:
                 # rendered nginx config, first attempt at this fix). The only
                 # real hook into this vhost's server block is
                 # @custom_gitlab_server_config, rendered verbatim at the end
-                # of the block - raised generously (1800s) given the slow
-                # observed throughput (~0.7MB/s => an 870MB layer alone needs
-                # ~20 minutes).
-                registry_nginx['custom_gitlab_server_config'] = "client_body_timeout 1800;\nsend_timeout 1800;"
+                # of the block. Second attempt (client_body_timeout/
+                # send_timeout only) still failed at exactly 60s - the
+                # registry daemon's own logs showed *it* reporting "client
+                # disconnected" on nginx's connection to it (127.0.0.1:5000),
+                # meaning the timeout governing nginx's writes TO the
+                # registry upstream (proxy_send_timeout, still at its
+                # compiled 60s default - never set, and distinct from
+                # proxy_read_timeout which is hardcoded 900 in the template)
+                # was the real remaining culprit. All three raised generously
+                # (1800s) given the slow observed throughput (~0.7MB/s =>
+                # an 870MB layer alone needs ~20 minutes).
+                registry_nginx['custom_gitlab_server_config'] = "client_body_timeout 1800;\nsend_timeout 1800;\nproxy_send_timeout 1800;"
                 # TLS terminates at Traefik (see k8s/traefik-tlsstore.yaml), never here.
                 # pages_nginx['listen_https'] MUST stay false: setting it true makes
                 # nginx try to load an auto-generated Pages TLS vhost cert that
