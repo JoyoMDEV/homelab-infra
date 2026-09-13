@@ -52,7 +52,7 @@ metadata:
   namespace: kube-system
 rules:
   - apiGroups: ["apps"]
-    resources: ["deployments"]
+    resources: ["daemonsets"]
     resourceNames: ["traefik"]
     verbs: ["get", "patch"]
   - apiGroups: [""]
@@ -100,7 +100,16 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: cert-sync
-              image: bitnami/kubectl:latest
+              # Bitnami stopped publishing versioned tags for this image
+              # (only 'latest' and content-addressed digests remain, which
+              # is what silently broke this CronJob for ~10 days when it was
+              # previously pinned to ':1.34'). Pinned by digest instead -
+              # this is the current 'latest' as of 2026-09-13, a multi-arch
+              # manifest list (amd64 + arm64), reproducible without
+              # depending on Bitnami's tag lifecycle at all. Re-pin
+              # periodically by checking
+              # https://hub.docker.com/v2/repositories/bitnami/kubectl/tags/latest.
+              image: bitnami/kubectl@sha256:b29d8c1665b70817259ceecaea16ab27aab6368b48daf485d19436c809067492
               command:
                 - /bin/sh
                 - -c
@@ -134,12 +143,15 @@ spec:
                       OLD_POD=$(kubectl get pod -n "${DST_NS}" \
                         -l app.kubernetes.io/name=traefik \
                         -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
-                      kubectl rollout restart deployment/traefik -n "${DST_NS}"
+                      # Traefik runs as a DaemonSet in this cluster (not a
+                      # Deployment) - rollout restart/status both need the
+                      # matching resource type or they 404.
+                      kubectl rollout restart daemonset/traefik -n "${DST_NS}"
                       if [ -n "${OLD_POD}" ]; then
                         kubectl delete pod "${OLD_POD}" -n "${DST_NS}" \
                           --wait=false 2>/dev/null || true
                       fi
-                      kubectl rollout status deployment/traefik \
+                      kubectl rollout status daemonset/traefik \
                         -n "${DST_NS}" --timeout=180s || true
                     fi
                   else
