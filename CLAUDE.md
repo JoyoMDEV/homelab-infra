@@ -1,4 +1,5 @@
 # homelab-infra
+
 @~/Code/gitlab/context-hub/CLAUDE.md
 
 Hybrid k3s cluster (2 Hetzner Cloud servers + 2 home nodes) managed with Terraform, Ansible, and ArgoCD. See `README.md` for the architecture diagram and CI/CD flow.
