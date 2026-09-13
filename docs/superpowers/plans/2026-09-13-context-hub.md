@@ -287,7 +287,7 @@ cd ~/Code/gitlab/context-hub
 git init
 git add CLAUDE.md src/
 git commit -m "feat: add context-hub folder skeleton + conventions"
-git remote add origin git@gitlab.homelab.local:homelab/projects/context-hub.git
+git remote add origin ssh://git@gitlab.homelab.local:2222/homelab/projects/context-hub.git
 git push -u origin main
 ```
 
