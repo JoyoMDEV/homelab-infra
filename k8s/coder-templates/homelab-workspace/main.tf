@@ -81,23 +81,22 @@ resource "coder_agent" "main" {
     fi
 
     if command -v claude >/dev/null 2>&1; then
-      if ! claude mcp list 2>/dev/null | grep -q '^github'; then
-        claude mcp add --scope user github github-mcp-server \
-          --env GITHUB_PERSONAL_ACCESS_TOKEN="$GITHUB_MCP_TOKEN" || \
-          echo "WARN: 'claude mcp add github' failed - check 'claude mcp add --help' for the current flag syntax"
-      fi
-      if ! claude mcp list 2>/dev/null | grep -q '^gitlab'; then
-        claude mcp add --scope user gitlab mcp-gitlab \
-          --env GITLAB_PERSONAL_ACCESS_TOKEN="$GITLAB_MCP_TOKEN" \
-          --env GITLAB_API_URL="https://gitlab.homelab.local/api/v4" || \
-          echo "WARN: 'claude mcp add gitlab' failed - check 'claude mcp add --help' for the current flag syntax"
-      fi
-      if ! claude mcp list 2>/dev/null | grep -q '^grafana'; then
-        claude mcp add --scope user grafana mcp-grafana \
-          --env GRAFANA_URL="https://grafana.homelab.local" \
-          --env GRAFANA_SERVICE_ACCOUNT_TOKEN="$GRAFANA_MCP_TOKEN" || \
-          echo "WARN: 'claude mcp add grafana' failed - check 'claude mcp add --help' for the current flag syntax"
-      fi
+      # Re-run unconditionally on every startup: the config below only ever
+      # contains $${VAR}-style references (never literal secret values), so
+      # re-adding is idempotent/self-healing rather than something that needs
+      # a "already registered" guard - it also automatically repairs a
+      # previously-broken registration on the next workspace restart.
+      claude mcp add --scope user github github-mcp-server stdio \
+        --env GITHUB_PERSONAL_ACCESS_TOKEN='$${GITHUB_MCP_TOKEN}' || \
+        echo "WARN: 'claude mcp add github' failed - check 'claude mcp add --help' for the current flag syntax"
+      claude mcp add --scope user gitlab mcp-gitlab \
+        --env GITLAB_PERSONAL_ACCESS_TOKEN='$${GITLAB_MCP_TOKEN}' \
+        --env GITLAB_API_URL="https://gitlab.homelab.local/api/v4" || \
+        echo "WARN: 'claude mcp add gitlab' failed - check 'claude mcp add --help' for the current flag syntax"
+      claude mcp add --scope user grafana mcp-grafana \
+        --env GRAFANA_URL="https://grafana.homelab.local" \
+        --env GRAFANA_SERVICE_ACCOUNT_TOKEN='$${GRAFANA_MCP_TOKEN}' || \
+        echo "WARN: 'claude mcp add grafana' failed - check 'claude mcp add --help' for the current flag syntax"
     fi
   EOT
 
@@ -191,8 +190,9 @@ resource "kubernetes_pod_v1" "main" {
         name = "GITHUB_MCP_TOKEN"
         value_from {
           secret_key_ref {
-            name = "coder-secret"
-            key  = "github-mcp-token"
+            name     = "coder-secret"
+            key      = "github-mcp-token"
+            optional = true
           }
         }
       }
@@ -201,8 +201,9 @@ resource "kubernetes_pod_v1" "main" {
         name = "GITLAB_MCP_TOKEN"
         value_from {
           secret_key_ref {
-            name = "coder-secret"
-            key  = "gitlab-mcp-token"
+            name     = "coder-secret"
+            key      = "gitlab-mcp-token"
+            optional = true
           }
         }
       }
@@ -211,8 +212,9 @@ resource "kubernetes_pod_v1" "main" {
         name = "GRAFANA_MCP_TOKEN"
         value_from {
           secret_key_ref {
-            name = "coder-secret"
-            key  = "grafana-mcp-token"
+            name     = "coder-secret"
+            key      = "grafana-mcp-token"
+            optional = true
           }
         }
       }
@@ -224,6 +226,11 @@ resource "kubernetes_pod_v1" "main" {
 
       env {
         name  = "CURL_CA_BUNDLE"
+        value = "/etc/ssl/certs/homelab-ca.crt"
+      }
+
+      env {
+        name  = "NODE_EXTRA_CA_CERTS"
         value = "/etc/ssl/certs/homelab-ca.crt"
       }
 

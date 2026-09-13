@@ -127,7 +127,29 @@ coder create --template homelab-workspace homelab
 sind committed und gepusht; die `coder-workspace`-Pipeline (Task 3) ist grün;
 die drei Tokens wurden bereits generiert und per `scripts/setup-coder.sh`
 in Vault geschrieben (Prerequisites + Manual-Checkpoint des Implementation
-Plans).
+Plans) - siehe 8.0 für die durable Anleitung dazu (auf einem Rebuild oder
+bei einer Token-Rotation ist das der Referenzpunkt, nicht der Plan-File).
+
+### 8.0 Tokens erzeugen
+
+Diese drei Tokens einmalig (oder bei einer Rotation erneut) erzeugen, bevor
+`scripts/setup-coder.sh` läuft:
+
+- **GitHub**: `https://github.com/settings/personal-access-tokens/new` -
+  Fine-grained PAT, Repository access mindestens `homelab-infra`,
+  Permissions "Issues" + "Pull requests" (Read and write), "Contents"
+  (Read-only).
+- **GitLab**: `https://gitlab.homelab.local/-/user_settings/personal_access_tokens` -
+  Scope `api`.
+- **Grafana**: `https://grafana.homelab.local/org/serviceaccounts` - neuen
+  Service Account anlegen, Rolle `Viewer`, danach ein Token unter diesem
+  Service Account erzeugen.
+
+Anschließend `./scripts/setup-coder.sh` mit den drei erzeugten Tokens
+ausführen - das schreibt sie nach Vault (`homelab/coder/coder-secret`,
+Keys `github-mcp-token`/`gitlab-mcp-token`/`grafana-mcp-token`). Für dieses
+Rollout ist das bereits erledigt; dieser Abschnitt ist die durable Anleitung
+für einen künftigen Rebuild oder eine Token-Rotation.
 
 ### 8.1 Template pushen und Workspace aktualisieren
 
@@ -145,7 +167,8 @@ coder update homelab
 ### 8.2 Verifikation
 
 - [ ] `kubectl -n coder describe secret coder-secret` zeigt alle sieben Keys.
-- [ ] Im Workspace-Terminal: `env | grep MCP_TOKEN` zeigt alle drei Tokens.
+- [ ] Im Workspace-Terminal: `env | grep -o '^[A-Z_]*MCP_TOKEN'` zeigt alle
+      drei Variablennamen (ohne die Werte auszugeben).
 - [ ] `claude mcp list` zeigt `github`, `gitlab`, `grafana` als verbunden.
       Falls ein Server fehlt: `claude mcp add --help` prüfen, ob sich die
       Flag-Syntax seit diesem Plan geändert hat, die betroffene Zeile in
