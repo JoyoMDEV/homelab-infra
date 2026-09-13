@@ -67,27 +67,21 @@ else
     exit 1
   fi
 
-  vault_kv_put "${MCP_VAULT_PATH}" \
-    "github-mcp-token=${GITHUB_MCP_TOKEN}" \
-    "gitlab-mcp-token=${GITLAB_MCP_TOKEN}" \
-    "grafana-mcp-token=${GRAFANA_MCP_TOKEN}"
-
-  force_sync coder-secret coder
-fi
-```
-
-Note: `vault_kv_put` with a partial key set does a `vault kv put` (full overwrite of the path's fields as given), not a per-field patch — since this repo's existing `coder-secret` path is only ever written to by this one script, and this block runs after the earlier `db-password`/`oidc-client-secret`/`git-ssh-private-key` block already wrote those, use `vault kv patch` semantics instead to avoid clobbering them:
-
-```bash
+  # vault_kv_put does a full overwrite of the path's given fields, not a
+  # per-field patch. The earlier db-password/oidc-client-secret/
+  # git-ssh-private-key block already wrote those fields to this same
+  # path, so a plain "put" here would clobber them - use "vault kv patch"
+  # instead, which only touches the fields listed.
   kubectl exec -n "${VAULT_NS}" "${VAULT_POD}" -- \
     env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${VAULT_TOKEN}" \
     vault kv patch "secret/${MCP_VAULT_PATH}" \
     "github-mcp-token=${GITHUB_MCP_TOKEN}" \
     "gitlab-mcp-token=${GITLAB_MCP_TOKEN}" \
     "grafana-mcp-token=${GRAFANA_MCP_TOKEN}" >/dev/null
-```
 
-Use this `vault kv patch` form in place of the `vault_kv_put` call above.
+  force_sync coder-secret coder
+fi
+```
 
 - [ ] **Step 2: Syntax-check the script**
 
