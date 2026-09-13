@@ -15,6 +15,12 @@ the verification below.
   to `main` (Tasks 2-3).
 - homelab-infra's own `CLAUDE.md` imports context-hub's (Task 4).
 
+**Security note:** unlike every other service on this instance (behind Keycloak
+OIDC), GitLab Pages has `gitlab_pages['access_control']` unset (defaults to
+`false`), so anything published here is readable by anyone on the Tailnet
+without login — nothing genuinely sensitive (credentials, tokens, etc.)
+should go in context-hub.
+
 ## Verification
 
 - [ ] `https://homelab.pages.homelab.local/projects/context-hub/` renders and is searchable
