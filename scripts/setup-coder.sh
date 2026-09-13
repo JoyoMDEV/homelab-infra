@@ -123,6 +123,46 @@ else
 fi
 
 echo ""
+MCP_VAULT_PATH="homelab/coder/coder-secret"
+GITHUB_TOKEN_SET=$(vault_kv_get "${MCP_VAULT_PATH}" "github-mcp-token")
+if [[ -n "${GITHUB_TOKEN_SET}" ]]; then
+  echo "    github-mcp-token existiert bereits in Vault - nichts zu tun."
+else
+  echo "==> GitHub MCP: Fine-grained Personal Access Token"
+  echo "    Scope: nur die Repos, die der Agent braucht (mind. homelab-infra),"
+  echo "    Berechtigungen 'Issues' + 'Pull requests' (read/write), 'Contents' (read)."
+  read -rsp "    GitHub Token (wird nicht angezeigt): " GITHUB_MCP_TOKEN
+  echo ""
+
+  echo "==> GitLab MCP: Personal Access Token (api scope)"
+  read -rsp "    GitLab Token (wird nicht angezeigt): " GITLAB_MCP_TOKEN
+  echo ""
+
+  echo "==> Grafana MCP: Service-Account-Token (Viewer-Rolle)"
+  read -rsp "    Grafana Token (wird nicht angezeigt): " GRAFANA_MCP_TOKEN
+  echo ""
+
+  if [[ -z "${GITHUB_MCP_TOKEN}" ]] || [[ -z "${GITLAB_MCP_TOKEN}" ]] || [[ -z "${GRAFANA_MCP_TOKEN}" ]]; then
+    echo "    FEHLER: Mindestens ein Token ist leer. Abbruch."
+    exit 1
+  fi
+
+  # vault_kv_put does a full overwrite of the path's given fields, not a
+  # per-field patch. The earlier db-password/oidc-client-secret/
+  # git-ssh-private-key block already wrote those fields to this same
+  # path, so a plain "put" here would clobber them - use "vault kv patch"
+  # instead, which only touches the fields listed.
+  kubectl exec -n "${VAULT_NS}" "${VAULT_POD}" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="${VAULT_TOKEN}" \
+    vault kv patch "secret/${MCP_VAULT_PATH}" \
+    "github-mcp-token=${GITHUB_MCP_TOKEN}" \
+    "gitlab-mcp-token=${GITLAB_MCP_TOKEN}" \
+    "grafana-mcp-token=${GRAFANA_MCP_TOKEN}" >/dev/null
+
+  force_sync coder-secret coder
+fi
+
+echo ""
 echo "============================================"
 echo "  Setup abgeschlossen!"
 echo ""
