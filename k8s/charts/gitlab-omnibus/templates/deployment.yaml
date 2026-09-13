@@ -65,6 +65,12 @@ spec:
                 registry['enable'] = true
                 registry_nginx['listen_port'] = 5050
                 registry_nginx['listen_https'] = false
+                gitlab_pages['enable'] = true
+                gitlab_pages['listen_proxy'] = 'localhost:8091'
+                pages_nginx['enable'] = true
+                pages_nginx['listen_port'] = 8090
+                pages_nginx['listen_https'] = false
+                pages_external_url 'https://{{ .Values.pagesHostname }}/'
                 prometheus_monitoring['enable'] = false
                 puma['worker_processes'] = 2
                 sidekiq['max_concurrency'] = 10
@@ -124,6 +130,8 @@ spec:
               containerPort: 22
             - name: registry
               containerPort: 5050
+            - name: pages
+              containerPort: 8090
           volumeMounts:
             - name: config
               mountPath: /etc/gitlab
