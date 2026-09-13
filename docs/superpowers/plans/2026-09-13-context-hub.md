@@ -92,16 +92,22 @@ pagesHostname: pages.homelab.local
 
 - [ ] **Step 5: Wire Pages into the Omnibus config + expose its port**
 
-In `k8s/charts/gitlab-omnibus/templates/deployment.yaml`, add these three lines to the `GITLAB_OMNIBUS_CONFIG` block, directly after `registry_nginx['listen_https'] = false`:
+**Corrected 2026-09-13, after a first live attempt broke production** — see the ledger's incident entry. The original snippet here used `gitlab_pages['external_http']` (a direct-bind mechanism meant for exposing the daemon's raw port with no nginx in front) and never disabled TLS on the Pages nginx vhost, which auto-enables because `pages_external_url` uses `https://`. That combination crashed the shared main nginx (missing cert file) and self-conflicted on port 8090. Corrected per GitLab's own docs on running Pages behind a TLS-terminating reverse proxy (`pages_nginx['listen_https']`, `gitlab_pages['listen_proxy']`):
+
+In `k8s/charts/gitlab-omnibus/templates/deployment.yaml`, add these six lines to the `GITLAB_OMNIBUS_CONFIG` block, directly after `registry_nginx['listen_https'] = false`:
 
 ```
                 registry_nginx['listen_https'] = false
                 gitlab_pages['enable'] = true
-                gitlab_pages['external_http'] = ['0.0.0.0:8090']
+                gitlab_pages['listen_proxy'] = 'localhost:8091'
+                pages_nginx['enable'] = true
+                pages_nginx['listen_port'] = 8090
+                pages_nginx['listen_https'] = false
                 pages_external_url 'https://{{ .Values.pagesHostname }}/'
 ```
 
-(`external_http` binds the Pages daemon to a plain-HTTP TCP port inside the container — the same "TLS terminates at Traefik, GitLab listens HTTP internally" pattern already used for the main app's `nginx['listen_https'] = false`/`registry_nginx['listen_https'] = false`.)
+- `pages_nginx['listen_port']`/`listen_https`: the same "TLS terminates at Traefik, GitLab listens HTTP internally" pattern already used for the main app (`nginx['listen_https'] = false`) and the registry (`registry_nginx['listen_https'] = false`) — Pages gets its own separate nginx vhost (a distinct Omnibus-managed nginx instance, not a shared server block with the main app), so it needs the same override independently.
+- `gitlab_pages['listen_proxy']`: the Pages Go daemon's own internal listener that `pages_nginx` reverse-proxies to. Explicitly pinned to a *different* port (`8091`, loopback-only) from `pages_nginx['listen_port']` (`8090`, the container's externally-reachable port) so the two can never collide regardless of bind-address edge cases — this is what actually caused Bug 2 in the first attempt (both defaulted toward port 8090).
 
 Add a matching container port, next to the existing `ssh`/`registry` entries:
 
@@ -150,9 +156,11 @@ grep -A2 "name: pages" /tmp/gitlab-rendered.yaml
 
 Expected: the rendered output shows the new `pages` container port and Service port. (If `yq` isn't installed, extract the `helm.values:` block from `k8s/argocd/applications/gitlab.yaml` by hand into `/tmp/gitlab-app-values.yaml` instead.)
 
-- [ ] **Step 9: Apply live — this restarts the running GitLab pod (heads-up, not a bug)**
+- [ ] **Step 9: Apply live, uncommitted — this restarts the running GitLab pod (heads-up, not a bug)**
 
-The Deployment's `strategy.type: Recreate` means editing the pod template stops the old pod fully before starting the new one — GitLab (and the container registry) will be briefly unreachable during this step, expected and one-time.
+**Do not commit or push anything before Step 10 passes.** The `gitlab` ArgoCD Application has `syncPolicy.automated.selfHeal: true` — since your change here is applied directly (not yet in git), ArgoCD may revert it back to the current, pre-Pages, known-good config within a few minutes of its own reconciliation loop. **This is expected and harmless**, not a failure: the reverted state is the last known-good config, since nothing broken has been committed. If you observe a revert mid-verification, simply re-apply this same manifest and keep observing. Do not attempt to pause or patch the ArgoCD Application's sync policy to work around this — that action needs the user's explicit permission and is out of scope for this task; racing a self-heal revert by re-applying is the intended, sufficient workaround.
+
+The Deployment's `strategy.type: Recreate` means editing the pod template stops the old pod fully before starting the new one — GitLab (and the container registry) will be briefly unreachable during this step, expected and one-time per attempt.
 
 ```bash
 kubectl apply -f /tmp/gitlab-rendered.yaml
@@ -161,17 +169,21 @@ kubectl rollout status deployment/gitlab -n gitlab --timeout=600s
 
 Expected: `deployment "gitlab" successfully rolled out` (Omnibus's internal `reconfigure` + service startup can take a few minutes on a fresh pod — the generous timeout is deliberate).
 
-- [ ] **Step 10: Verify Pages is actually listening and routed correctly**
+- [ ] **Step 10: Verify Pages is actually listening and routed correctly — and that the main app is still healthy**
 
 ```bash
-kubectl logs -n gitlab -l app=gitlab --tail=200 | grep -i "gitlab-pages"
+kubectl get pods -n gitlab -l app=gitlab
+kubectl logs -n gitlab -l app=gitlab --tail=200 | grep -iE "gitlab-pages|nginx.*emerg"
 kubectl get svc gitlab -n gitlab -o jsonpath='{.spec.ports[?(@.name=="pages")]}'
+curl -sk -o /dev/null -w '%{http_code}\n' https://gitlab.homelab.local
 curl -sk -o /dev/null -w '%{http_code}\n' https://nonexistent-namespace.pages.homelab.local/
 ```
 
-Expected: the logs show the Pages daemon starting with no fatal errors, the Service port JSON shows `"port":8090`, and the `curl` against a namespace that doesn't exist yet returns a GitLab Pages `404` (not a connection error, not a TLS handshake failure) — confirming routing and the cert both work end-to-end before any real site exists to serve.
+Expected: the pod is `1/1 Running` with 0 recent restarts (not cycling), the logs show the Pages daemon starting with no fatal errors and **no `nginx: [emerg]` lines**, the Service port JSON shows `"port":8090`, the main app still returns its normal `302`, and the Pages `curl` against a namespace that doesn't exist yet returns a GitLab Pages `404` (not a connection error, not a TLS handshake failure).
 
-- [ ] **Step 11: Commit and push**
+**If any of this fails: do not commit. Do not push.** Restore service first — reconstruct and re-apply the previous (pre-this-task) rendered manifest live (e.g. `git stash` your working-tree edits, re-render from the clean tree, `kubectl apply` that, confirm the pod returns to healthy, then `git stash pop` to get your edits back for further diagnosis). Only once the pod is confirmed healthy again should you adjust the Omnibus config lines from Step 5 and repeat Steps 7-10. Loop Steps 5/7-10 as many times as needed — there is no limit — and only proceed to Step 11 once Step 10 fully passes against a live, currently-uncommitted change.
+
+- [ ] **Step 11: Commit and push — only after Step 10 has passed**
 
 ```bash
 git add k8s/infrastructure/homelab-wildcard-cert.yaml k8s/charts/gitlab-omnibus/
@@ -179,7 +191,9 @@ git commit -m "feat(gitlab): enable GitLab Pages (wildcard cert SAN, pages port/
 git push
 ```
 
-This task is fully self-contained and already live-verified, so it pushes immediately rather than waiting on later tasks.
+Immediately after pushing, re-run Step 10's checks one more time to confirm ArgoCD's own sync converges to the same healthy state you already validated (it should show no diff, since git now matches what you already applied).
+
+This task is fully self-contained and already live-verified at this point, so it pushes immediately rather than waiting on later tasks.
 
 ---
 
