@@ -17,9 +17,6 @@ spec:
     - name: registry
       port: 5050
       targetPort: registry
-    - name: pages
-      port: 8090
-      targetPort: pages
   selector:
     app: gitlab
 ---
@@ -52,16 +49,6 @@ spec:
                 name: {{ .Release.Name }}
                 port:
                   number: 5050
-    - host: "*.{{ .Values.pagesHostname }}"
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ .Release.Name }}
-                port:
-                  number: 8090
 ---
 # Ersetzt "hostPort: 2222" im Deployment (siehe dortiger Kommentar) - reines
 # TCP-Passthrough, kein TLS-Termination hier, SSH verschlüsselt selbst.
