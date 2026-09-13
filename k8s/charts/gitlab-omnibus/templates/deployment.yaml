@@ -65,13 +65,25 @@ spec:
                 registry['enable'] = true
                 registry_nginx['listen_port'] = 5050
                 registry_nginx['listen_https'] = false
+                # nginx's default client_body_timeout/proxy_read_timeout/
+                # proxy_send_timeout/send_timeout is 60s - too short for a large
+                # image layer push over this cluster's registry link (CloudCLI's
+                # node_modules layer, ~870MB, consistently got cut at ~60s with
+                # "connection reset by peer" on both the runner and registry
+                # sides, regardless of blob size or bytes already transferred -
+                # a classic nginx-default-timeout signature, not a bandwidth
+                # ceiling). Raised generously rather than tuned precisely.
+                registry_nginx['client_body_timeout'] = 600
+                registry_nginx['proxy_read_timeout'] = 600
+                registry_nginx['proxy_send_timeout'] = 600
+                registry_nginx['send_timeout'] = 600
                 # TLS terminates at Traefik (see k8s/traefik-tlsstore.yaml), never here.
                 # pages_nginx['listen_https'] MUST stay false: setting it true makes
                 # nginx try to load an auto-generated Pages TLS vhost cert that
                 # doesn't exist, which aborts nginx startup entirely and takes down
                 # the whole GitLab app + registry, not just Pages (this happened once
-                # already during context-hub's rollout — see
-                # .superpowers/sdd/2026-09-13-context-hub/progress.md).
+                # already during context-hub's rollout - see commit a8a491d and
+                # docs/superpowers/specs/2026-09-13-context-hub-design.md).
                 # gitlab_pages['listen_proxy'] is pinned to localhost:8091 (not
                 # Omnibus's own default of localhost:8090) because 8090 is also
                 # pages_nginx['listen_port'] below, the externally-reachable Pages
