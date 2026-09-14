@@ -144,6 +144,18 @@ REVOKE ALL ON FUNCTION pgbouncer.get_auth(p_usename TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION pgbouncer.get_auth(p_usename TEXT) TO pgbouncer;
 PGBOUNCER_SQL
 
+  # Realtime's own Ecto migrator sets search_path to "_realtime" on every
+  # connection (chart default: DB_AFTER_CONNECT_QUERY) before it ever tries
+  # to create its own schema_migrations table there - it never creates the
+  # schema itself. Discovered live (2026-09-14): the Realtime pod crash-
+  # looped with "no schema has been selected to create in" until this
+  # schema existed. Nothing in the migrations/init-scripts set creates it
+  # either (that set only creates the unrelated "realtime" schema, no
+  # underscore, used for WALRUS/RLS publications).
+  echo "==> Bootstrappe _realtime-Schema (wird von Realtimes eigenem Migrator vorausgesetzt)..."
+  kubectl exec "${POSTGRES_POD}" -n "${POSTGRES_NS}" -c postgres -- \
+    psql -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE SCHEMA IF NOT EXISTS _realtime;" >/dev/null
+
   echo "==> Fuehre migrations aus (${EXCLUDE_MIGRATION} wird uebersprungen)..."
   for f in $(ls "${CLONE_DIR}"/migrations/db/migrations/*.sql | sort); do
     base=$(basename "${f}")
@@ -195,6 +207,16 @@ DASHBOARD_USERNAME=$(vault_kv_get "${VAULT_PATH}" "dashboard-username")
 DASHBOARD_PASSWORD=$(vault_kv_get "${VAULT_PATH}" "dashboard-password")
 [[ -z "${DASHBOARD_PASSWORD}" ]] && DASHBOARD_PASSWORD=$(openssl rand -base64 24 | tr -d '\n')
 
+# Studio's Deployment unconditionally reads an "openAiApiKey" key from
+# whichever secret secret.dashboard.secretRef points at (confirmed live,
+# 2026-09-14: pod failed with "couldn't find key openAiApiKey in Secret" -
+# the chart has no way to omit this even when secret.dashboard.secretRefKey
+# doesn't map it, since the default key name "openAiApiKey" is still looked
+# up unconditionally). We don't use Studio's AI features, so this is just a
+# placeholder to satisfy the chart, not a real API key.
+OPENAI_API_KEY=$(vault_kv_get "${VAULT_PATH}" "openai-api-key")
+[[ -z "${OPENAI_API_KEY}" ]] && OPENAI_API_KEY="unused"
+
 vault_kv_put "${VAULT_PATH}" \
   "db-host=supabase-pg-rw.supabase.svc.cluster.local" \
   "db-port=5432" \
@@ -207,7 +229,8 @@ vault_kv_put "${VAULT_PATH}" \
   "realtime-db-enc-key=${REALTIME_DB_ENC_KEY}" \
   "meta-crypto-key=${META_CRYPTO_KEY}" \
   "dashboard-username=${DASHBOARD_USERNAME}" \
-  "dashboard-password=${DASHBOARD_PASSWORD}"
+  "dashboard-password=${DASHBOARD_PASSWORD}" \
+  "openai-api-key=${OPENAI_API_KEY}"
 
 force_sync supabase-secret supabase
 

@@ -1,0 +1,224 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: supabase
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://supabase-community.github.io/supabase-kubernetes
+    chart: supabase
+    targetRevision: "0.8.0"
+    helm:
+      values: |
+        deployment:
+          db:
+            enabled: false
+
+        persistence:
+          db:
+            enabled: false
+          # Function code is baked into our custom image (Task 7), not
+          # hand-copied onto an empty PVC - the chart's default approach.
+          functions:
+            enabled: false
+          deno:
+            enabled: false
+
+        secret:
+          db:
+            secretRef: supabase-secret
+            secretRefKey:
+              host: db-host
+              port: db-port
+              password: db-password
+              database: db-database
+          jwt:
+            secretRef: supabase-secret
+            secretRefKey:
+              secret: jwt-secret
+              anonKey: anon-key
+              serviceKey: service-key
+          realtime:
+            secretRef: supabase-secret
+            secretRefKey:
+              secretKeyBase: realtime-secret-key-base
+              dbEncKey: realtime-db-enc-key
+          meta:
+            secretRef: supabase-secret
+            secretRefKey:
+              cryptoKey: meta-crypto-key
+          dashboard:
+            secretRef: supabase-secret
+            secretRefKey:
+              username: dashboard-username
+              password: dashboard-password
+              # Studio's Deployment unconditionally reads an openAiApiKey
+              # key from this same secret regardless of whether Studio's AI
+              # features are used - confirmed live (2026-09-14): the pod
+              # failed with "couldn't find key openAiApiKey in Secret"
+              # without this. Just a placeholder ("unused"), not a real key.
+              openAiApiKey: openai-api-key
+
+        image:
+          functions:
+            repository: registry.homelab.local/homelab/projects/supabase-functions
+            tag: latest
+
+        environment:
+          auth:
+            - name: API_EXTERNAL_URL
+              value: https://supabase.homelab.local
+            - name: GOTRUE_API_HOST
+              value: "0.0.0.0"
+            - name: GOTRUE_API_PORT
+              value: "9999"
+            - name: GOTRUE_SITE_URL
+              value: https://supabase.homelab.local
+            - name: GOTRUE_URI_ALLOW_LIST
+              value: "*"
+            - name: GOTRUE_DISABLE_SIGNUP
+              value: "false"
+            - name: GOTRUE_JWT_DEFAULT_GROUP_NAME
+              value: authenticated
+            - name: GOTRUE_JWT_ADMIN_ROLES
+              value: service_role
+            - name: GOTRUE_JWT_AUD
+              value: authenticated
+            - name: GOTRUE_JWT_EXP
+              value: "3600"
+            - name: GOTRUE_EXTERNAL_EMAIL_ENABLED
+              value: "true"
+            # No real SMTP configured yet - signups auto-confirm instead of
+            # sending a confirmation email. Real SMTP is a follow-up, not
+            # part of this plan's scope.
+            - name: GOTRUE_MAILER_AUTOCONFIRM
+              value: "true"
+            - name: GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED
+              value: "false"
+            - name: GOTRUE_SMTP_ADMIN_EMAIL
+              value: "SMTP_ADMIN_MAIL"
+            - name: GOTRUE_SMTP_HOST
+              value: "SMTP_HOST"
+            - name: GOTRUE_SMTP_PORT
+              value: "123"
+            - name: GOTRUE_EXTERNAL_PHONE_ENABLED
+              value: "false"
+            - name: GOTRUE_SMS_AUTOCONFIRM
+              value: "false"
+            - name: GOTRUE_SMTP_SENDER_NAME
+              value: "SMTP_SENDER_NAME"
+            - name: GOTRUE_MAILER_URLPATHS_INVITE
+              value: "/auth/v1/verify"
+            - name: GOTRUE_MAILER_URLPATHS_CONFIRMATION
+              value: "/auth/v1/verify"
+            - name: GOTRUE_MAILER_URLPATHS_RECOVERY
+              value: "/auth/v1/verify"
+            - name: GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE
+              value: "/auth/v1/verify"
+
+          # The chart hardcodes STORAGE_BACKEND to "s3" (and wires
+          # AWS_ACCESS_KEY_ID/SECRET to its own bundled-MinIO secret) only
+          # when deployment.minio.enabled: true - confirmed by reading
+          # templates/storage/deployment.yaml upstream: the AWS_ACCESS_KEY_ID/
+          # SECRET block's *condition* also fires when secret.s3.secretRef is
+          # set, but the values inside it are unconditionally the chart's own
+          # MinIO secret helper either way - secret.s3 only feeds the
+          # *client-facing* S3 Protocol Access feature (S3_PROTOCOL_ACCESS_
+          # KEY_ID/SECRET), a different thing, not the storage backend's own
+          # object-store credentials. We use external Garage instead of the
+          # bundled MinIO, so deployment.minio.enabled stays false and we
+          # override the S3 wiring here. This whole list renders into the
+          # container's env AFTER the chart's own hardcoded STORAGE_BACKEND
+          # entry, and Kubernetes resolves duplicate env var names by
+          # last-one-wins, so our STORAGE_BACKEND: "s3" below wins (and,
+          # since deployment.minio.enabled is false and secret.s3.secretRef
+          # is unset, the chart's own AWS_ACCESS_KEY_ID/SECRET block doesn't
+          # render at all - ours are the only occurrence).
+          storage:
+            - name: REQUEST_ALLOW_X_FORWARDED_PATH
+              value: "true"
+            - name: FILE_SIZE_LIMIT
+              value: "52428800"
+            - name: FILE_STORAGE_BACKEND_PATH
+              value: /var/lib/storage
+            - name: TENANT_ID
+              value: stub
+            - name: REGION
+              value: garage
+            - name: GLOBAL_S3_BUCKET
+              value: supabase-storage
+            - name: ENABLE_IMAGE_TRANSFORMATION
+              value: "true"
+            - name: STORAGE_BACKEND
+              value: "s3"
+            # Confirmed live (Task 4): Garage's Service is plain "garage" in
+            # the infrastructure namespace, on port 3900.
+            - name: GLOBAL_S3_ENDPOINT
+              value: "http://garage.infrastructure.svc.cluster.local:3900"
+            - name: GLOBAL_S3_FORCE_PATH_STYLE
+              value: "true"
+            - name: GLOBAL_S3_PROTOCOl
+              value: http
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: supabase-storage-secret
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: supabase-storage-secret
+                  key: secret-access-key
+
+          studio:
+            - name: HOSTNAME
+              value: "::"
+            - name: STUDIO_PORT
+              value: "3000"
+            - name: DEFAULT_ORGANIZATION_NAME
+              value: Default Organization
+            - name: DEFAULT_PROJECT_NAME
+              value: Default Project
+            - name: SUPABASE_PUBLIC_URL
+              value: https://supabase.homelab.local
+            - name: NEXT_ANALYTICS_BACKEND_PROVIDER
+              value: postgres
+
+        # Two hosts, one Kong Service - Kong's own kong.yml already proxies
+        # "/" to Studio behind HTTP basic-auth (secret.dashboard.*) and the
+        # API routes behind anon/service-role key checks, regardless of
+        # which Host header was used. Confirmed by reading the chart's
+        # files/kong/kong.yml and templates/kong/ingress.yaml upstream - no
+        # separate hand-written Ingress/Middleware needed (see this plan's
+        # Global Constraints for why this differs from the design spec).
+        ingress:
+          enabled: true
+          className: traefik
+          annotations: {}
+          hosts:
+            - host: supabase.homelab.local
+              paths:
+                - path: /
+                  pathType: Prefix
+            - host: supabase-studio.homelab.local
+              paths:
+                - path: /
+                  pathType: Prefix
+          tls:
+            - secretName: homelab-wildcard-tls
+              hosts:
+                - supabase.homelab.local
+                - supabase-studio.homelab.local
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: supabase
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
