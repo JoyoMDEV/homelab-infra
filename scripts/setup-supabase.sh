@@ -106,6 +106,44 @@ else
     run_sql_file "${f}"
   done
 
+  # The migrations set assumes a "pgbouncer" schema/role/get_auth() function
+  # already exist (several migrations ALTER/GRANT objects inside it), but
+  # that bootstrap SQL only ships in supabase/postgres's own AMI-provisioning
+  # ansible role (ansible/files/pgbouncer_config/pgbouncer_auth_schema.sql),
+  # never in the migrations/db/init-scripts this loop runs. Discovered live
+  # (2026-09-14): 20250312095419_pgbouncer_ownership.sql is the first
+  # migration to reference it and fails with "schema pgbouncer does not
+  # exist" if this step is skipped. We don't run pgbouncer itself in this
+  # deployment (no separate pgbouncer component in the Helm chart) - the
+  # schema/function existing is still required for the migrations to apply
+  # cleanly and matches upstream's real self-host schema exactly.
+  echo "==> Bootstrappe pgbouncer-Schema (wird von mehreren Migrationen vorausgesetzt)..."
+  kubectl exec -i "${POSTGRES_POD}" -n "${POSTGRES_NS}" -c postgres -- \
+    psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f - <<'PGBOUNCER_SQL'
+CREATE USER pgbouncer;
+
+REVOKE ALL PRIVILEGES ON SCHEMA public FROM pgbouncer;
+
+CREATE SCHEMA pgbouncer AUTHORIZATION pgbouncer;
+
+CREATE OR REPLACE FUNCTION pgbouncer.get_auth(p_usename TEXT)
+RETURNS TABLE(username TEXT, password TEXT) AS
+$$
+BEGIN
+    RAISE WARNING 'PgBouncer auth request: %', p_usename;
+
+    RETURN QUERY
+    SELECT usename::TEXT, passwd::TEXT FROM pg_catalog.pg_shadow
+    WHERE usename = p_usename;
+END;
+$$ LANGUAGE plpgsql
+SET search_path = ''
+SECURITY DEFINER;
+
+REVOKE ALL ON FUNCTION pgbouncer.get_auth(p_usename TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION pgbouncer.get_auth(p_usename TEXT) TO pgbouncer;
+PGBOUNCER_SQL
+
   echo "==> Fuehre migrations aus (${EXCLUDE_MIGRATION} wird uebersprungen)..."
   for f in $(ls "${CLONE_DIR}"/migrations/db/migrations/*.sql | sort); do
     base=$(basename "${f}")
