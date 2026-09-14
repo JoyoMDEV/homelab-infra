@@ -90,8 +90,23 @@ git push -u origin main
 
 4. Pipeline beobachten: `https://gitlab.homelab.local/homelab/projects/supabase-functions/-/pipelines`
    (CI pusht direkt an die In-Cluster-Registry, `gitlab.gitlab.svc.cluster.local:5050` - selbes Muster wie `coder-workspace`, wegen des noch ungeklaerten Traefik-Cutoffs bei grossen Uploads)
-5. Sobald das Image gebaut ist, den Functions-Rollout neu starten (er
-   haengt vorher in `ImagePullBackOff`):
+5. **Registry-Pull-Credentials setzen** (`homelab/projects/*` ist privat -
+   ohne das haengt der Functions-Pod dauerhaft in `ImagePullBackOff`/`403
+   Forbidden`, unabhaengig davon ob das Image gebaut wurde): unter
+   **Settings -> Repository -> Deploy tokens** (oder ein Personal Access
+   Token) einen Token mit `read_registry`-Scope fuer
+   `homelab/projects/supabase-functions` anlegen, dann:
+
+```bash
+export VAULT_TOKEN="..."
+./scripts/setup-supabase.sh
+```
+
+   Das Skript fragt interaktiv nach Username/Token (nur beim ersten Mal -
+   danach idempotent uebersprungen) und synced
+   `supabase-functions-registry-pull` automatisch.
+6. Sobald das Image gebaut ist und die Pull-Credentials gesetzt sind, den
+   Functions-Rollout neu starten:
 
 ```bash
 kubectl rollout restart deployment/supabase-supabase-functions -n supabase
@@ -153,8 +168,12 @@ zeigt auf den tatsaechlichen Garage-Service-Namen (bereits live bestaetigt:
 ```bash
 kubectl describe pod -n supabase -l app.kubernetes.io/name=supabase-functions | grep -A5 Events
 ```
-Meist: das Image wurde noch nicht gebaut (Schritt 4 hier oben noch nicht
-durchgefuehrt) oder die Pipeline ist fehlgeschlagen.
+Zwei moegliche Ursachen, an der Fehlermeldung unterscheidbar:
+- Image noch nicht gebaut / Pipeline fehlgeschlagen (Schritt 4 oben).
+- `403 Forbidden` beim Token-Abruf (`failed to fetch anonymous token: ...
+  403 Forbidden`): Registry-Pull-Credentials fehlen noch - Schritt 4.5 oben
+  (`homelab/projects/*` ist ein privates Projekt, wie bei
+  `backstage`/`coder-workspace`).
 
 **Realtime crash-loopt mit "no schema has been selected to create in"**
 Sollte nicht mehr auftreten - die fehlende `_realtime`-Schema-Erstellung
