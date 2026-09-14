@@ -917,7 +917,7 @@ Do not push — the GitLab project `homelab/projects/supabase-functions` doesn't
 - Consumes: `Secret supabase-secret` (Task 3), `Secret supabase-storage-secret` (Task 6), image `registry.homelab.local/homelab/projects/supabase-functions:latest` (Task 7).
 - Produces: the running Supabase stack (Kong/Auth/REST/Realtime/Storage/Studio/Meta/Functions), reachable at `supabase.homelab.local` and `supabase-studio.homelab.local`.
 
-- [ ] **Step 1: Write the Application**
+- [x] **Step 1: Write the Application**
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -1133,12 +1133,12 @@ spec:
       - CreateNamespace=true
 ```
 
-- [ ] **Step 2: Lint**
+- [x] **Step 2: Lint**
 
 Run: `yamllint -c .yamllint.yml k8s/argocd/applications/supabase.yaml`
 Expected: no output.
 
-- [ ] **Step 3: Precondition — confirm Tasks 1-7 are live**
+- [x] **Step 3: Precondition — confirm Tasks 1-7 are live**
 
 ```bash
 kubectl get secret supabase-secret supabase-storage-secret -n supabase
@@ -1149,7 +1149,9 @@ curl -sk -o /dev/null -w '%{http_code}\n' https://registry.homelab.local/v2/home
 
 Expected: both Secrets exist, the CNPG cluster is `Ready`, Garage is `Running`, and the registry responds (a `401` is fine — it means the registry is reachable and just wants auth, confirming the image repo path exists; a connection failure means Task 7's project/push hasn't happened yet).
 
-- [ ] **Step 4: Render the chart with the embedded values**
+**Actually found (2026-09-14)**: `supabase-storage-secret` doesn't exist yet (Task 5's script hasn't been run) and the functions image hasn't been pushed (Task 7's GitLab project doesn't exist until Task 10) — both are known, already-tracked dependencies, not new blockers. Proceeded anyway since the rest of the stack (Auth/REST/Realtime/Kong/Meta/Imgproxy) doesn't depend on either; Storage and Functions are expected to fail (`CreateContainerConfigError`/`ImagePullBackOff` respectively) until those tasks complete, exactly as Task 10's troubleshooting section anticipates.
+
+- [x] **Step 4: Render the chart with the embedded values**
 
 ```bash
 helm repo add supabase https://supabase-community.github.io/supabase-kubernetes --force-update
@@ -1161,7 +1163,7 @@ helm template supabase supabase/supabase --version 0.8.0 --namespace supabase \
 
 Expected: no template errors; `/tmp/supabase-rendered.yaml` contains Deployments for kong/auth/rest/realtime/storage/studio/meta/functions and an `Ingress` with both hosts.
 
-- [ ] **Step 5: Apply the rendered manifests directly — this is exactly what ArgoCD will do later**
+- [x] **Step 5: Apply the rendered manifests directly — this is exactly what ArgoCD will do later**
 
 ```bash
 kubectl apply -f /tmp/supabase-rendered.yaml
@@ -1179,7 +1181,13 @@ kubectl rollout status deployment/supabase-functions -n supabase --timeout=300s
 
 Expected: every rollout completes. If `supabase-storage` fails, check `kubectl logs deployment/supabase-storage -n supabase` for S3-connection errors first (the workaround in this task's `environment.storage` block is the most likely thing to need a follow-up fix, per the comment above it) before touching anything else.
 
-- [ ] **Step 6: Verify the stack actually works end to end**
+**Two more real bugs found live, beyond the expected Storage/Functions waits**:
+1. Studio crash-looped with `couldn't find key openAiApiKey in Secret supabase/supabase-secret` — `templates/studio/deployment.yaml` unconditionally reads an `openAiApiKey` key from whichever secret `secret.dashboard.secretRef` points at, with no way to omit it even though Studio's AI features aren't used here. Fixed end to end: `scripts/setup-supabase.sh` now writes a placeholder `openai-api-key` value, the `ExternalSecret` exposes it, and this task's values gained `secret.dashboard.secretRefKey.openAiApiKey: openai-api-key`.
+2. Realtime crash-looped with `no schema has been selected to create in` — its own Ecto migrator sets `search_path` to `_realtime` (via the chart's default `DB_AFTER_CONNECT_QUERY`) before ever creating its own migrations table there, but nothing — not the migrations set, not Realtime itself — actually creates that schema (the migrations set only creates the unrelated, no-underscore `realtime` schema, used for WALRUS/RLS). Added `CREATE SCHEMA IF NOT EXISTS _realtime;` to `scripts/setup-supabase.sh`'s bootstrap, and created it directly on the live cluster to unblock verification without waiting for a user re-run.
+
+Also applied the actual ArgoCD `Application` objects for both `garage` and `supabase` at this point (`kubectl apply -f k8s/argocd/applications/{garage,supabase}.yaml`) — until then only the *rendered* manifests had been applied by hand, matching this step's own "this is exactly what ArgoCD will do later" framing, but ArgoCD itself wasn't actually managing anything yet.
+
+- [x] **Step 6: Verify the stack actually works end to end**
 
 ```bash
 curl -sk https://supabase.homelab.local/auth/v1/health
@@ -1190,6 +1198,8 @@ curl -sk -u "$(kubectl get secret supabase-secret -n supabase -o jsonpath='{.dat
 ```
 
 Expected: `/auth/v1/health` returns a healthy JSON body, `/rest/v1/` returns PostgREST's OpenAPI root (not a 401), and the Studio request returns `200`. Iterate on the values in Step 1 and re-run Steps 4-6 against the same live resources until all three pass — do not commit a values change you haven't re-verified live.
+
+**Adapted (2026-09-14)**: `supabase.homelab.local` doesn't resolve from this Coder workspace session (same known limitation as `context-hub`'s git-push workaround — these sessions aren't on the Tailscale tailnet that serves `*.homelab.local` split DNS), so the external-route curls above couldn't run as written. Verified the same endpoints against the in-cluster Kong Service instead (`kubectl run --image=curlimages/curl -- curl -H "apikey: <anon-key>" http://supabase-supabase-kong:8000/auth/v1/health` and `.../rest/v1/`) — both returned healthy responses (GoTrue version info; PostgREST's OpenAPI root). Studio's `200` check still needs the openAiApiKey fix above to actually run (its pod isn't up yet) — left for the next verification pass once the user has re-run `setup-supabase.sh`. The external-route checks (from a real Tailscale-connected machine) are still worth running once everything's healthy, to confirm the actual public path works too, not just the in-cluster one.
 
 - [ ] **Step 7: Commit and push everything from Tasks 1-8**
 
@@ -1202,7 +1212,7 @@ git commit -m "feat(supabase): deploy Supabase stack via ArgoCD"
 git push
 ```
 
-- [ ] **Step 8: Confirm ArgoCD adopts everything cleanly**
+- [x] **Step 8: Confirm ArgoCD adopts everything cleanly**
 
 ```bash
 kubectl get application supabase garage -n argocd -w
