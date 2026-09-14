@@ -98,6 +98,14 @@ resource "coder_agent" "main" {
         --env GRAFANA_SERVICE_ACCOUNT_TOKEN='$${GRAFANA_MCP_TOKEN}' || \
         echo "WARN: 'claude mcp add grafana' failed - check 'claude mcp add --help' for the current flag syntax"
     fi
+
+    # CloudCLI - backgrounded, PID-file-guarded so it isn't started twice on
+    # a workspace restart. No process supervision if it crashes - `coder
+    # restart homelab` re-runs this script and starts it again.
+    if [ ! -f "$HOME/.cloudcli.pid" ] || ! kill -0 "$(cat "$HOME/.cloudcli.pid")" 2>/dev/null; then
+      PORT=3001 nohup cloudcli > "$HOME/.cloudcli.log" 2>&1 &
+      echo $! > "$HOME/.cloudcli.pid"
+    fi
   EOT
 
   metadata {
@@ -123,6 +131,15 @@ resource "coder_agent" "main" {
     interval     = 60
     timeout      = 1
   }
+}
+
+resource "coder_app" "cloudcli" {
+  agent_id     = coder_agent.main.id
+  slug         = "cloudcli"
+  display_name = "CloudCLI"
+  url          = "http://localhost:3001"
+  icon         = "/icon/code.svg"
+  share        = "owner"
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "home" {
