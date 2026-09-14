@@ -190,7 +190,7 @@ Do not push yet — later tasks push together once more of the stack is live-ver
 - Consumes: `Secret supabase-pg-app` (Task 1) for `supabase_admin`'s password.
 - Produces: the Supabase Postgres schema/roles on `supabase-pg` (auth/storage/realtime schemas, `supabase_admin`/`authenticator`/`supabase_auth_admin`/`supabase_storage_admin` roles all sharing one password). Produces Vault path `homelab/supabase/supabase-secret` with keys `db-host`, `db-port`, `db-database`, `db-password`, `jwt-secret`, `anon-key`, `service-key`, `realtime-secret-key-base`, `realtime-db-enc-key`, `meta-crypto-key`, `dashboard-username`, `dashboard-password` — consumed by Task 3's `ExternalSecret` and, transitively, Task 8's `secret.*.secretRef` values.
 
-- [ ] **Step 1: Write the script**
+- [x] **Step 1: Write the script**
 
 ```bash
 #!/bin/bash
@@ -376,12 +376,12 @@ echo "  Studio-Login: ${DASHBOARD_USERNAME} / ${DASHBOARD_PASSWORD}"
 echo "============================================"
 ```
 
-- [ ] **Step 2: Syntax-check the script**
+- [x] **Step 2: Syntax-check the script**
 
 Run: `bash -n scripts/setup-supabase.sh`
 Expected: no output, exit code 0.
 
-- [ ] **Step 3: Make it executable and commit**
+- [x] **Step 3: Make it executable and commit**
 
 ```bash
 chmod +x scripts/setup-supabase.sh
