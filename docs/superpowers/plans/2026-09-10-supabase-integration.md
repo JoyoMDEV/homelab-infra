@@ -406,7 +406,7 @@ Do **not** run `scripts/setup-supabase.sh` — this requires `VAULT_TOKEN` and w
 - Consumes: Vault path `homelab/supabase/supabase-secret` (Task 2).
 - Produces: Kubernetes `Secret` `supabase-secret` (namespace `supabase`) with keys `db-host`, `db-port`, `db-database`, `db-password`, `jwt-secret`, `anon-key`, `service-key`, `realtime-secret-key-base`, `realtime-db-enc-key`, `meta-crypto-key`, `dashboard-username`, `dashboard-password` — consumed by Task 8's `secret.db`/`secret.jwt`/`secret.realtime`/`secret.meta`/`secret.dashboard` `secretRef` values.
 
-- [ ] **Step 1: Write the ExternalSecret**
+- [x] **Step 1: Write the ExternalSecret**
 
 ```yaml
 apiVersion: external-secrets.io/v1
@@ -473,17 +473,17 @@ spec:
         property: dashboard-password
 ```
 
-- [ ] **Step 2: Lint**
+- [x] **Step 2: Lint**
 
 Run: `yamllint -c .yamllint.yml k8s/security/external-secrets/supabase/supabase-secret.yaml`
 Expected: no output.
 
-- [ ] **Step 3: Precondition — confirm Task 2 was already run by the user**
+- [x] **Step 3: Precondition — confirm Task 2 was already run by the user**
 
 Run: `kubectl exec -n security vault-0 -- env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$VAULT_TOKEN vault kv get secret/homelab/supabase/supabase-secret`
 Expected: prints all twelve keys. If this errors, **stop this task** and ask the user to run `scripts/setup-supabase.sh` first — do not proceed or write to Vault yourself.
 
-- [ ] **Step 4: Apply live and verify it syncs**
+- [x] **Step 4: Apply live and verify it syncs**
 
 ```bash
 kubectl apply -f k8s/security/external-secrets/supabase/supabase-secret.yaml
@@ -493,7 +493,7 @@ kubectl get secret supabase-secret -n supabase -o jsonpath='{.data}' | python3 -
 
 Expected: `STATUS SecretSynced`, and the printed JSON lists all twelve keys (base64-encoded values).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add k8s/security/external-secrets/supabase/supabase-secret.yaml
