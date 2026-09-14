@@ -225,6 +225,16 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
+  # storageClassName is immutable on a bound PVC; the chart renders it unset
+  # while the PVC (recreated on a worker node after the k3s-server memory
+  # incident) has it explicitly set to the same default class. Without this,
+  # selfHeal retries the unresolvable diff forever.
+  ignoreDifferences:
+    - group: ""
+      kind: PersistentVolumeClaim
+      name: monitoring-grafana
+      jsonPointers:
+        - /spec/storageClassName
   syncPolicy:
     automated:
       prune: true
