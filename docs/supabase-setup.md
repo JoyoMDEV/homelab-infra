@@ -168,12 +168,22 @@ zeigt auf den tatsaechlichen Garage-Service-Namen (bereits live bestaetigt:
 ```bash
 kubectl describe pod -n supabase -l app.kubernetes.io/name=supabase-functions | grep -A5 Events
 ```
-Zwei moegliche Ursachen, an der Fehlermeldung unterscheidbar:
+Drei moegliche Ursachen, an der Fehlermeldung unterscheidbar:
 - Image noch nicht gebaut / Pipeline fehlgeschlagen (Schritt 4 oben).
 - `403 Forbidden` beim Token-Abruf (`failed to fetch anonymous token: ...
   403 Forbidden`): Registry-Pull-Credentials fehlen noch - Schritt 4.5 oben
   (`homelab/projects/*` ist ein privates Projekt, wie bei
   `backstage`/`coder-workspace`).
+- `insufficient_scope: authorization failed` / `pull access denied,
+  repository does not exist or may require authorization` **obwohl** die
+  Pipeline erfolgreich war und die Registry-Pull-Credentials gesetzt sind:
+  der Project Access Token hat die falsche **Rolle**. GitLab verlangt fuer
+  Registry-Reads mindestens **Reporter**, unabhaengig vom `read_registry`-
+  Scope des Tokens selbst - ein Token mit Rolle "Guest" scheitert immer,
+  auch mit korrektem Scope (live bestaetigt, 2026-09-14). Rolle auf
+  Reporter+ setzen (ggf. Token neu anlegen, falls die Rolle nicht
+  nachtraeglich aenderbar ist), dann `./scripts/setup-supabase.sh` erneut
+  ausfuehren und `kubectl rollout restart deployment/supabase-supabase-functions -n supabase`.
 
 **Realtime crash-loopt mit "no schema has been selected to create in"**
 Sollte nicht mehr auftreten - die fehlende `_realtime`-Schema-Erstellung
