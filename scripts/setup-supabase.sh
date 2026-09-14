@@ -27,7 +27,7 @@ set -euo pipefail
 
 VAULT_NS="security"
 VAULT_POD="vault-0"
-VAULT_PATH="supabase/supabase-secret"
+VAULT_PATH="homelab/supabase/supabase-secret"
 POSTGRES_NS="supabase"
 POSTGRES_POD="supabase-pg-1"
 
