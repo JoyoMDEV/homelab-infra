@@ -819,7 +819,7 @@ Do not push yet.
 **Interfaces:**
 - Produces: image `registry.homelab.local/homelab/projects/supabase-functions:latest` (and `:$CI_COMMIT_SHORT_SHA`) — consumed by Task 8's `image.functions.repository`/`.tag`.
 
-- [ ] **Step 1: Write the Dockerfile**
+- [x] **Step 1: Write the Dockerfile**
 
 ```dockerfile
 # Base: exactly the image/tag the Supabase chart itself pins for the
@@ -836,7 +836,7 @@ FROM supabase/edge-runtime:v1.74.0
 COPY functions/ /home/deno/functions/
 ```
 
-- [ ] **Step 2: Write a trivial sample function**
+- [x] **Step 2: Write a trivial sample function**
 
 ```typescript
 Deno.serve(async (_req) => {
@@ -847,7 +847,7 @@ Deno.serve(async (_req) => {
 });
 ```
 
-- [ ] **Step 3: Write `.gitlab-ci.yml`** (same Kaniko pattern proven for `backstage`/`coder-workspace`)
+- [x] **Step 3: Write `.gitlab-ci.yml`** (same Kaniko pattern proven for `backstage`/`coder-workspace`)
 
 ```yaml
 stages:
@@ -882,29 +882,27 @@ build-and-push:
     - if: '$CI_COMMIT_BRANCH == "main"'
 ```
 
-- [ ] **Step 4: Build the image locally to confirm it's valid**
+**Correction versus this draft (2026-09-14)**: fetched `backstage`'s and `coder-workspace`'s actual live `.gitlab-ci.yml` via the GitLab API before writing this rather than trusting "same Kaniko pattern" from memory — they've diverged. `backstage` (older) still pushes via the external route (`$CI_REGISTRY`/`$CI_REGISTRY_IMAGE`, exactly as drafted above). `coder-workspace` (newer) pushes straight to the in-cluster registry Service (`gitlab.gitlab.svc.cluster.local:5050/$CI_PROJECT_PATH`, `--insecure`) instead, adopted after discovering Traefik silently cuts off large blob pushes at ~60s (`references/traefik-large-upload-60s-cutoff.md` in the context-hub wiki) — the external route isn't just older, it's now the known-fragile one. This function image is tiny (edge-runtime base + a few KB of TS), so the external route would likely have worked fine size-wise, but there's no reason to write a new CI file against the fragile pattern when the fixed one is already this repo's proven approach — used `coder-workspace`'s pattern instead of what's shown above. Runtime image *pulls* (the actual Supabase `functions` Deployment) are unaffected either way and still go through the normal external `registry.homelab.local` route, same as every other service's image pulls in this cluster — only the CI *push* step changes.
 
-```bash
-mkdir -p ~/Code/gitlab/supabase-functions/functions/hello-world
-# (place the Dockerfile, index.ts, and .gitlab-ci.yml from Steps 1-3 there)
-docker build -t supabase-functions:test ~/Code/gitlab/supabase-functions/
-```
+- [x] **Step 4: Build the image locally to confirm it's valid**
 
-Expected: build succeeds (exit code 0).
+No Docker/Podman/Buildah/nerdctl available in this Coder workspace (this repo's images are always built via Kaniko in CI, never locally) — `docker build` as drafted isn't possible here. Verified what's actually checkable instead: the base image tag resolves and pulls cleanly (`kubectl run --image=supabase/edge-runtime:v1.74.0 -- true` succeeded), and the two-line `Dockerfile` was reviewed by hand (trivial enough that a build would only really be catching a typo). The real build validation happens for real the first time CI actually runs, in Task 10.
 
-- [ ] **Step 5: Lint the CI file**
+- [x] **Step 5: Lint the CI file**
 
-Run: `yamllint ~/Code/gitlab/supabase-functions/.gitlab-ci.yml` (default rules — this file lives outside `homelab-infra`)
-Expected: no output, or only cosmetic warnings.
+`yamllint` isn't installed locally (per this repo's own CLAUDE.md) — validated the file parses as YAML instead (`python3 -c "import yaml; yaml.safe_load(open(...))"`), which is the failure mode that would actually matter for GitLab CI to accept it.
 
-- [ ] **Step 6: Initialize the local repo (project creation + push happen in Task 10)**
+- [x] **Step 6: Initialize the local repo (project creation + push happen in Task 10)**
 
 ```bash
 cd ~/Code/gitlab/supabase-functions
 git init
 git add Dockerfile functions/ .gitlab-ci.yml
 git commit -m "feat: add supabase edge functions image (hello-world sample)"
+git branch -m main
 ```
+
+The extra `git branch -m main` isn't in the original draft — `git init` defaults to `master` in this environment, but the `.gitlab-ci.yml` rule above and Task 10's `git push -u origin main` both assume `main`; renamed to match.
 
 Do not push — the GitLab project `homelab/projects/supabase-functions` doesn't exist yet; Task 10's runbook creates it and pushes.
 
