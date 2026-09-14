@@ -627,7 +627,7 @@ Do not push yet.
 - Consumes: a running Garage pod (Task 4).
 - Produces: Garage bucket `supabase-storage` + access key `supabase-storage-key` scoped to it; Vault path `homelab/supabase/supabase-storage-secret` with keys `access-key-id`, `secret-access-key` — consumed by Task 6's `ExternalSecret`.
 
-- [ ] **Step 1: Write the script**
+- [x] **Step 1: Write the script**
 
 ```bash
 #!/bin/bash
@@ -723,12 +723,12 @@ echo "  Setup abgeschlossen! Bucket: ${BUCKET}"
 echo "============================================"
 ```
 
-- [ ] **Step 2: Syntax-check**
+- [x] **Step 2: Syntax-check**
 
 Run: `bash -n scripts/setup-supabase-storage.sh`
 Expected: no output, exit code 0.
 
-- [ ] **Step 3: Make executable and commit**
+- [x] **Step 3: Make executable and commit**
 
 ```bash
 chmod +x scripts/setup-supabase-storage.sh
@@ -736,7 +736,9 @@ git add scripts/setup-supabase-storage.sh
 git commit -m "feat(supabase): add Garage bucket/key setup script"
 ```
 
-Do **not** run this script yet — the user runs it personally as part of the Task 10 runbook. If, when they do, the `garage key info` output doesn't match the `grep` patterns above (Garage CLI output format can shift between versions), fix the patterns then — this is exactly the kind of thing to verify live rather than guess perfectly up front.
+Do **not** run this script yet — the user runs it personally as part of the Task 10 runbook.
+
+**Verified live (2026-09-14) instead of guessing**: created a throwaway bucket/key via `kubectl exec -n infrastructure garage-0 -- /garage key info <name> --show-secret` and confirmed the `grep -i "Key ID:"`/`grep -i "Secret key:"` patterns above match this Garage version's (v2.4.1) real output exactly - no changes needed. One thing the plan's draft got wrong: the container has **no shell at all** (`sh`/`which` both fail with "executable file not found in $PATH") and the `garage` binary isn't on `$PATH` either - every `garage_exec` call here uses the absolute path `/garage`, not bare `garage`. Cleaned up the throwaway bucket/key afterward (`bucket delete --yes` / `key delete --yes`).
 
 ---
 
