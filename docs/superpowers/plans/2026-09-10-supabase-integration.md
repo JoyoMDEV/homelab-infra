@@ -33,7 +33,7 @@
 **Interfaces:**
 - Produces: the `supabase` namespace; CNPG `Cluster` `supabase-pg` (namespace `supabase`); its auto-generated owner credentials `Secret` `supabase-pg-app` (namespace `supabase`, keys `username`/`password`) — consumed by Task 2 (`supabase_admin`'s password is read from here and propagated to the other Supabase-internal roles).
 
-- [ ] **Step 1: Add the namespace**
+- [x] **Step 1: Add the namespace**
 
 Append to `k8s/namespaces.yaml`:
 
@@ -48,7 +48,7 @@ metadata:
     homelab.local/inject-ca: "true"
 ```
 
-- [ ] **Step 2: Write the CNPG cluster manifest**
+- [x] **Step 2: Write the CNPG cluster manifest**
 
 ```yaml
 ---
@@ -134,12 +134,12 @@ spec:
   immediate: false
 ```
 
-- [ ] **Step 3: Lint**
+- [x] **Step 3: Lint**
 
 Run: `yamllint -c .yamllint.yml k8s/namespaces.yaml k8s/infrastructure/supabase-postgres-cluster.yaml`
 Expected: no output.
 
-- [ ] **Step 4: Apply live and enable CA injection**
+- [x] **Step 4: Apply live and enable CA injection**
 
 ```bash
 kubectl apply -f k8s/namespaces.yaml
@@ -149,7 +149,7 @@ kubectl create job --from=cronjob/cert-sync cert-sync-manual-$(date +%s) -n kube
 
 Expected: `namespace/supabase created` (or `configured`), `cluster.postgresql.cnpg.io/supabase-pg created`, `scheduledbackup.postgresql.cnpg.io/supabase-pg-daily created`.
 
-- [ ] **Step 5: Wait for the cluster to come up and verify the image is actually compatible with CNPG**
+- [x] **Step 5: Wait for the cluster to come up and verify the image is actually compatible with CNPG**
 
 ```bash
 kubectl wait --for=condition=Ready cluster/supabase-pg -n supabase --timeout=300s
@@ -159,7 +159,9 @@ kubectl exec supabase-pg-1 -n supabase -c postgres -- psql -U postgres -c "SELEC
 
 Expected: the `Ready` condition is met, `supabase-pg-1` is `Running`/`1/1`, and `psql` prints a PostgreSQL 17.x version string confirming the `supabase/postgres` image booted cleanly under CNPG's instance manager. If the pod crash-loops instead, check `kubectl logs supabase-pg-1 -n supabase -c postgres` for an image-incompatibility error before proceeding — this is the one point in this plan where the `imageName` choice from Step 2 gets its first real test.
 
-- [ ] **Step 6: Verify the CNPG-generated owner credentials exist**
+**Actually hit, live, on first apply**: the initdb job crash-looped with `initdb: could not look up effective user ID 26: user does not exist`. CNPG's instance manager defaults to running `postgres` as UID/GID 26, but `getent passwd postgres` inside `supabase/postgres:17.6.1.136` shows it's UID 100 / GID 101 in that image. Fix: added `spec.postgresUID: 100` / `spec.postgresGID: 101` to the Cluster manifest (Step 2, above) — CNPG exposes exactly this override. Required deleting the half-initialized `Cluster` and its PVC and reapplying from scratch, since the UID is baked in at initdb time. After the fix, the pod came up `1/1 Running` and `psql` printed `PostgreSQL 17.6` cleanly.
+
+- [x] **Step 6: Verify the CNPG-generated owner credentials exist**
 
 ```bash
 kubectl get secret supabase-pg-app -n supabase -o jsonpath='{.data.username}' | base64 -d; echo
@@ -168,7 +170,7 @@ kubectl get secret supabase-pg-app -n supabase -o jsonpath='{.data.password}' | 
 
 Expected: prints `supabase_admin`, and a non-zero character count for the password. Task 2 reads this password.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add k8s/namespaces.yaml k8s/infrastructure/supabase-postgres-cluster.yaml
