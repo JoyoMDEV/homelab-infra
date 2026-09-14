@@ -25,6 +25,7 @@ spec:
     - "*.homelab.local"
     - "homelab.local"
     - "*.pages.homelab.local"
+    - "*.coder.homelab.local"
   privateKey:
     algorithm: RSA
     size: 4096

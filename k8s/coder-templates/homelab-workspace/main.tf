@@ -158,6 +158,15 @@ resource "coder_app" "cloudcli" {
   url          = "http://localhost:3001"
   icon         = "/icon/code.svg"
   share        = "owner"
+  # CloudCLI's web UI loads its own JS/CSS via root-absolute paths
+  # (/assets/...) with no configurable base path, so Coder's default
+  # path-based app serving (https://coder.homelab.local/@user/.../apps/
+  # cloudcli/) loads a blank/broken page - the browser fetches assets
+  # from the wrong origin. subdomain=true serves it on its own host
+  # instead (cloudcli--main--homelab--<user>.coder.homelab.local),
+  # which requires CODER_WILDCARD_ACCESS_URL set on the Coder deployment
+  # itself (k8s/argocd/applications/coder.yaml) - not just this template.
+  subdomain = true
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "home" {

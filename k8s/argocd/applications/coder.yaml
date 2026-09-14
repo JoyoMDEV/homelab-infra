@@ -17,6 +17,16 @@ spec:
           env:
             - name: CODER_ACCESS_URL
               value: "https://coder.homelab.local"
+            # Required for coder_app workspace apps (e.g. CloudCLI) to be
+            # served on their own subdomain instead of a path under
+            # coder.homelab.local - CloudCLI's web UI loads its own JS/CSS
+            # via root-absolute paths (/assets/...) with no configurable
+            # base path, so path-based app serving loads a blank/broken
+            # page (assets fetched from the wrong origin). No format
+            # scheme, per `coder server --help`'s
+            # --wildcard-access-url/$CODER_WILDCARD_ACCESS_URL docs.
+            - name: CODER_WILDCARD_ACCESS_URL
+              value: "*.coder.homelab.local"
             - name: CODER_PG_CONNECTION_URL
               valueFrom:
                 secretKeyRef:
@@ -54,9 +64,11 @@ spec:
             enable: true
             className: traefik
             host: coder.homelab.local
+            wildcardHost: "*.coder.homelab.local"
             tls:
               enable: true
               secretName: homelab-wildcard-tls
+              wildcardSecretName: homelab-wildcard-tls
 
           resources:
             requests:
