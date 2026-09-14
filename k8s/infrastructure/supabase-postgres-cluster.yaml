@@ -1,0 +1,88 @@
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: supabase-pg
+  namespace: supabase
+spec:
+  instances: 1
+
+  # Not CNPG's own default image - Supabase's schema/migrations need
+  # extensions (pgjwt, pgsodium, pg_graphql, pg_net, pg_cron) that aren't in
+  # CNPG's default postgres image. supabase/postgres is a superset build of
+  # standard postgres (same binaries/paths), so it's structurally compatible
+  # with CNPG's instance manager. See scripts/setup-supabase.sh for the
+  # schema bootstrap this enables.
+  imageName: supabase/postgres:17.6.1.136
+
+  # supabase/postgres runs its "postgres" user as UID/GID 100/101 (verified
+  # live via `getent passwd postgres` in the image), not CNPG's own default
+  # of 26 - without this, CNPG's initdb bootstrap fails with "could not look
+  # up effective user ID 26: user does not exist".
+  postgresUID: 100
+  postgresGID: 101
+
+  postgresql:
+    parameters:
+      shared_buffers: "256MB"
+      effective_cache_size: "512MB"
+      max_connections: "100"
+
+  storage:
+    size: 10Gi
+
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+
+  bootstrap:
+    initdb:
+      # Supabase's own init SQL expects a role named "supabase_admin" to
+      # already exist so it can ALTER it to superuser - CNPG's bootstrap
+      # owner becomes that role. All of Supabase's components connect to
+      # the single "postgres" database (matching upstream's own self-host
+      # default), not a separately-named database.
+      database: postgres
+      owner: supabase_admin
+
+  # ── Backup via Barman + the existing MinIO (ops plumbing, not product
+  # storage - unrelated to the Garage-vs-MinIO decision for Supabase Storage
+  # itself) ─────────────────────────────────────────────────────────────────
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://cnpg-backups/supabase-pg/
+      endpointURL: http://minio.infrastructure.svc.cluster.local:9000
+      s3Credentials:
+        accessKeyId:
+          name: minio-secret
+          key: rootUser
+        secretAccessKey:
+          name: minio-secret
+          key: rootPassword
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+        immediateCheckpoint: false
+        jobs: 2
+    retentionPolicy: "30d"
+
+  monitoring:
+    enablePodMonitor: true
+
+---
+# Staggered after homelab-pg's 03:00 backup, before restic's 03:30.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: supabase-pg-daily
+  namespace: supabase
+spec:
+  schedule: "15 3 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: supabase-pg
+  immediate: false
