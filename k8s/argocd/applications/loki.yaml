@@ -29,6 +29,18 @@ spec:
               cpu: 100m
             limits:
               memory: 2Gi
+          # k3s-server is the control-plane node (embedded etcd + apiserver) and
+          # stays chronically memory-starved when app workloads share it - keep
+          # Loki off it.
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: NotIn
+                        values:
+                          - k3s-server
 
         # Alle anderen Modi auf 0 setzen (verhindert ungewollte Deployments)
         backend:

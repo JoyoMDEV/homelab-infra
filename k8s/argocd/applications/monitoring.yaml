@@ -76,6 +76,19 @@ spec:
             limits:
               memory: 512Mi
 
+          # k3s-server is the control-plane node (embedded etcd + apiserver) and
+          # stays chronically memory-starved when app workloads share it - keep
+          # Grafana off it.
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: NotIn
+                        values:
+                          - k3s-server
+
           # Loki als zusätzliche Datasource
           additionalDataSources:
             - name: Loki
