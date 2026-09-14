@@ -1379,7 +1379,7 @@ git push
 
 **Interfaces:** none — the document the user follows to execute every manual step from Tasks 1-9 in order, mirroring `docs/coder-setup.md`'s structure.
 
-- [ ] **Step 1: Write the runbook**
+- [x] **Step 1: Write the runbook**
 
 ```markdown
 # Supabase Setup Runbook
@@ -1500,18 +1500,41 @@ Meist: das Image wurde noch nicht gebaut (Schritt 4 hier oben noch nicht
 durchgefuehrt) oder die Pipeline ist fehlgeschlagen.
 ```
 
-- [ ] **Step 2: Verify the doc's section count**
+- [x] **Step 2: Verify the doc's section count**
 
 Run: `grep -c "^## " docs/supabase-setup.md`
 Expected: `6` (one per top-level section).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/supabase-setup.md
 git commit -m "docs(supabase): add end-to-end rollout runbook"
 git push
 ```
+
+**Rewritten, not just copied (2026-09-14)**: by the time this task ran, Tasks 1-9 were already live and ArgoCD-managed (this session executed the whole plan task-by-task against the real cluster, not just written-then-handed-off), so the runbook document was substantially rewritten from "here's what you'll do" into "here's what's left" — it drops the now-irrelevant steps (namespace/cluster/Garage/catalog already exist) and keeps only the genuinely outstanding manual actions: one more `setup-supabase.sh` run (for the `openai-api-key` fix below), `setup-supabase-storage.sh` (never run), and the GitLab project/push for Edge Functions. See this task's plan file for the full live-implementation trail; the deployed `docs/supabase-setup.md` is the current, accurate version, not this draft.
+
+---
+
+## Live implementation retrospective (2026-09-14)
+
+This plan was executed task-by-task against the real cluster in one session (tracked in `context-hub#16`), not handed off after being written. Real bugs found and fixed along the way, beyond what this document's per-task "Actually found" notes already cover in detail:
+
+- CNPG's `postgresUID`/`postgresGID` default (26) doesn't match `supabase/postgres`'s actual `postgres` user (100/101) — Task 1.
+- `supabase/postgres`'s migrations assume a `pgbouncer` schema/role/function that nothing in the migrations set creates — Task 2.
+- `scripts/setup-supabase.sh`'s `VAULT_PATH` was missing the `homelab/` prefix every other setup script uses — Task 2/3.
+- CNPG generates `postgresql.conf` from scratch, silently dropping the image's own `shared_preload_libraries` (breaking `pg_cron`/`pg_net`/`pgsodium`/`supabase_vault`/`pg_stat_statements`) — Task 8's investigation, fixed on the Task 1 Cluster manifest.
+- `pgsodium.getkey_script` execs a literal file path (not a shell command), the image's own default script lives on read-only rootfs in this pod, and relies on `openssl`, which isn't installed in the image at all — same investigation, fixed via a ConfigMap + `projectedVolumeTemplate`.
+- `supabase-pg`'s Barman backup referenced `minio-secret`, which only existed in `infrastructure`, not `supabase` (Secrets are namespace-scoped) — added a second `ExternalSecret`.
+- Studio's Deployment unconditionally requires an `openAiApiKey` key in whatever secret `secret.dashboard.secretRef` points at, even without AI features — Task 8.
+- Realtime's own migrator expects a pre-existing `_realtime` schema that nothing (not the migrations, not Realtime) creates — Task 8.
+- The plan's Task 7 CI pattern (copied from `backstage`) had already been superseded in this repo by `coder-workspace`'s in-cluster-registry push, adopted after an unresolved Traefik large-upload cutoff bug — corrected before writing the new CI file, not after.
+- A manual `kubectl apply -f <rendered>.yaml` without `-n <namespace>` (Task 4) silently created Garage's resources in the wrong namespace (this session's ambient kubectl default, `coder`) — caught and cleaned up before it became a real Task 8 problem.
+
+A `manifest-consistency-checker` subagent pass after Task 9 found no sync-breaking issues — only the already-documented, intentional `minio-secret` cross-namespace exception and the (deliberately unpinned-until-CI-runs) `image.functions.tag: latest`.
+
+The throughline: almost every one of these was invisible from reading the chart/plan alone and only surfaced by actually running it — this plan's own "verify live before commit" discipline (stated in its Global Constraints) is what caught each one before it shipped silently broken.
 
 ---
 
