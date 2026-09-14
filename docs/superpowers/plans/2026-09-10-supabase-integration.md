@@ -222,7 +222,7 @@ set -euo pipefail
 
 VAULT_NS="security"
 VAULT_POD="vault-0"
-VAULT_PATH="supabase/supabase-secret"
+VAULT_PATH="homelab/supabase/supabase-secret"
 POSTGRES_NS="supabase"
 POSTGRES_POD="supabase-pg-1"
 
@@ -390,6 +390,10 @@ git commit -m "feat(supabase): add Postgres bootstrap + core secrets script"
 ```
 
 Do **not** run `scripts/setup-supabase.sh` — this requires `VAULT_TOKEN` and writes real secrets/schema changes; the user runs it personally as part of the Task 10 runbook.
+
+**Two bugs found and fixed after the user actually ran this live (2026-09-14):**
+1. `VAULT_PATH` was `"supabase/supabase-secret"`, missing the `homelab/` prefix every other `scripts/setup-<service>.sh` uses (compare `setup-coder.sh`'s `VAULT_PATH="homelab/coder/coder-secret"`) and that Task 3's `ExternalSecret` actually reads from. The first live run wrote to `secret/supabase/supabase-secret` instead of `secret/homelab/supabase/supabase-secret` — Task 3's `ExternalSecret` then failed with `SecretSyncedError: Secret does not exist`. Fixed by correcting `VAULT_PATH` above; the stray secret at the wrong path was left in place (harmless, unused).
+2. The migration set assumes a `pgbouncer` schema/role/`get_auth()` function that the `migrations/db/init-scripts` this script runs never create (that bootstrap SQL only ships in `supabase/postgres`'s own AMI-provisioning ansible role) — the live run failed with `schema pgbouncer does not exist` partway through. Fixed by embedding that exact bootstrap SQL as a script step before the migrations loop (see the script itself). See `references/supabase-postgres-missing-pgbouncer-schema.md` in the context-hub wiki for the full writeup and live-recovery steps.
 
 ---
 
