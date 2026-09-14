@@ -42,6 +42,51 @@ spec:
                         values:
                           - k3s-server
 
+        # k3s-server ist der Control-Plane-Node (siehe singleBinary oben) - auch
+        # die Cache-/Gateway-/Canary-Komponenten sollen dort nicht laufen.
+        # chunksCache/resultsCache liefen zuvor mit mehreren GB RSS auf
+        # k3s-server und waren der größte Speicherverbraucher im Cluster.
+        chunksCache:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: NotIn
+                        values:
+                          - k3s-server
+        resultsCache:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: NotIn
+                        values:
+                          - k3s-server
+        gateway:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: NotIn
+                        values:
+                          - k3s-server
+        lokiCanary:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: kubernetes.io/hostname
+                        operator: NotIn
+                        values:
+                          - k3s-server
+
         # Alle anderen Modi auf 0 setzen (verhindert ungewollte Deployments)
         backend:
           replicas: 0
