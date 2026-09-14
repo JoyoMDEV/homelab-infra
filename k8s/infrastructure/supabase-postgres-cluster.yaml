@@ -1,4 +1,25 @@
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: supabase-pg-pgsodium-getkey
+  namespace: supabase
+data:
+  # NOTE: `openssl` is not installed in the supabase/postgres image
+  # (confirmed live: `sh: openssl: not found`) - use the same
+  # od/tr-based approach the image's own default getkey script uses
+  # instead (see /usr/lib/postgresql/bin/pgsodium_getkey.sh in the image).
+  pgsodium_getkey.sh: |
+    #!/bin/sh
+    set -eu
+    KEY_FILE=/var/lib/postgresql/data/pgdata/.pgsodium_root.key
+    if [ ! -f "$KEY_FILE" ]; then
+      umask 277
+      head -c 32 /dev/urandom | od -A n -t x1 | tr -d ' \n' > "$KEY_FILE"
+    fi
+    cat "$KEY_FILE"
+
+---
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -22,11 +43,55 @@ spec:
   postgresUID: 100
   postgresGID: 101
 
+  # pgsodium/supabase_vault need a stable master key, fetched at postgres
+  # startup by executing a script whose *path* pgsodium.getkey_script names
+  # (confirmed live: pgsodium execs the value directly and fails with
+  # `The getkey script "..." does not exists` if it's a shell one-liner
+  # instead of a real file - it's not run via `sh -c`). The image's own
+  # default script writes its key under /etc/postgresql-custom/, which is on
+  # the image's read-only root filesystem in this CNPG pod (confirmed live:
+  # `touch` there fails with "Read-only file system") - CNPG never mounts
+  # that path writable, unlike a plain Docker Compose run of this image.
+  # This ConfigMap+projectedVolumeTemplate ships our own copy of that script
+  # at a path CNPG does mount (read-only, but the script itself only needs
+  # to be exec'd, not written to); the script writes the actual key material
+  # into PGDATA (read-write, Barman-backed), so the key - and therefore
+  # every vault-encrypted secret - survives restarts and restores instead of
+  # being silently regenerated.
+  projectedVolumeTemplate:
+    defaultMode: 0o755
+    sources:
+      - configMap:
+          name: supabase-pg-pgsodium-getkey
+
   postgresql:
     parameters:
       shared_buffers: "256MB"
       effective_cache_size: "512MB"
       max_connections: "100"
+      pgsodium.getkey_script: /projected/pgsodium_getkey.sh
+      vault.getkey_script: /projected/pgsodium_getkey.sh
+    # supabase/postgres's own postgresql.conf preloads these (confirmed live
+    # via `SHOW shared_preload_libraries` / grep on /etc/postgresql/postgresql.conf
+    # inside the image) so pg_cron, pg_net, pgsodium, and supabase_vault can
+    # even be CREATE EXTENSION'd, and pg_stat_statements can collect stats.
+    # CNPG manages postgresql.conf itself and starts from an empty list -
+    # the image's own default is silently lost otherwise, which is why a
+    # freshly CNPG-bootstrapped supabase-pg had none of these extensions
+    # available despite the migrations "creating" them (discovered live,
+    # 2026-09-14).
+    shared_preload_libraries:
+      - pg_stat_statements
+      - pgaudit
+      - plpgsql
+      - plpgsql_check
+      - pg_cron
+      - pg_net
+      - pgsodium
+      - auto_explain
+      - pg_tle
+      - plan_filter
+      - supabase_vault
 
   storage:
     size: 10Gi
