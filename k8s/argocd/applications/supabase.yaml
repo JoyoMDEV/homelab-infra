@@ -66,6 +66,14 @@ spec:
           functions:
             repository: registry.homelab.local/homelab/projects/supabase-functions
             tag: latest
+            # homelab/projects/* GitLab projects are private (same as
+            # backstage/coder-workspace) - confirmed live (2026-09-14) that
+            # kubelet gets a 403 Forbidden fetching an anonymous pull token
+            # without this. Matches backstage's/coder-workspace's exact
+            # pattern: a docker-registry Secret sourced from Vault via
+            # scripts/setup-supabase.sh's registry-pull-credentials prompt.
+            pullSecrets:
+              - name: supabase-functions-registry-pull
 
         environment:
           auth:

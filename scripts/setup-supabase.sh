@@ -52,6 +52,12 @@ vault_kv_put() {
     vault kv put "secret/${path}" "$@" >/dev/null
 }
 
+vault_kv_path_exists() {
+  kubectl exec -n "$VAULT_NS" "$VAULT_POD" -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN="$VAULT_TOKEN" \
+    vault kv get "secret/$1" &>/dev/null
+}
+
 force_sync() {
   kubectl annotate externalsecret "$1" -n "$2" \
     force-sync="$(date +%s)" --overwrite 2>/dev/null || \
@@ -233,6 +239,30 @@ vault_kv_put "${VAULT_PATH}" \
   "openai-api-key=${OPENAI_API_KEY}"
 
 force_sync supabase-secret supabase
+
+echo ""
+echo "==> GitLab Registry-Pull-Credentials fuer die Edge-Functions-Image (registry.homelab.local)"
+if vault_kv_path_exists "homelab/supabase/registry-pull-secret"; then
+  echo "    homelab/supabase/registry-pull-secret existiert bereits - nichts zu tun."
+else
+  echo "    Personal/Deploy Access Token mit 'read_registry'-Scope fuer das"
+  echo "    Projekt 'homelab/projects/supabase-functions' (privates Projekt -"
+  echo "    ohne das haengt der Functions-Pod in ImagePullBackOff/403 Forbidden)."
+  read -rp  "    Registry Username: " REGISTRY_USER
+  read -rsp "    Registry Token (wird nicht angezeigt): " REGISTRY_TOKEN
+  echo ""
+
+  if [[ -z "${REGISTRY_USER}" ]] || [[ -z "${REGISTRY_TOKEN}" ]]; then
+    echo "    FEHLER: Username oder Token leer. Abbruch."
+    exit 1
+  fi
+
+  vault_kv_put "homelab/supabase/registry-pull-secret" \
+    "username=${REGISTRY_USER}" \
+    "token=${REGISTRY_TOKEN}"
+
+  force_sync supabase-functions-registry-pull supabase
+fi
 
 echo ""
 echo "============================================"
