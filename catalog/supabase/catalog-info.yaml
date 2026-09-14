@@ -1,0 +1,19 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: supabase
+  description: Self-hosted Supabase (Postgres/Auth/REST/Realtime/Storage/Studio/Functions)
+  annotations:
+    argocd/app-name: supabase
+    backstage.io/kubernetes-id: supabase
+    backstage.io/techdocs-ref: dir:.
+  links:
+    - url: https://supabase.homelab.local
+      title: API (Kong)
+    - url: https://supabase-studio.homelab.local
+      title: Studio
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab
+  system: homelab

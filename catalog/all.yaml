@@ -10,6 +10,7 @@ spec:
     - ./cert-manager-webhook-hetzner/catalog-info.yaml
     - ./coder/catalog-info.yaml
     - ./external-secrets/catalog-info.yaml
+    - ./garage/catalog-info.yaml
     - ./gitlab/catalog-info.yaml
     - ./gitlab-runner/catalog-info.yaml
     - ./infrastructure/catalog-info.yaml
@@ -26,6 +27,7 @@ spec:
     - ./redis/catalog-info.yaml
     - ./renovate/catalog-info.yaml
     - ./security-manifests/catalog-info.yaml
+    - ./supabase/catalog-info.yaml
     - ./traefik-public/catalog-info.yaml
     - ./vault/catalog-info.yaml
     - ./vaultwarden/catalog-info.yaml

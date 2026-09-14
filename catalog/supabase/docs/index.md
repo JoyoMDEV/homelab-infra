@@ -1,0 +1,28 @@
+## What it is
+
+A self-hosted [Supabase](https://supabase.com) stack — Postgres, Auth (GoTrue), REST (PostgREST), Realtime, Storage, Studio, and Edge Functions — deployed as one ArgoCD Application via the community `supabase-community/supabase-kubernetes` Helm chart.
+
+## Why it's here
+
+A backend-as-a-service for apps built in this homelab (primarily via the Coder workspace): Postgres-backed auth, an auto-generated REST/GraphQL API, realtime subscriptions, file storage, and serverless Edge Functions, without hand-rolling any of that per project.
+
+## How it's configured
+
+- ArgoCD Application: `k8s/argocd/applications/supabase.yaml` — chart `supabase-community/supabase-kubernetes`, pinned `0.8.0`, namespace `supabase`.
+- Database: a dedicated CNPG cluster `supabase-pg` (`k8s/infrastructure/supabase-postgres-cluster.yaml`), running the `supabase/postgres:17.6.1.136` image (not CNPG's default) so Supabase's required Postgres extensions are present. Notable non-obvious settings on that Cluster, each found live while bringing it up:
+  - `postgresUID: 100` / `postgresGID: 101` — this image's `postgres` user isn't UID/GID 26 like CNPG's own default image.
+  - `spec.postgresql.shared_preload_libraries` — CNPG generates `postgresql.conf` from scratch and starts this empty; without explicitly listing the image's own defaults (`pg_cron`, `pg_net`, `pgsodium`, `supabase_vault`, `pg_stat_statements`, ...), those extensions can't even be created.
+  - `projectedVolumeTemplate` mounting a ConfigMap (`supabase-pg-pgsodium-getkey`) at `/projected` — ships a working `pgsodium.getkey_script`/`vault.getkey_script`, since the image's own default script lives on read-only rootfs in this pod and relies on `openssl`, which isn't even installed in the image.
+  - Schema bootstrapped once by `scripts/setup-supabase.sh` from the upstream `supabase/postgres` migration set, plus three schema/extension gaps that set alone doesn't cover: the `pgbouncer` schema/role/function (only shipped in that repo's AMI-provisioning, not its migrations), the `_realtime` schema (Realtime's own migrator expects it pre-created, nothing creates it), and the `pg_graphql`/`pg_net`/`pg_cron`/`pgjwt`/`pg_stat_statements` extensions themselves (only creatable once `shared_preload_libraries` is correct).
+- Storage backend: a shared Garage instance (`catalog/garage`), bucket `supabase-storage`, credentials via `scripts/setup-supabase-storage.sh` — not MinIO (MinIO's OSS console was gutted in 2025; Garage is a genuinely open, AGPLv3 alternative). `supabase-pg`'s own Barman backups still go to MinIO via `k8s/security/external-secrets/supabase/minio-secret.yaml` (a second `ExternalSecret` reading the same Vault path as `infrastructure`'s copy, since Secrets are namespace-scoped and `supabase-pg` lives in a different namespace than MinIO).
+- Secrets: `k8s/security/external-secrets/supabase/supabase-secret.yaml` (Vault path `homelab/supabase/supabase-secret` — JWT signing key + anon/service_role tokens, DB password, Realtime/Meta keys, Studio dashboard credentials, and a placeholder `openai-api-key` the chart's Studio Deployment unconditionally requires even without AI features) and `supabase-storage-secret.yaml` (Vault path `homelab/supabase/supabase-storage-secret` — Garage access key).
+- Edge Functions: built from a separate GitLab project, `homelab/projects/supabase-functions` (`FROM supabase/edge-runtime:v1.74.0` + baked-in function code), via GitLab CI + Kaniko (pushing to the in-cluster registry Service directly, like `coder-workspace`, not the external `registry.homelab.local` route — see that project's CI config), pushed to `registry.homelab.local/homelab/projects/supabase-functions`.
+- Ingress: `supabase.homelab.local` (API, via Kong) and `supabase-studio.homelab.local` (Studio) — both routed to the same Kong Service; Kong's own declarative config gates Studio behind HTTP basic-auth and the API routes behind anon/service-role API keys. Reachable only over Tailscale.
+- Auth: built-in Supabase email/password only (no Keycloak/OIDC integration — a deliberate, deferred non-goal).
+
+## How to change it
+
+- **Rotate the JWT secret, a DB password, or Studio dashboard credentials**: update the relevant key in Vault at `homelab/supabase/supabase-secret`, then force-sync: `kubectl -n supabase annotate externalsecret supabase-secret force-sync=$(date +%s) --overwrite`. Rotating the JWT secret invalidates every previously-issued anon/service_role key and user session — re-derive both from the new secret (see `scripts/setup-supabase.sh`'s `mint_jwt`) before rotating.
+- **Add or update an Edge Function**: edit `functions/<name>/index.ts` in the `supabase-functions` GitLab project, push to `main` — CI builds and pushes `registry.homelab.local/homelab/projects/supabase-functions:latest` automatically. Restart the functions Deployment to pick it up.
+- **Add a new Garage-backed bucket for another service**: `kubectl exec -n infrastructure garage-0 -- /garage bucket create <name>` + `/garage key create <name>-key` + `/garage bucket allow --read --write --key <name>-key <name>` (note the absolute `/garage` path — this image has no shell and nothing on `$PATH`), matching `scripts/setup-supabase-storage.sh`.
+- **Resize Postgres storage or bump the Postgres image**: edit `k8s/infrastructure/supabase-postgres-cluster.yaml` (`storage.size`/`imageName`) and let ArgoCD/CNPG reconcile. If bumping to a materially different `supabase/postgres` release, re-verify `postgresUID`/`postgresGID` and `shared_preload_libraries` still match that image's actual defaults before rolling it out.
