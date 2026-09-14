@@ -1235,7 +1235,7 @@ Expected: both reach `Synced`/`Healthy` within a couple of minutes, with no pod 
 
 **Interfaces:** none — pure catalog metadata, per CLAUDE.md's Backstage-catalog-sync convention.
 
-- [ ] **Step 1: Write `catalog/supabase/catalog-info.yaml`**
+- [x] **Step 1: Write `catalog/supabase/catalog-info.yaml`**
 
 ```yaml
 apiVersion: backstage.io/v1alpha1
@@ -1259,13 +1259,13 @@ spec:
   system: homelab
 ```
 
-- [ ] **Step 2: Write `catalog/supabase/mkdocs.yml`**
+- [x] **Step 2: Write `catalog/supabase/mkdocs.yml`**
 
 ```yaml
 site_name: Supabase
 ```
 
-- [ ] **Step 3: Write `catalog/supabase/docs/index.md`**
+- [x] **Step 3: Write `catalog/supabase/docs/index.md`**
 
 ```markdown
 ## What it is
@@ -1294,7 +1294,7 @@ A backend-as-a-service for apps built in this homelab (primarily via the Coder w
 - **Resize Postgres storage or bump the Postgres image**: edit `k8s/infrastructure/supabase-postgres-cluster.yaml` (`storage.size`/`imageName`) and let ArgoCD/CNPG reconcile.
 ```
 
-- [ ] **Step 4: Write `catalog/garage/catalog-info.yaml`**
+- [x] **Step 4: Write `catalog/garage/catalog-info.yaml`**
 
 ```yaml
 apiVersion: backstage.io/v1alpha1
@@ -1313,13 +1313,13 @@ spec:
   system: homelab
 ```
 
-- [ ] **Step 5: Write `catalog/garage/mkdocs.yml`**
+- [x] **Step 5: Write `catalog/garage/mkdocs.yml`**
 
 ```yaml
 site_name: Garage
 ```
 
-- [ ] **Step 6: Write `catalog/garage/docs/index.md`**
+- [x] **Step 6: Write `catalog/garage/docs/index.md`**
 
 ```markdown
 ## What it is
@@ -1341,7 +1341,7 @@ Supabase Storage needed a genuinely open-source S3 backend (MinIO's OSS console 
 - **Resize storage**: edit `k8s/argocd/applications/garage.yaml`'s `persistence.data.size` and let ArgoCD reconcile (grows the existing PVC if the storage class supports online expansion; otherwise a manual PVC resize/replace is needed).
 ```
 
-- [ ] **Step 7: Add both entries to `catalog/all.yaml`**
+- [x] **Step 7: Add both entries to `catalog/all.yaml`**
 
 Insert alphabetically:
 
@@ -1357,12 +1357,12 @@ Insert alphabetically:
 
 (next to the other service entries) — match the existing file's actual ordering convention rather than assuming a specific neighbor line.
 
-- [ ] **Step 8: Lint**
+- [x] **Step 8: Lint**
 
 Run: `yamllint -c .yamllint.yml catalog/supabase/catalog-info.yaml catalog/supabase/mkdocs.yml catalog/garage/catalog-info.yaml catalog/garage/mkdocs.yml catalog/all.yaml`
 Expected: no output.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add catalog/supabase/ catalog/garage/ catalog/all.yaml
