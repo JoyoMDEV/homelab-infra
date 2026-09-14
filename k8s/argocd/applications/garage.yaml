@@ -1,0 +1,57 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: garage
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://git.deuxfleurs.fr/Deuxfleurs/garage.git
+    path: script/helm/garage
+    targetRevision: v2.4.1
+    helm:
+      values: |
+        garage:
+          # Single binary, single StatefulSet replica, replication_factor=1 -
+          # matches this cluster's scale, avoids Garage's multi-node gossip
+          # complexity entirely. Officially supported since Garage v2.3.
+          singleNode: true
+
+        deployment:
+          replicaCount: 1
+
+        persistence:
+          enabled: true
+          meta:
+            size: 1Gi
+          data:
+            size: 20Gi
+
+        resources:
+          requests:
+            memory: 256Mi
+            cpu: 100m
+          limits:
+            memory: 512Mi
+
+        # No ingress - Garage is shared *infra*, reached only from other
+        # in-cluster services (Supabase Storage today, more services later),
+        # never directly from outside the cluster.
+        ingress:
+          s3:
+            api:
+              enabled: false
+            web:
+              enabled: false
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: infrastructure
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false # Namespace existiert bereits (MinIO etc.)
