@@ -183,7 +183,37 @@ coder update homelab
 
 ---
 
-## 9. Troubleshooting
+## 9. CloudCLI (Web-/Mobile-Zugriff auf Claude Code)
+
+**Voraussetzung:** Tasks 1-2 aus `docs/superpowers/plans/2026-09-13-coder-cloudcli.md`
+sind committed und gepusht; die `coder-workspace`-Pipeline (Task 1) ist grün.
+
+### 9.1 Template pushen und Workspace aktualisieren
+
+Das aktualisiert den bereits laufenden, persönlichen `homelab`-Workspace -
+der Pod startet dabei neu (kurze Unterbrechung, `/home/coder`-Zustand auf
+dem PVC bleibt erhalten).
+
+```bash
+coder login https://coder.homelab.local
+./scripts/deploy-coder-template.sh
+coder update homelab
+```
+
+### 9.2 Verifikation
+
+- [ ] Im Workspace-Terminal: `curl -sf -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:3001/`
+      zeigt einen erfolgreichen Status (kein Connection-Error).
+- [ ] Auf `https://coder.homelab.local` → Workspace `homelab` → ein
+      "CloudCLI"-Button erscheint auf der Workspace-Seite.
+- [ ] Der Button öffnet CloudCLI und zeigt die bereits konfigurierte
+      Claude-Code-Session (sichtbar an den bereits aktiven MCP-Server-
+      Verbindungen: GitHub/GitLab/Grafana), nicht eine leere/neue Session.
+- [ ] Vom Handy-Browser aus (im Tailnet): der Zugriff verlangt den
+      Keycloak-Login (bzw. eine bereits aktive Coder-Session) - kein
+      direkter, unauthentifizierter Zugriff möglich.
+
+## 10. Troubleshooting
 
 **Coder Pod crasht mit "connect: connection refused" (Postgres)**
 ```bash
