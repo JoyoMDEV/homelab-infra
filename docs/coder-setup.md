@@ -202,16 +202,29 @@ coder update homelab
 
 ### 9.2 Verifikation
 
-- [ ] Im Workspace-Terminal: `curl -sf -o /dev/null -w 'HTTP %{http_code}\n' http://localhost:3001/`
-      zeigt einen erfolgreichen Status (kein Connection-Error).
+- [ ] Im Workspace-Terminal: `curl -s http://127.0.0.1:3001/api/auth/status`
+      liefert eine JSON-Antwort (z.B. `{"needsSetup":true}`) - das
+      bestätigt, dass CloudCLI selbst antwortet, nicht nur irgendein
+      Prozess auf Port 3001 lauscht.
 - [ ] Auf `https://coder.homelab.local` → Workspace `homelab` → ein
       "CloudCLI"-Button erscheint auf der Workspace-Seite.
-- [ ] Der Button öffnet CloudCLI und zeigt die bereits konfigurierte
+- [ ] **Beim allerersten Öffnen:** CloudCLI zeigt einen Setup-Screen zum
+      Anlegen des ersten Benutzerkontos (Username/Passwort). Diesen
+      Schritt sofort erledigen - bis dahin könnte theoretisch jeder mit
+      Netzwerkzugriff auf den Pod das erste Konto anlegen (das Binden an
+      `127.0.0.1` im Startskript schließt den Zugriff von außerhalb des
+      Pods, aber nicht die Lücke zwischen Pod-Start und diesem Schritt).
+- [ ] Nach dem Login zeigt CloudCLI die bereits konfigurierte
       Claude-Code-Session (sichtbar an den bereits aktiven MCP-Server-
       Verbindungen: GitHub/GitLab/Grafana), nicht eine leere/neue Session.
 - [ ] Vom Handy-Browser aus (im Tailnet): der Zugriff verlangt den
       Keycloak-Login (bzw. eine bereits aktive Coder-Session) - kein
       direkter, unauthentifizierter Zugriff möglich.
+
+Falls der Button eine leere oder kaputte Seite öffnet, siehe Abschnitt 10,
+"CloudCLI-Button zeigt eine leere/kaputte Seite".
+
+---
 
 ## 10. Troubleshooting
 
@@ -227,6 +240,23 @@ kubectl logs -n coder -l app.kubernetes.io/name=coder --tail=50 | grep -i oidc
 ```
 Prüfen: Redirect-URI in Keycloak muss exakt
 `https://coder.homelab.local/api/v2/users/oidc/callback` sein.
+
+**CloudCLI-Button zeigt eine leere/kaputte Seite**
+```bash
+# CloudCLIs Web-UI lädt ihre Assets über absolute Pfade (/assets/...).
+# Läuft Coder ohne CODER_WILDCARD_ACCESS_URL (path-basierte Apps statt
+# Subdomain-Apps), kann der Browser diese Assets von der falschen Origin
+# anfordern - die Seite bleibt dann leer/kaputt. In den Browser-DevTools
+# nach 404s auf https://coder.homelab.local/assets/... suchen.
+```
+
+**CloudCLI startet nicht nach einem Workspace-Neustart**
+```bash
+# Kein Supervisor - CloudCLI startet nur beim Ausführen des Startskripts
+# (coder restart homelab). Log prüfen:
+cat "$HOME/.cloudcli.log"       # im Workspace-Terminal
+curl -s http://127.0.0.1:3001/api/auth/status   # Health-Check
+```
 
 **Workspace-Pod hängt in `ImagePullBackOff`**
 ```bash

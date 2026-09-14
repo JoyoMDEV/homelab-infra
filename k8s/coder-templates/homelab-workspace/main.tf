@@ -99,12 +99,30 @@ resource "coder_agent" "main" {
         echo "WARN: 'claude mcp add grafana' failed - check 'claude mcp add --help' for the current flag syntax"
     fi
 
-    # CloudCLI - backgrounded, PID-file-guarded so it isn't started twice on
-    # a workspace restart. No process supervision if it crashes - `coder
-    # restart homelab` re-runs this script and starts it again.
-    if [ ! -f "$HOME/.cloudcli.pid" ] || ! kill -0 "$(cat "$HOME/.cloudcli.pid")" 2>/dev/null; then
-      PORT=3001 nohup cloudcli > "$HOME/.cloudcli.log" 2>&1 &
-      echo $! > "$HOME/.cloudcli.pid"
+    # CloudCLI - backgrounded, port-check-guarded so it isn't started twice
+    # on a workspace restart. A PID-file guard doesn't work here: $HOME is
+    # the persistent PVC, so a PID recorded before a restart is compared
+    # against the NEW container's PID namespace, where low numbers are
+    # likely to be reused by unrelated live processes - a false "already
+    # running" match would silently skip starting CloudCLI, with no error.
+    # A port check has no such cross-namespace ambiguity.
+    #
+    # HOST=127.0.0.1 (not CloudCLI's own 0.0.0.0 default) is required:
+    # coder_app's proxy gates access, not the listening socket, so a
+    # wildcard bind would let any other pod in the cluster reach it
+    # directly (this pod runs under coder-workspace-admin/cluster-admin).
+    # It also has an unauthenticated first-run account-setup endpoint
+    # (until the first user registers), so an open bind is a real land
+    # grab, not just defense-in-depth. Explicit PATH= on this line (rather
+    # than relying on the earlier export in this same script) protects
+    # against a future edit reordering these blocks.
+    #
+    # No process supervision if it crashes - `coder restart homelab`
+    # re-runs this script and starts it again. See $HOME/.cloudcli.log
+    # for troubleshooting.
+    if ! curl -sf -o /dev/null "http://127.0.0.1:3001/"; then
+      PATH="$HOME/.npm-global/bin:$PATH" HOST=127.0.0.1 SERVER_PORT=3001 \
+        nohup cloudcli > "$HOME/.cloudcli.log" 2>&1 &
     fi
   EOT
 
