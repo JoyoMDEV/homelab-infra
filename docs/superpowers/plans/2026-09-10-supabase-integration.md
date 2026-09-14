@@ -512,7 +512,7 @@ Do not push yet.
 **Interfaces:**
 - Produces: a running single-node Garage instance, Service `garage` (namespace `infrastructure`, S3 API on port 3900) — consumed by Task 5 (bucket/key creation) and Task 8 (`GLOBAL_S3_ENDPOINT`).
 
-- [ ] **Step 1: Write the Application**
+- [x] **Step 1: Write the Application**
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
@@ -574,12 +574,12 @@ spec:
       - CreateNamespace=false # Namespace existiert bereits (MinIO etc.)
 ```
 
-- [ ] **Step 2: Lint**
+- [x] **Step 2: Lint**
 
 Run: `yamllint -c .yamllint.yml k8s/argocd/applications/garage.yaml`
 Expected: no output.
 
-- [ ] **Step 3: Render and apply live**
+- [x] **Step 3: Render and apply live**
 
 ```bash
 helm repo add garage https://git.deuxfleurs.fr/Deuxfleurs/garage.git --force-update 2>/dev/null || true
@@ -593,7 +593,7 @@ kubectl rollout status statefulset/garage -n infrastructure --timeout=180s
 
 Expected: the StatefulSet rolls out successfully. (If `yq` isn't installed, extract the `helm.values:` block from the file by hand into `/tmp/garage-values.yaml` instead. The `helm repo add` line is best-effort — Gitea repos don't always serve a Helm repo index; the `helm template` against the cloned chart source is what actually matters here.)
 
-- [ ] **Step 4: Verify it's actually serving S3 and find its real Service name**
+- [x] **Step 4: Verify it's actually serving S3 and find its real Service name**
 
 ```bash
 kubectl get svc -n infrastructure | grep -i garage
@@ -603,7 +603,11 @@ kubectl exec -n infrastructure garage-0 -- garage status
 
 Expected: a Service (note its exact name — used in Task 8's `GLOBAL_S3_ENDPOINT`; expected to be plain `garage` since the chart's fullname template collapses when release name equals chart name, but confirm rather than assume), pod `garage-0` `Running`, and `garage status` printing a single healthy node with no layout warnings (a single-node Garage needs its storage layout assigned once — if `garage status` says "NO ROLE ASSIGNED", run `garage layout assign -z dc1 -c 1G <node-id>` then `garage layout apply --version 1`, using the node ID `garage status` prints).
 
-- [ ] **Step 5: Commit**
+**Confirmed live (2026-09-14)**: Service name is plain `garage` as predicted. `garage status` showed the node already `HEALTHY` with an auto-assigned role/zone/capacity — no manual `layout assign`/`layout apply` was needed at all; `singleNode: true` on this chart version (v2.4.1) auto-assigns the layout on first boot. The container image has no shell (`sh`/`which` both fail with "executable file not found") and the `garage` binary isn't on `$PATH` - exec it by its absolute path, `/garage status`, not bare `garage status` as written above.
+
+**Unrelated but important operational catch**: the chart's rendered manifests don't set `metadata.namespace` on any object (normal for Helm templates - they rely on the apply-time context), so `kubectl apply -f <rendered>.yaml` without an explicit `-n infrastructure` silently created everything in this session's kubectl default namespace instead (`coder`, a live workspace namespace) - `kubectl apply` reported success throughout since it was creating real objects, just in the wrong place, and it was only caught because `-n infrastructure` came up empty afterward. Cleaned up the misplaced objects (StatefulSet, both Services, Secret, ConfigMap, ServiceAccount, both PVCs) from `coder` before redeploying correctly. Always pass `-n <namespace>` explicitly on this kind of manual "render then kubectl apply" step from here on - never rely on the shell's ambient default namespace.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add k8s/argocd/applications/garage.yaml
