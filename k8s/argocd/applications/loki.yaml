@@ -47,6 +47,11 @@ spec:
         # chunksCache/resultsCache liefen zuvor mit mehreren GB RSS auf
         # k3s-server und waren der größte Speicherverbraucher im Cluster.
         chunksCache:
+          # Chart default is 8192 (8Gi memory request) - way oversized for a
+          # homelab's log volume and the reason this pod could only ever fit
+          # on the 32Gi k3s-server. 2Gi is plenty for 30d filesystem-backed
+          # retention here.
+          allocatedMemory: 2048
           affinity:
             nodeAffinity:
               requiredDuringSchedulingIgnoredDuringExecution:
