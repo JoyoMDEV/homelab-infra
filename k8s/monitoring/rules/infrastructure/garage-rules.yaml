@@ -1,0 +1,67 @@
+# Garage didn't export Prometheus metrics before this change (see
+# k8s/argocd/applications/garage.yaml - monitoring.metrics.enabled was
+# unset/false). Metric names below are from Garage's own documented
+# reference (garagehq.deuxfleurs.fr/documentation/reference-manual/monitoring/),
+# not yet cross-checked against a live scrape from this cluster - verify
+# once monitoring-rules + the garage app have synced and Prometheus has
+# scraped at least once (`up{job=~".*garage.*"}` should show 1).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: garage-rules
+  namespace: infrastructure
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: garage.rules
+      rules:
+        - alert: GarageClusterUnhealthy
+          expr: cluster_healthy{namespace="infrastructure"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: garage
+          annotations:
+            summary: "Garage cluster reports unhealthy"
+            description: "cluster_healthy has been 0 for 5 minutes."
+
+        - alert: GarageBlockResyncErrors
+          expr: block_resync_errored_blocks{namespace="infrastructure"} > 0
+          for: 5m
+          labels:
+            severity: critical
+            service: garage
+          annotations:
+            summary: "Garage has errored blocks pending resync"
+            description: "block_resync_errored_blocks is {{ $value }} - Garage's own docs call this 'should always be zero'."
+
+        - alert: GarageDiskSpaceHigh
+          expr: (1 - (garage_local_disk_avail{namespace="infrastructure"} / garage_local_disk_total{namespace="infrastructure"})) > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            service: garage
+          annotations:
+            summary: "Garage local disk usage above 85%"
+            description: "{{ $labels.volume }} on {{ $labels.pod }} is {{ $value | humanizePercentage }} full."
+
+        - alert: GaragePodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="infrastructure", container="garage"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: garage
+          annotations:
+            summary: "Garage pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."
+
+        - alert: GaragePVCAlmostFull
+          expr: (1 - (kubelet_volume_stats_available_bytes{namespace="infrastructure", persistentvolumeclaim=~"data-garage-0|meta-garage-0"} / kubelet_volume_stats_capacity_bytes{namespace="infrastructure", persistentvolumeclaim=~"data-garage-0|meta-garage-0"})) > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            service: garage
+          annotations:
+            summary: "Garage PVC almost full"
+            description: "PVC {{ $labels.persistentvolumeclaim }} is {{ $value | humanizePercentage }} full."

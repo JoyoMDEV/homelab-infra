@@ -34,6 +34,16 @@ spec:
         replica:
           replicaCount: 0
 
+        # Prometheus metrics via the bundled redis_exporter sidecar - was
+        # off before, meaning no redis_* series existed for alerting/
+        # dashboards (only generic kube-state-metrics pod health).
+        metrics:
+          enabled: true
+          serviceMonitor:
+            enabled: true
+            additionalLabels:
+              release: monitoring
+
   destination:
     server: https://kubernetes.default.svc
     namespace: infrastructure

@@ -1,0 +1,91 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: velero-dashboard
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "monitoring-grafana"
+  json: |
+    {
+      "title": "Velero backups (infrastructure)",
+      "uid": "velero-infra",
+      "tags": ["homelab", "infrastructure", "backup"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "1m",
+      "time": { "from": "now-7d", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Last backup status",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "velero_backup_last_status{schedule=\"velero-daily-cluster-backup\"}", "refId": "A" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "type": "value", "options": { "0": { "text": "Failed", "color": "red" }, "1": { "text": "Success", "color": "green" } } }
+              ]
+            }
+          }
+        },
+        {
+          "id": 2,
+          "title": "Hours since last successful backup",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "(time() - velero_backup_last_successful_timestamp{schedule=\"velero-daily-cluster-backup\"}) / 3600", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "h", "thresholds": { "steps": [ { "value": null, "color": "green" }, { "value": 26, "color": "yellow" }, { "value": 28, "color": "red" } ] } } }
+        },
+        {
+          "id": 3,
+          "title": "Successful backups (total)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "velero_backup_success_total{schedule=\"velero-daily-cluster-backup\"}", "refId": "A" }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Failed backups (total)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "velero_backup_failure_total{schedule=\"velero-daily-cluster-backup\"}", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "thresholds": { "steps": [ { "value": null, "color": "green" }, { "value": 1, "color": "red" } ] } } }
+        },
+        {
+          "id": 5,
+          "title": "Backup duration",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "velero_backup_duration_seconds_sum{schedule=\"velero-daily-cluster-backup\"} / velero_backup_duration_seconds_count{schedule=\"velero-daily-cluster-backup\"}", "refId": "A", "legendFormat": "avg duration" }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Velero pod restarts (15m increase)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"backup\", container=\"velero\"}[15m])", "refId": "A", "legendFormat": "{{pod}}" }
+          ]
+        }
+      ]
+    }

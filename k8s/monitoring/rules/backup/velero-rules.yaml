@@ -1,0 +1,43 @@
+# velero_backup_last_status: 1=success/0=failure, confirmed against this
+# cluster's live data (27 successes on schedule velero-daily-cluster-backup,
+# zero failures recorded, current value 1).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: velero-rules
+  namespace: backup
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: velero.rules
+      rules:
+        - alert: VeleroBackupFailed
+          expr: velero_backup_last_status{schedule="velero-daily-cluster-backup"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: velero
+          annotations:
+            summary: "Last Velero backup failed"
+            description: "The velero-daily-cluster-backup schedule's last run did not succeed."
+
+        - alert: VeleroBackupStale
+          expr: (time() - velero_backup_last_successful_timestamp{schedule="velero-daily-cluster-backup"}) > 100000
+          for: 5m
+          labels:
+            severity: critical
+            service: velero
+          annotations:
+            summary: "No successful Velero backup in over ~28h"
+            description: "It's been {{ $value | humanizeDuration }} since the last successful daily-cluster-backup - the daily 02:00 schedule may have stopped running."
+
+        - alert: VeleroPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="backup", container="velero"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: velero
+          annotations:
+            summary: "Velero pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."

@@ -1,0 +1,91 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: garage-dashboard
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "monitoring-grafana"
+  json: |
+    {
+      "title": "Garage (infrastructure)",
+      "uid": "garage-infra",
+      "tags": ["homelab", "infrastructure"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Cluster healthy",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "cluster_healthy{namespace=\"infrastructure\"}", "refId": "A" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "type": "value", "options": { "0": { "text": "Unhealthy", "color": "red" }, "1": { "text": "Healthy", "color": "green" } } }
+              ]
+            }
+          }
+        },
+        {
+          "id": 2,
+          "title": "Connected nodes",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "cluster_connected_nodes{namespace=\"infrastructure\"}", "refId": "A" }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Blocks pending resync (errored)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 12, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "block_resync_errored_blocks{namespace=\"infrastructure\"}", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "thresholds": { "steps": [ { "value": null, "color": "green" }, { "value": 1, "color": "red" } ] } } }
+        },
+        {
+          "id": 4,
+          "title": "Pod restarts (15m increase)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"infrastructure\", container=\"garage\"}[15m])", "refId": "A" }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Local disk usage % (data + meta)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "100 * (1 - (garage_local_disk_avail{namespace=\"infrastructure\"} / garage_local_disk_total{namespace=\"infrastructure\"}))", "refId": "A", "legendFormat": "{{volume}}" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "percent", "max": 100, "min": 0 } }
+        },
+        {
+          "id": 6,
+          "title": "Resync queue length",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "block_resync_queue_length{namespace=\"infrastructure\"}", "refId": "A" }
+          ]
+        }
+      ]
+    }

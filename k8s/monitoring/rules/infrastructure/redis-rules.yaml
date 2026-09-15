@@ -1,0 +1,66 @@
+# The bitnami redis chart wasn't exporting metrics before this change (see
+# k8s/argocd/applications/redis.yaml - metrics.enabled was unset). Added
+# metrics.enabled/serviceMonitor alongside this rule so redis_* series
+# actually exist - until that first syncs+scrapes, the redis_* alerts below
+# simply won't fire (absent series, not an error). The pod-health rules
+# don't depend on the exporter and work today.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: redis-rules
+  namespace: infrastructure
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: redis.rules
+      rules:
+        - alert: RedisPodNotReady
+          expr: kube_pod_container_status_ready{namespace="infrastructure", container="redis"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: redis
+          annotations:
+            summary: "Redis pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 5 minutes."
+
+        - alert: RedisPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="infrastructure", container="redis"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: redis
+          annotations:
+            summary: "Redis pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."
+
+        - alert: RedisPVCAlmostFull
+          expr: (1 - (kubelet_volume_stats_available_bytes{namespace="infrastructure", persistentvolumeclaim="redis-data-redis-master-0"} / kubelet_volume_stats_capacity_bytes{namespace="infrastructure", persistentvolumeclaim="redis-data-redis-master-0"})) > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            service: redis
+          annotations:
+            summary: "Redis PVC almost full"
+            description: "PVC redis-data-redis-master-0 is {{ $value | humanizePercentage }} full."
+
+        - alert: RedisDown
+          expr: redis_up == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: redis
+          annotations:
+            summary: "Redis exporter reports Redis down"
+            description: "redis_up has been 0 for 5 minutes on {{ $labels.instance }}."
+
+        - alert: RedisMemoryHigh
+          expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+          for: 10m
+          labels:
+            severity: warning
+            service: redis
+          annotations:
+            summary: "Redis memory usage above 90% of maxmemory"
+            description: "Redis is using {{ $value | humanizePercentage }} of configured maxmemory."

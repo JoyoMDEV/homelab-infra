@@ -46,6 +46,17 @@ spec:
             web:
               enabled: false
 
+        # Prometheus metrics via Garage's own admin API (/metrics, no auth
+        # configured - internal-only single-node, same trust level as the
+        # rest of this cluster's scrape targets).
+        monitoring:
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
+              labels:
+                release: monitoring
+
   destination:
     server: https://kubernetes.default.svc
     namespace: infrastructure

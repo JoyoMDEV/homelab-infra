@@ -1,5 +1,6 @@
 # homelab-infra
 
+Always read this import first:
 @~/Code/gitlab/context-hub/CLAUDE.md
 
 Hybrid k3s cluster (2 Hetzner Cloud servers + 2 home nodes) managed with Terraform, Ansible, and ArgoCD. See `README.md` for the architecture diagram and CI/CD flow.
@@ -26,6 +27,8 @@ Hybrid k3s cluster (2 Hetzner Cloud servers + 2 home nodes) managed with Terrafo
 **Backstage catalog** (`catalog/`) should stay in sync with `k8s/argocd/applications/` — every deployed service should have a matching `catalog/<service>/catalog-info.yaml` registered in `catalog/all.yaml`, with `argocd/app-name` and `backstage.io/kubernetes-id` annotations matching the ArgoCD app name and k8s namespace/labels. Every service also gets `catalog/<service>/docs/index.md` (referenced via a `backstage.io/techdocs-ref: dir:.` annotation) with four fixed sections, in order: **What it is**, **Why it's here**, **How it's configured** (citing the real ArgoCD Application/Helm values/ExternalSecret/Vault path for that service), and **How to change it** (concrete steps, e.g. "to rotate this token, run `scripts/setup-X.sh`"). Keep it in sync whenever the service's config changes. Rendered via TechDocs' local generator (`mkdocs`, no external pipeline) — see `docs/superpowers/specs/2026-09-03-backstage-narrative-docs-design.md`.
 
 **Never edit directly**: `kubeconfig`, `terraform/*.tfstate*`, `certs/**` — these are gitignored, high-blast-radius files (cluster credentials, Terraform state, internal CA cert). A project hook in `.claude/settings.json` blocks edits to these paths.
+
+**Monitoring: alerts and dashboards as code.** Every service that gets real alerting gets a `PrometheusRule` at `k8s/monitoring/rules/<category>/<service>-rules.yaml` (label `release: monitoring` — required for Prometheus to pick it up, since `ruleSelectorNilUsesHelmValues` is unset/true on the `monitoring` app) and, once its metrics are verified to actually exist in this cluster's Prometheus (query them via the Grafana MCP connector before writing rules — don't alert on a metric you haven't confirmed is scraped), a matching dashboard at `k8s/monitoring/dashboards/<category>/<service>-dashboard.yaml` (a `GrafanaDashboard` CR, `instanceSelector.matchLabels: {dashboards: "monitoring-grafana"}`). Both directories sync via their own ArgoCD Applications (`monitoring-rules`, `monitoring-dashboards`), category-by-category matching the `external-secrets` category list. Dashboards are managed by `grafana-operator` (its own ArgoCD app, `sync-wave: "-1"` so its CRDs land before `monitoring-dashboards` syncs) against the *existing* kube-prometheus-stack Grafana, registered as an `external` instance in `k8s/monitoring/dashboards/grafana-instance.yaml` — the operator does not deploy its own Grafana. See `docs/superpowers/specs/2026-09-15-monitoring-alerting-dashboards-design.md` for the full design (including the planned Alertmanager → Claude Code routine auto-triage pipeline, not yet built).
 
 ## Linting
 

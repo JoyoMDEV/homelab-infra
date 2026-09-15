@@ -1,0 +1,18 @@
+# Registers the EXISTING kube-prometheus-stack Grafana (Application
+# `monitoring`, Helm release "monitoring" -> Service "monitoring-grafana")
+# as an "external" instance for grafana-operator. The operator does not
+# deploy a Grafana of its own here - it only manages GrafanaDashboard/
+# GrafanaAlertRuleGroup CRs against this existing one.
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: monitoring-grafana
+  namespace: monitoring
+  labels:
+    dashboards: "monitoring-grafana"
+spec:
+  external:
+    url: http://monitoring-grafana.monitoring.svc.cluster.local
+    apiKey:
+      name: grafana-operator-secret
+      key: GF_API_TOKEN
