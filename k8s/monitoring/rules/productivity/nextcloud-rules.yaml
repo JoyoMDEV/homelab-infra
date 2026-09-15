@@ -1,0 +1,40 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nextcloud-rules
+  namespace: productivity
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: nextcloud.rules
+      rules:
+        - alert: NextcloudPodNotReady
+          expr: kube_pod_container_status_ready{namespace="productivity", container="nextcloud"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: nextcloud
+          annotations:
+            summary: "Nextcloud pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 5 minutes."
+
+        - alert: NextcloudPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="productivity", pod=~"nextcloud-.*"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: nextcloud
+          annotations:
+            summary: "Nextcloud pod restarting repeatedly"
+            description: "{{ $labels.pod }}/{{ $labels.container }} restarted {{ $value }} times in the last 15 minutes."
+
+        - alert: NextcloudPVCAlmostFull
+          expr: (1 - (kubelet_volume_stats_available_bytes{namespace="productivity", persistentvolumeclaim="nextcloud-nextcloud"} / kubelet_volume_stats_capacity_bytes{namespace="productivity", persistentvolumeclaim="nextcloud-nextcloud"})) > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            service: nextcloud
+          annotations:
+            summary: "Nextcloud PVC almost full"
+            description: "PVC nextcloud-nextcloud is {{ $value | humanizePercentage }} full."

@@ -1,0 +1,26 @@
+# Loki's own chart already generates LokiRequestErrors/Panics/Latency/
+# TooManyCompactorsRunning/CanaryLatency (monitoring.rules.enabled: true
+# in loki.yaml) - this file only adds what those don't cover. Checking
+# live metrics turned up a real gap: loki_api_v1_push has returned 429
+# (rate limited) 13288 times total, which LokiRequestErrors doesn't catch
+# since it only looks at 5xx.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: loki-custom-rules
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: loki-custom.rules
+      rules:
+        - alert: LokiIngestionRateLimited
+          expr: sum(rate(loki_request_duration_seconds_count{route="loki_api_v1_push", status_code="429"}[15m])) > 0.5
+          for: 15m
+          labels:
+            severity: warning
+            service: loki
+          annotations:
+            summary: "Loki rejecting a significant share of log pushes (429)"
+            description: "{{ $value | humanize }} pushes/s are being rate-limited - a client (likely Alloy) is exceeding Loki's per-tenant ingestion limits."

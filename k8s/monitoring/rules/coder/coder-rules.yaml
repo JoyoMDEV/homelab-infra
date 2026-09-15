@@ -1,0 +1,33 @@
+# Only the coder control-plane pod (container "coder") is covered here -
+# `coder-homelab-workspace` is an ephemeral per-user dev workspace pod,
+# alerting on its restarts would just be noise from normal dev usage.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: coder-rules
+  namespace: coder
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: coder.rules
+      rules:
+        - alert: CoderPodNotReady
+          expr: kube_pod_container_status_ready{namespace="coder", container="coder"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: coder
+          annotations:
+            summary: "Coder control-plane pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 5 minutes - no one can start/reach dev workspaces while this is down."
+
+        - alert: CoderPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="coder", container="coder"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: coder
+          annotations:
+            summary: "Coder control-plane pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."

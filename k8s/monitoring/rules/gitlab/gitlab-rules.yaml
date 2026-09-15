@@ -1,0 +1,44 @@
+# GitLab Omnibus bundles its own internal Prometheus/exporters, but they
+# need `monitoring['enable'] = true` in gitlab.rb plus a ServiceMonitor -
+# not done here yet (bigger lift, own follow-up). Generic pod/PVC health
+# only for now, using kube-state-metrics/kubelet metrics that always exist.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: gitlab-rules
+  namespace: gitlab
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: gitlab.rules
+      rules:
+        - alert: GitlabPodNotReady
+          expr: kube_pod_container_status_ready{namespace="gitlab", container="gitlab"} == 0
+          for: 10m
+          labels:
+            severity: critical
+            service: gitlab
+          annotations:
+            summary: "GitLab pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 10 minutes (Omnibus takes a while to start - only fires after 10m)."
+
+        - alert: GitlabPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="gitlab", container="gitlab"}[15m]) > 2
+          for: 5m
+          labels:
+            severity: warning
+            service: gitlab
+          annotations:
+            summary: "GitLab pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."
+
+        - alert: GitlabPVCAlmostFull
+          expr: (1 - (kubelet_volume_stats_available_bytes{namespace="gitlab", persistentvolumeclaim=~"gitlab-(data|config|logs)"} / kubelet_volume_stats_capacity_bytes{namespace="gitlab", persistentvolumeclaim=~"gitlab-(data|config|logs)"})) > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            service: gitlab
+          annotations:
+            summary: "GitLab PVC almost full"
+            description: "PVC {{ $labels.persistentvolumeclaim }} is {{ $value | humanizePercentage }} full."

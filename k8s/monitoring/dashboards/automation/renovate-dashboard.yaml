@@ -1,0 +1,55 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: renovate-dashboard
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "monitoring-grafana"
+  json: |
+    {
+      "title": "Renovate",
+      "uid": "renovate",
+      "tags": ["homelab", "automation"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "5m",
+      "time": { "from": "now-7d", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Hours since last successful run",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "(time() - max(kube_cronjob_status_last_successful_time{namespace=\"automation\", cronjob=\"renovate\"})) / 3600", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "h", "thresholds": { "steps": [ { "value": null, "color": "green" }, { "value": 30, "color": "yellow" }, { "value": 48, "color": "red" } ] } } }
+        },
+        {
+          "id": 2,
+          "title": "Failed jobs (recent)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "sum(kube_job_status_failed{namespace=\"automation\", job_name=~\"renovate-.*\"})", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "thresholds": { "steps": [ { "value": null, "color": "green" }, { "value": 1, "color": "red" } ] } } }
+        },
+        {
+          "id": 3,
+          "title": "Job completions over time",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "kube_job_status_succeeded{namespace=\"automation\", job_name=~\"renovate-.*\"}", "refId": "A", "legendFormat": "succeeded: {{job_name}}" },
+            { "expr": "kube_job_status_failed{namespace=\"automation\", job_name=~\"renovate-.*\"}", "refId": "B", "legendFormat": "failed: {{job_name}}" }
+          ]
+        }
+      ]
+    }

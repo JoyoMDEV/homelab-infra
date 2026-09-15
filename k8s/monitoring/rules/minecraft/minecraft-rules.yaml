@@ -1,0 +1,44 @@
+# No "minecraft" external-secrets category exists (its secret lives at a
+# raw homelab/minecraft/rcon Vault path, not under external-secrets/<cat>/)
+# - falls back to its own namespace as the category, same pattern as
+# external-secrets/garage would if either needed one.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: minecraft-rules
+  namespace: minecraft
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: minecraft.rules
+      rules:
+        - alert: MinecraftPodNotReady
+          expr: kube_pod_container_status_ready{namespace="minecraft", container="minecraft"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            service: minecraft
+          annotations:
+            summary: "Minecraft server pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 5 minutes."
+
+        - alert: MinecraftPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="minecraft", container="minecraft"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: minecraft
+          annotations:
+            summary: "Minecraft server pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."
+
+        - alert: MinecraftPVCAlmostFull
+          expr: (1 - (kubelet_volume_stats_available_bytes{namespace="minecraft", persistentvolumeclaim="minecraft-data"} / kubelet_volume_stats_capacity_bytes{namespace="minecraft", persistentvolumeclaim="minecraft-data"})) > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            service: minecraft
+          annotations:
+            summary: "Minecraft world data PVC almost full"
+            description: "PVC minecraft-data is {{ $value | humanizePercentage }} full."

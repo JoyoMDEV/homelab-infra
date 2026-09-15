@@ -1,0 +1,34 @@
+# Traefik itself doesn't expose Prometheus metrics yet in this cluster
+# (no metrics.prometheus toggle set) - generic pod health only for now.
+# Enabling Traefik's own request/error-rate metrics is a good next step
+# since it's the single ingress point for every *.homelab.local host.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: traefik-public-rules
+  namespace: public
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: traefik-public.rules
+      rules:
+        - alert: TraefikPublicPodNotReady
+          expr: kube_pod_container_status_ready{namespace="public", container="traefik-public"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: traefik-public
+          annotations:
+            summary: "traefik-public pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 5 minutes - every *.homelab.local ingress route depends on this."
+
+        - alert: TraefikPublicPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="public", container="traefik-public"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: traefik-public
+          annotations:
+            summary: "traefik-public pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."

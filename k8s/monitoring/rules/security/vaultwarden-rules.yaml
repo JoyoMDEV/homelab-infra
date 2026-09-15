@@ -1,0 +1,40 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vaultwarden-rules
+  namespace: security
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: vaultwarden.rules
+      rules:
+        - alert: VaultwardenPodNotReady
+          expr: kube_pod_container_status_ready{namespace="security", container="vaultwarden"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: vaultwarden
+          annotations:
+            summary: "Vaultwarden pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 5 minutes."
+
+        - alert: VaultwardenPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="security", container="vaultwarden"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: vaultwarden
+          annotations:
+            summary: "Vaultwarden pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."
+
+        - alert: VaultwardenPVCAlmostFull
+          expr: (1 - (kubelet_volume_stats_available_bytes{namespace="security", persistentvolumeclaim="vaultwarden-data-vaultwarden-0"} / kubelet_volume_stats_capacity_bytes{namespace="security", persistentvolumeclaim="vaultwarden-data-vaultwarden-0"})) > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            service: vaultwarden
+          annotations:
+            summary: "Vaultwarden PVC almost full"
+            description: "PVC vaultwarden-data-vaultwarden-0 is {{ $value | humanizePercentage }} full."

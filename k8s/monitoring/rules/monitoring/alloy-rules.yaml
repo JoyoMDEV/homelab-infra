@@ -1,0 +1,30 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: alloy-rules
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: alloy.rules
+      rules:
+        - alert: AlloyDaemonSetNotFullyReady
+          expr: kube_daemonset_status_number_ready{namespace="monitoring", daemonset="alloy"} < kube_daemonset_status_desired_number_scheduled{namespace="monitoring", daemonset="alloy"}
+          for: 15m
+          labels:
+            severity: warning
+            service: alloy
+          annotations:
+            summary: "Alloy DaemonSet not fully ready"
+            description: "{{ $value }} node(s) missing a ready Alloy pod - logs from those nodes aren't reaching Loki."
+
+        - alert: AlloyPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="monitoring", container="alloy"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: alloy
+          annotations:
+            summary: "Alloy pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."

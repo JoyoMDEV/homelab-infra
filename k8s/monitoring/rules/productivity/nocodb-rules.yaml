@@ -1,0 +1,30 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nocodb-rules
+  namespace: productivity
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: nocodb.rules
+      rules:
+        - alert: NocodbPodNotReady
+          expr: kube_pod_container_status_ready{namespace="productivity", container="nocodb"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            service: nocodb
+          annotations:
+            summary: "NocoDB pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 5 minutes."
+
+        - alert: NocodbPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="productivity", container="nocodb"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: nocodb
+          annotations:
+            summary: "NocoDB pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."

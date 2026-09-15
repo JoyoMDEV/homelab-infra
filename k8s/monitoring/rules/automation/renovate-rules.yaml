@@ -1,0 +1,33 @@
+# Renovate runs as a daily CronJob, not a long-lived pod - pod-restart
+# alerts don't fit. Alerts on the Job's own failure status instead
+# (standard kube-state-metrics kube_job_status_failed).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: renovate-rules
+  namespace: automation
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: renovate.rules
+      rules:
+        - alert: RenovateJobFailed
+          expr: kube_job_status_failed{namespace="automation", job_name=~"renovate-.*"} > 0
+          for: 5m
+          labels:
+            severity: warning
+            service: renovate
+          annotations:
+            summary: "Renovate job failed"
+            description: "{{ $labels.job_name }} reported a failure."
+
+        - alert: RenovateJobNotRunRecently
+          expr: (time() - max(kube_cronjob_status_last_successful_time{namespace="automation", cronjob="renovate"})) > 172800
+          for: 5m
+          labels:
+            severity: warning
+            service: renovate
+          annotations:
+            summary: "Renovate hasn't run successfully in over 48h"
+            description: "Last successful run was {{ $value | humanizeDuration }} ago - the daily 06:00 schedule may have stopped working."

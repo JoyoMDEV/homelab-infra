@@ -1,0 +1,43 @@
+# One file covering all three pods of the Overleaf app (overleaf,
+# overleaf-mongo, overleaf-redis) - one ArgoCD Application, same pattern
+# as gitlab/supabase above.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: overleaf-rules
+  namespace: overleaf
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: overleaf.rules
+      rules:
+        - alert: OverleafComponentNotReady
+          expr: kube_pod_container_status_ready{namespace="overleaf", container=~"overleaf|mongo|redis"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            service: overleaf
+          annotations:
+            summary: "Overleaf component {{ $labels.container }} not ready"
+            description: "{{ $labels.pod }} ({{ $labels.container }}) has not been ready for 5 minutes."
+
+        - alert: OverleafComponentCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="overleaf", container=~"overleaf|mongo|redis"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: overleaf
+          annotations:
+            summary: "Overleaf component {{ $labels.container }} restarting repeatedly"
+            description: "{{ $labels.pod }} ({{ $labels.container }}) restarted {{ $value }} times in the last 15 minutes."
+
+        - alert: OverleafPVCAlmostFull
+          expr: (1 - (kubelet_volume_stats_available_bytes{namespace="overleaf", persistentvolumeclaim=~"overleaf-(data|mongo-data|redis-data)"} / kubelet_volume_stats_capacity_bytes{namespace="overleaf", persistentvolumeclaim=~"overleaf-(data|mongo-data|redis-data)"})) > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            service: overleaf
+          annotations:
+            summary: "Overleaf PVC almost full"
+            description: "PVC {{ $labels.persistentvolumeclaim }} is {{ $value | humanizePercentage }} full."

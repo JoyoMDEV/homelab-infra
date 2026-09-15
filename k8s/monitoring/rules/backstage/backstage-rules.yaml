@@ -1,0 +1,30 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: backstage-rules
+  namespace: backstage
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: backstage.rules
+      rules:
+        - alert: BackstagePodNotReady
+          expr: kube_pod_container_status_ready{namespace="backstage", container="backstage"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            service: backstage
+          annotations:
+            summary: "Backstage pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 5 minutes."
+
+        - alert: BackstagePodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="backstage", container="backstage"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: backstage
+          annotations:
+            summary: "Backstage pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."

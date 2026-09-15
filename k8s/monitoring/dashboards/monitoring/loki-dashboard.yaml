@@ -1,0 +1,64 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: loki-dashboard
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "monitoring-grafana"
+  json: |
+    {
+      "title": "Loki",
+      "uid": "loki-monitoring",
+      "tags": ["homelab", "monitoring"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Push requests/s by status",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "sum by (status_code) (rate(loki_request_duration_seconds_count{route=\"loki_api_v1_push\"}[5m]))", "refId": "A", "legendFormat": "{{status_code}}" }
+          ]
+        },
+        {
+          "id": 2,
+          "title": "Query latency p99 by route",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "histogram_quantile(0.99, sum by (route, le) (rate(loki_request_duration_seconds_bucket{route=~\"loki_api_v1_query.*\"}[5m])))", "refId": "A", "legendFormat": "{{route}}" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "s" } }
+        },
+        {
+          "id": 3,
+          "title": "Active streams",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "sum(loki_ingester_streams_created_total) - sum(loki_ingester_streams_removed_total)", "refId": "A" }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Panics (total)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "sum(loki_panic_total)", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "thresholds": { "steps": [ { "value": null, "color": "green" }, { "value": 1, "color": "red" } ] } } }
+        }
+      ]
+    }

@@ -1,0 +1,53 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: supabase-dashboard
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "monitoring-grafana"
+  json: |
+    {
+      "title": "Supabase",
+      "uid": "supabase",
+      "tags": ["homelab", "supabase"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "1m",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Components not ready",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "count(kube_pod_container_status_ready{namespace=\"supabase\", container=~\"supabase-(auth|functions|imgproxy|kong|meta|realtime|rest|storage|studio)\"} == 0)", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "thresholds": { "steps": [ { "value": null, "color": "green" }, { "value": 1, "color": "red" } ] } } }
+        },
+        {
+          "id": 2,
+          "title": "Total restarts (15m increase)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"supabase\", container=~\"supabase-(auth|functions|imgproxy|kong|meta|realtime|rest|storage|studio)\"}[15m]))", "refId": "A" }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "Readiness by component",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "kube_pod_container_status_ready{namespace=\"supabase\", container=~\"supabase-(auth|functions|imgproxy|kong|meta|realtime|rest|storage|studio)\"}", "refId": "A", "legendFormat": "{{container}}" }
+          ]
+        }
+      ]
+    }

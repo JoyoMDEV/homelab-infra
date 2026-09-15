@@ -1,0 +1,42 @@
+# Covers the "public" ArgoCD Application (Authelia). traefik-public is a
+# separate ArgoCD app in the same namespace - see traefik-public-rules.yaml.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: public-rules
+  namespace: public
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: public.rules
+      rules:
+        - alert: AutheliaPodNotReady
+          expr: kube_pod_container_status_ready{namespace="public", container="authelia"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: authelia
+          annotations:
+            summary: "Authelia pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 5 minutes - this gates access to everything behind it."
+
+        - alert: AutheliaPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="public", container="authelia"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: authelia
+          annotations:
+            summary: "Authelia pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."
+
+        - alert: AutheliaPVCAlmostFull
+          expr: (1 - (kubelet_volume_stats_available_bytes{namespace="public", persistentvolumeclaim="authelia-data"} / kubelet_volume_stats_capacity_bytes{namespace="public", persistentvolumeclaim="authelia-data"})) > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            service: authelia
+          annotations:
+            summary: "Authelia PVC almost full"
+            description: "PVC authelia-data is {{ $value | humanizePercentage }} full."

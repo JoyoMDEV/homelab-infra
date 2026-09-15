@@ -1,0 +1,46 @@
+# One file for the whole Supabase app (one ArgoCD Application, many
+# containers: auth/functions/imgproxy/kong/meta/realtime/rest/storage/
+# studio) rather than nine - matches "one file per service" where the
+# service is the ArgoCD app, same as gitlab covers both its pods.
+# supabase-pg (CNPG) has its own rules file since it's a separate
+# database engine with its own real metrics.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: supabase-rules
+  namespace: supabase
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: supabase.rules
+      rules:
+        - alert: SupabaseComponentNotReady
+          expr: kube_pod_container_status_ready{namespace="supabase", container=~"supabase-(auth|functions|imgproxy|kong|meta|realtime|rest|storage|studio)"} == 0
+          for: 10m
+          labels:
+            severity: warning
+            service: supabase
+          annotations:
+            summary: "Supabase component {{ $labels.container }} not ready"
+            description: "{{ $labels.pod }} ({{ $labels.container }}) has not been ready for 10 minutes."
+
+        - alert: SupabaseComponentCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="supabase", container=~"supabase-(auth|functions|imgproxy|kong|meta|realtime|rest|storage|studio)"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: supabase
+          annotations:
+            summary: "Supabase component {{ $labels.container }} restarting repeatedly"
+            description: "{{ $labels.pod }} ({{ $labels.container }}) restarted {{ $value }} times in the last 15 minutes."
+
+        - alert: SupabasePVCAlmostFull
+          expr: (1 - (kubelet_volume_stats_available_bytes{namespace="supabase", persistentvolumeclaim=~"supabase-(imgproxy|snippets|storage)"} / kubelet_volume_stats_capacity_bytes{namespace="supabase", persistentvolumeclaim=~"supabase-(imgproxy|snippets|storage)"})) > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            service: supabase
+          annotations:
+            summary: "Supabase PVC almost full"
+            description: "PVC {{ $labels.persistentvolumeclaim }} is {{ $value | humanizePercentage }} full."

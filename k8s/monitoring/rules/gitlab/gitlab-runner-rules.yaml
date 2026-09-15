@@ -1,0 +1,30 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: gitlab-runner-rules
+  namespace: gitlab
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: gitlab-runner.rules
+      rules:
+        - alert: GitlabRunnerPodNotReady
+          expr: kube_pod_container_status_ready{namespace="gitlab", container="gitlab-runner"} == 0
+          for: 10m
+          labels:
+            severity: warning
+            service: gitlab-runner
+          annotations:
+            summary: "GitLab Runner pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 10 minutes - CI pipelines will queue without running."
+
+        - alert: GitlabRunnerPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="gitlab", container="gitlab-runner"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: gitlab-runner
+          annotations:
+            summary: "GitLab Runner pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."

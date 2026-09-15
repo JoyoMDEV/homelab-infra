@@ -1,0 +1,127 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: backstage-dashboard
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: monitoring-grafana
+  json: |-
+    {
+      "title": "Backstage (backstage)",
+      "uid": "backstage-backstage",
+      "tags": [
+        "homelab",
+        "backstage"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "1m",
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Pod ready",
+          "type": "stat",
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 0,
+            "y": 0
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "kube_pod_container_status_ready{namespace=\"backstage\", container=\"backstage\"}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Not ready",
+                      "color": "red"
+                    },
+                    "1": {
+                      "text": "Ready",
+                      "color": "green"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": 2,
+          "title": "Pod restarts (15m increase)",
+          "type": "stat",
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 6,
+            "y": 0
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"backstage\", container=\"backstage\"}[15m])",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  {
+                    "value": null,
+                    "color": "green"
+                  },
+                  {
+                    "value": 1,
+                    "color": "red"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 4,
+          "title": "Restarts over time",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 6
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"backstage\", container=\"backstage\"}[15m])",
+              "refId": "A",
+              "legendFormat": "{{pod}}"
+            }
+          ]
+        }
+      ]
+    }

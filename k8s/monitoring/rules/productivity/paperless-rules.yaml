@@ -1,0 +1,40 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: paperless-rules
+  namespace: productivity
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: paperless.rules
+      rules:
+        - alert: PaperlessPodNotReady
+          expr: kube_pod_container_status_ready{namespace="productivity", container="paperless-paperless-ngx"} == 0
+          for: 5m
+          labels:
+            severity: warning
+            service: paperless
+          annotations:
+            summary: "Paperless-ngx pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 5 minutes."
+
+        - alert: PaperlessPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="productivity", pod=~"paperless-.*"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: paperless
+          annotations:
+            summary: "Paperless-ngx pod restarting repeatedly"
+            description: "{{ $labels.pod }}/{{ $labels.container }} restarted {{ $value }} times in the last 15 minutes."
+
+        - alert: PaperlessPVCAlmostFull
+          expr: (1 - (kubelet_volume_stats_available_bytes{namespace="productivity", persistentvolumeclaim=~"paperless-paperless-ngx-(consume|data|export|media)"} / kubelet_volume_stats_capacity_bytes{namespace="productivity", persistentvolumeclaim=~"paperless-paperless-ngx-(consume|data|export|media)"})) > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            service: paperless
+          annotations:
+            summary: "Paperless-ngx PVC almost full"
+            description: "PVC {{ $labels.persistentvolumeclaim }} is {{ $value | humanizePercentage }} full."

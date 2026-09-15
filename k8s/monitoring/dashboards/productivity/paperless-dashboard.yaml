@@ -1,0 +1,155 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: paperless-dashboard
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: monitoring-grafana
+  json: |-
+    {
+      "title": "Paperless-ngx (productivity)",
+      "uid": "paperless-productivity",
+      "tags": [
+        "homelab",
+        "productivity"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "1m",
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Pod ready",
+          "type": "stat",
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 0,
+            "y": 0
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "kube_pod_container_status_ready{namespace=\"productivity\", container=\"paperless-paperless-ngx\"}",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Not ready",
+                      "color": "red"
+                    },
+                    "1": {
+                      "text": "Ready",
+                      "color": "green"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": 2,
+          "title": "Pod restarts (15m increase)",
+          "type": "stat",
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 6,
+            "y": 0
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"productivity\", container=\"paperless-paperless-ngx\"}[15m])",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  {
+                    "value": null,
+                    "color": "green"
+                  },
+                  {
+                    "value": 1,
+                    "color": "red"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 3,
+          "title": "PVC usage %",
+          "type": "gauge",
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 12,
+            "y": 0
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "100 * (1 - (kubelet_volume_stats_available_bytes{namespace=\"productivity\", persistentvolumeclaim=\"paperless-paperless-ngx-data\"} / kubelet_volume_stats_capacity_bytes{namespace=\"productivity\", persistentvolumeclaim=\"paperless-paperless-ngx-data\"}))",
+              "refId": "A"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "max": 100,
+              "min": 0
+            }
+          }
+        },
+        {
+          "id": 4,
+          "title": "Restarts over time",
+          "type": "timeseries",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 6
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"productivity\", container=\"paperless-paperless-ngx\"}[15m])",
+              "refId": "A",
+              "legendFormat": "{{pod}}"
+            }
+          ]
+        }
+      ]
+    }

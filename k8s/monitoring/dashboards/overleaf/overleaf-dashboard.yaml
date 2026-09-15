@@ -1,0 +1,64 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: overleaf-dashboard
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "monitoring-grafana"
+  json: |
+    {
+      "title": "Overleaf",
+      "uid": "overleaf",
+      "tags": ["homelab", "overleaf"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "1m",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Components not ready",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "count(kube_pod_container_status_ready{namespace=\"overleaf\", container=~\"overleaf|mongo|redis\"} == 0)", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "thresholds": { "steps": [ { "value": null, "color": "green" }, { "value": 1, "color": "red" } ] } } }
+        },
+        {
+          "id": 2,
+          "title": "Total restarts (15m increase)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"overleaf\", container=~\"overleaf|mongo|redis\"}[15m]))", "refId": "A" }
+          ]
+        },
+        {
+          "id": 3,
+          "title": "PVC usage %",
+          "type": "gauge",
+          "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "100 * (1 - (kubelet_volume_stats_available_bytes{namespace=\"overleaf\", persistentvolumeclaim=\"overleaf-data\"} / kubelet_volume_stats_capacity_bytes{namespace=\"overleaf\", persistentvolumeclaim=\"overleaf-data\"}))", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "percent", "max": 100, "min": 0 } }
+        },
+        {
+          "id": 4,
+          "title": "Readiness by component",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "kube_pod_container_status_ready{namespace=\"overleaf\", container=~\"overleaf|mongo|redis\"}", "refId": "A", "legendFormat": "{{container}}" }
+          ]
+        }
+      ]
+    }
