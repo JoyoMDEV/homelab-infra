@@ -242,3 +242,10 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true   # nötig wegen CRD-Größe bei kube-prometheus-stack
+      # ignoreDifferences allein blendet den storageClassName-Diff nur in der
+      # Health-/Sync-Anzeige aus - der eigentliche Sync-Versuch (genauer: die
+      # einmalige CSA->SSA-Migration dieser PVC) patcht das Feld trotzdem mit
+      # und scheitert dann am "immutable after creation"-Fehler der API.
+      # RespectIgnoreDifferences nimmt das Feld auch aus dem tatsächlichen
+      # Apply-Payload raus, nicht nur aus der Diff-Berechnung.
+      - RespectIgnoreDifferences=true
