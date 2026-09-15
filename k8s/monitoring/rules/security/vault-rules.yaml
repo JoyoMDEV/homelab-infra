@@ -1,0 +1,54 @@
+# Vault wasn't scraped before this change - needed both a telemetry{}
+# stanza in its config (k8s/argocd/applications/vault.yaml) and
+# serverTelemetry.serviceMonitor.enabled. vault_core_unsealed is
+# HashiCorp's own long-stable metric name - verify after first scrape.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vault-rules
+  namespace: security
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: vault.rules
+      rules:
+        - alert: VaultSealed
+          expr: vault_core_unsealed{namespace="security"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: vault
+          annotations:
+            summary: "Vault is sealed"
+            description: "vault_core_unsealed has been 0 for 5 minutes - every ExternalSecret sync in the cluster is blocked while Vault is sealed."
+
+        - alert: VaultPodNotReady
+          expr: kube_pod_container_status_ready{namespace="security", container="vault"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: vault
+          annotations:
+            summary: "Vault pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 5 minutes."
+
+        - alert: VaultPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="security", container="vault"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: vault
+          annotations:
+            summary: "Vault pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."
+
+        - alert: VaultPVCAlmostFull
+          expr: (1 - (kubelet_volume_stats_available_bytes{namespace="security", persistentvolumeclaim=~"data-vault-.*"} / kubelet_volume_stats_capacity_bytes{namespace="security", persistentvolumeclaim=~"data-vault-.*"})) > 0.85
+          for: 15m
+          labels:
+            severity: warning
+            service: vault
+          annotations:
+            summary: "Vault PVC almost full"
+            description: "PVC {{ $labels.persistentvolumeclaim }} is {{ $value | humanizePercentage }} full."

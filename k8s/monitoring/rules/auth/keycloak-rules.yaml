@@ -1,0 +1,57 @@
+# Keycloak wasn't scraped before this change - metrics.enabled was already
+# the keycloakx chart default (confirmed in the chart's statefulset
+# template: KC_METRICS_ENABLED is wired from an env var, unaffected by our
+# custom `command:` override), only serviceMonitor.enabled was missing.
+# JVM/HTTP metric names below are standard Micrometer/Quarkus names used
+# across virtually all Quarkus apps - verify the exact set after first
+# scrape, Keycloak may not expose every one depending on version.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: keycloak-rules
+  namespace: auth
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: keycloak.rules
+      rules:
+        - alert: KeycloakPodNotReady
+          expr: kube_pod_container_status_ready{namespace="auth", container="keycloak"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: keycloak
+          annotations:
+            summary: "Keycloak pod not ready"
+            description: "{{ $labels.pod }} has not been ready for 5 minutes - this is the OIDC provider for every other service, treat as high-impact."
+
+        - alert: KeycloakPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="auth", container="keycloak"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: keycloak
+          annotations:
+            summary: "Keycloak pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."
+
+        - alert: KeycloakHeapUsageHigh
+          expr: jvm_memory_used_bytes{namespace="auth", area="heap"} / jvm_memory_max_bytes{namespace="auth", area="heap"} > 0.9
+          for: 15m
+          labels:
+            severity: warning
+            service: keycloak
+          annotations:
+            summary: "Keycloak JVM heap usage above 90%"
+            description: "Heap is {{ $value | humanizePercentage }} full - risk of GC pressure or OOM."
+
+        - alert: KeycloakHttpServerErrorsHigh
+          expr: increase(http_server_requests_seconds_count{namespace="auth", outcome="SERVER_ERROR"}[15m]) > 10
+          for: 5m
+          labels:
+            severity: warning
+            service: keycloak
+          annotations:
+            summary: "Keycloak returning server errors"
+            description: "{{ $value }} HTTP 5xx responses in the last 15 minutes."

@@ -1,0 +1,65 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cert-manager-dashboard
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "monitoring-grafana"
+  json: |
+    {
+      "title": "cert-manager",
+      "uid": "cert-manager",
+      "tags": ["homelab", "cert-manager"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "5m",
+      "time": { "from": "now-30d", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Certificates not Ready",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "count(certmanager_certificate_ready_status{condition=\"False\"} == 1)", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "thresholds": { "steps": [ { "value": null, "color": "green" }, { "value": 1, "color": "red" } ] } } }
+        },
+        {
+          "id": 2,
+          "title": "Soonest expiry (days)",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "min((certmanager_certificate_expiration_timestamp_seconds - time()) / 86400)", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "d", "thresholds": { "steps": [ { "value": null, "color": "green" }, { "value": 14, "color": "yellow" }, { "value": 7, "color": "red" } ] } } }
+        },
+        {
+          "id": 3,
+          "title": "Certificate expiry by name (days remaining)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "(certmanager_certificate_expiration_timestamp_seconds - time()) / 86400", "refId": "A", "legendFormat": "{{namespace}}/{{name}}" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "d" } }
+        },
+        {
+          "id": 4,
+          "title": "Pod restarts (15m increase)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"cert-manager\"}[15m])", "refId": "A", "legendFormat": "{{pod}}" }
+          ]
+        }
+      ]
+    }

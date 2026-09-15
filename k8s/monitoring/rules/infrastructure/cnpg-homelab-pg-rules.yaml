@@ -1,0 +1,53 @@
+# Single-instance cluster (no replicas), so no WAL-receiver/replication
+# rules - cnpg_pg_replication_is_wal_receiver_up is legitimately 0 here
+# and would be a permanent false positive.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cnpg-homelab-pg-rules
+  namespace: infrastructure
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: cnpg-homelab-pg.rules
+      rules:
+        - alert: CnpgHomelabPgExporterDown
+          expr: cnpg_collector_up{cluster="homelab-pg"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: homelab-pg
+          annotations:
+            summary: "homelab-pg CNPG exporter down"
+            description: "cnpg_collector_up has been 0 for 5 minutes - can't tell if Postgres itself is healthy."
+
+        - alert: CnpgHomelabPgCollectorError
+          expr: cnpg_collector_last_collection_error{cluster="homelab-pg"} == 1
+          for: 10m
+          labels:
+            severity: warning
+            service: homelab-pg
+          annotations:
+            summary: "homelab-pg CNPG metrics collector reporting errors"
+            description: "cnpg_collector_last_collection_error has been 1 for 10 minutes."
+
+        - alert: CnpgHomelabPgBackupStale
+          expr: (time() - cnpg_collector_last_available_backup_timestamp{cluster="homelab-pg"}) > 100000
+          for: 5m
+          labels:
+            severity: critical
+            service: homelab-pg
+          annotations:
+            summary: "No successful homelab-pg backup in over ~28h"
+            description: "It's been {{ $value | humanizeDuration }} since the last successful CNPG-native backup."
+
+        - alert: CnpgHomelabPgPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="infrastructure", pod=~"homelab-pg-.*", container="postgres"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: homelab-pg
+          annotations:
+            summary: "homelab-pg pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."

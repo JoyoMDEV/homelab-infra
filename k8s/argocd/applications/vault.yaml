@@ -34,13 +34,21 @@ spec:
               ui = true
 
               listener "tcp" {
-                tls_disable     = 1
-                address         = "[::]:8200"
-                cluster_address = "[::]:8201"
+                tls_disable                  = 1
+                address                      = "[::]:8200"
+                cluster_address              = "[::]:8201"
+                # Kein Vault-Token für den /v1/sys/metrics-Scrape nötig -
+                # Prometheus läuft im selben Cluster, kein externer Zugriff.
+                unauthenticated_metrics_access = true
               }
 
               storage "file" {
                 path = "/vault/data"
+              }
+
+              telemetry {
+                prometheus_retention_time = "30s"
+                disable_hostname           = true
               }
 
               # Audit Log (wird später via auditLog aktiviert)
@@ -105,6 +113,14 @@ spec:
         ui:
           enabled: true
           serviceType: ClusterIP
+
+        # ── Prometheus Metrics ───────────────────────────────────────────────
+        serverTelemetry:
+          prometheusOperator: true
+          serviceMonitor:
+            enabled: true
+            selectors:
+              release: monitoring
 
   destination:
     server: https://kubernetes.default.svc

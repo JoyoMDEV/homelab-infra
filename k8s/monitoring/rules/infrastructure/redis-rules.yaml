@@ -56,7 +56,12 @@ spec:
             description: "redis_up has been 0 for 5 minutes on {{ $labels.instance }}."
 
         - alert: RedisMemoryHigh
-          expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+          # redis_memory_max_bytes was 0 before maxmemory got configured
+          # (see redis.yaml commonConfiguration), which made this ratio
+          # evaluate to Infinity and fire permanently - the `> 0` guard
+          # stays even now that maxmemory is set, so this can't regress
+          # silently if that config is ever removed again.
+          expr: redis_memory_max_bytes > 0 and (redis_memory_used_bytes / redis_memory_max_bytes) > 0.9
           for: 10m
           labels:
             severity: warning

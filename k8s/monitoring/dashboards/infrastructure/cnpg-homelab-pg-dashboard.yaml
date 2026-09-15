@@ -1,0 +1,71 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cnpg-homelab-pg-dashboard
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "monitoring-grafana"
+  json: |
+    {
+      "title": "Postgres: homelab-pg (CNPG)",
+      "uid": "cnpg-homelab-pg",
+      "tags": ["homelab", "infrastructure", "postgres"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Exporter up",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "cnpg_collector_up{cluster=\"homelab-pg\"}", "refId": "A" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "type": "value", "options": { "0": { "text": "Down", "color": "red" }, "1": { "text": "Up", "color": "green" } } }
+              ]
+            }
+          }
+        },
+        {
+          "id": 2,
+          "title": "Hours since last successful backup",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "(time() - cnpg_collector_last_available_backup_timestamp{cluster=\"homelab-pg\"}) / 3600", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "h", "thresholds": { "steps": [ { "value": null, "color": "green" }, { "value": 26, "color": "yellow" }, { "value": 28, "color": "red" } ] } } }
+        },
+        {
+          "id": 3,
+          "title": "Active backends",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "cnpg_backends_total{cluster=\"homelab-pg\"}", "refId": "A", "legendFormat": "backends" }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Cache hit ratio",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "sum(rate(cnpg_cache_hits{cluster=\"homelab-pg\"}[5m])) / (sum(rate(cnpg_cache_hits{cluster=\"homelab-pg\"}[5m])) + sum(rate(cnpg_cache_miss{cluster=\"homelab-pg\"}[5m])))", "refId": "A", "legendFormat": "hit ratio" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 } }
+        }
+      ]
+    }

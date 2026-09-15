@@ -1,0 +1,46 @@
+# No CNPG-native backup is configured for this cluster yet
+# (cnpg_collector_last_available_backup_timestamp reads 0, unlike
+# homelab-pg's) - not alerted on here since it's unclear whether that's
+# intentional (relying on Velero's namespace-level backup instead) or a
+# gap; worth a follow-up decision before this cluster is trusted with real
+# data. Same single-instance caveat as homelab-pg - no replication rules.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cnpg-supabase-pg-rules
+  namespace: supabase
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: cnpg-supabase-pg.rules
+      rules:
+        - alert: CnpgSupabasePgExporterDown
+          expr: cnpg_collector_up{cluster="supabase-pg"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            service: supabase-pg
+          annotations:
+            summary: "supabase-pg CNPG exporter down"
+            description: "cnpg_collector_up has been 0 for 5 minutes - can't tell if Postgres itself is healthy."
+
+        - alert: CnpgSupabasePgCollectorError
+          expr: cnpg_collector_last_collection_error{cluster="supabase-pg"} == 1
+          for: 10m
+          labels:
+            severity: warning
+            service: supabase-pg
+          annotations:
+            summary: "supabase-pg CNPG metrics collector reporting errors"
+            description: "cnpg_collector_last_collection_error has been 1 for 10 minutes."
+
+        - alert: CnpgSupabasePgPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="supabase", pod=~"supabase-pg-.*", container="postgres"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: supabase-pg
+          annotations:
+            summary: "supabase-pg pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."

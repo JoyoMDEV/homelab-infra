@@ -1,0 +1,76 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: cnpg-supabase-pg-dashboard
+  namespace: monitoring
+spec:
+  instanceSelector:
+    matchLabels:
+      dashboards: "monitoring-grafana"
+  json: |
+    {
+      "title": "Postgres: supabase-pg (CNPG)",
+      "uid": "cnpg-supabase-pg",
+      "tags": ["homelab", "supabase", "postgres"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "time": { "from": "now-6h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Exporter up",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "cnpg_collector_up{cluster=\"supabase-pg\"}", "refId": "A" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "type": "value", "options": { "0": { "text": "Down", "color": "red" }, "1": { "text": "Up", "color": "green" } } }
+              ]
+            }
+          }
+        },
+        {
+          "id": 2,
+          "title": "Native backup configured?",
+          "type": "stat",
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 0 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "cnpg_collector_last_available_backup_timestamp{cluster=\"supabase-pg\"} > 0", "refId": "A" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "type": "value", "options": { "0": { "text": "No", "color": "yellow" }, "1": { "text": "Yes", "color": "green" } } }
+              ]
+            }
+          }
+        },
+        {
+          "id": 3,
+          "title": "Active backends",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "cnpg_backends_total{cluster=\"supabase-pg\"}", "refId": "A", "legendFormat": "backends" }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Pod restarts (15m increase)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "targets": [
+            { "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"supabase\", pod=~\"supabase-pg-.*\"}[15m])", "refId": "A", "legendFormat": "{{pod}}" }
+          ]
+        }
+      ]
+    }

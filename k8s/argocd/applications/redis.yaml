@@ -34,6 +34,18 @@ spec:
         replica:
           replicaCount: 0
 
+        # No maxmemory was configured before this change, which left
+        # redis_memory_max_bytes at 0 - every used/max ratio (dashboard
+        # panel, RedisMemoryHigh alert) evaluated to Infinity, and the
+        # alert was permanently (falsely) firing as a result. Bounded to
+        # comfortably under the 256Mi container limit, leaving headroom
+        # for the redis process itself.
+        commonConfiguration: |-
+          appendonly yes
+          save ""
+          maxmemory 200mb
+          maxmemory-policy allkeys-lru
+
         # Prometheus metrics via the bundled redis_exporter sidecar - was
         # off before, meaning no redis_* series existed for alerting/
         # dashboards (only generic kube-state-metrics pod health).

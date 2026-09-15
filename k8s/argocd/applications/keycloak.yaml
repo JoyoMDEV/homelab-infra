@@ -82,6 +82,14 @@ spec:
                 - auth.homelab.local
               secretName: homelab-wildcard-tls
 
+        # ── Prometheus Metrics ───────────────────────────────────────────────
+        # metrics.enabled is already the chart default (true) - only the
+        # ServiceMonitor itself was missing, so nothing was being scraped.
+        serviceMonitor:
+          enabled: true
+          labels:
+            release: monitoring
+
   destination:
     server: https://kubernetes.default.svc
     namespace: auth

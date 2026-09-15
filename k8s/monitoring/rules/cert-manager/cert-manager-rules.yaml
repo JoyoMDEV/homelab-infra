@@ -1,0 +1,56 @@
+# cert-manager wasn't scraped at all before this change (see
+# k8s/infrastructure/cert-manager-servicemonitor.yaml - metrics port
+# existed already, just no ServiceMonitor). Metric names below are
+# cert-manager's own long-stable public metrics
+# (certmanager_certificate_expiration_timestamp_seconds,
+# certmanager_certificate_ready_status) - verify after first scrape.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cert-manager-rules
+  namespace: cert-manager
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: cert-manager.rules
+      rules:
+        - alert: CertificateNotReady
+          expr: certmanager_certificate_ready_status{condition="False"} == 1
+          for: 1h
+          labels:
+            severity: warning
+            service: cert-manager
+          annotations:
+            summary: "Certificate {{ $labels.name }} not Ready"
+            description: "{{ $labels.namespace }}/{{ $labels.name }} has been not-Ready for over an hour - renewal or issuance may be failing."
+
+        - alert: CertificateExpiringSoon
+          expr: (certmanager_certificate_expiration_timestamp_seconds - time()) < (7 * 86400)
+          for: 1h
+          labels:
+            severity: warning
+            service: cert-manager
+          annotations:
+            summary: "Certificate {{ $labels.name }} expires within 7 days"
+            description: "{{ $labels.namespace }}/{{ $labels.name }} expires in {{ $value | humanizeDuration }} - auto-renewal should happen well before this, investigate if it's still this close."
+
+        - alert: CertificateExpiringCritical
+          expr: (certmanager_certificate_expiration_timestamp_seconds - time()) < 86400
+          for: 15m
+          labels:
+            severity: critical
+            service: cert-manager
+          annotations:
+            summary: "Certificate {{ $labels.name }} expires within 24h"
+            description: "{{ $labels.namespace }}/{{ $labels.name }} expires in {{ $value | humanizeDuration }} - renewal has almost certainly failed."
+
+        - alert: CertManagerPodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total{namespace="cert-manager"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+            service: cert-manager
+          annotations:
+            summary: "cert-manager pod restarting repeatedly"
+            description: "{{ $labels.pod }} restarted {{ $value }} times in the last 15 minutes."

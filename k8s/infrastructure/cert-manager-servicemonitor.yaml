@@ -1,0 +1,20 @@
+# cert-manager itself is installed outside ArgoCD (scripts/bootstrap-certmanager.sh,
+# a one-off helm install), so its Helm values aren't reachable from this repo -
+# but its controller already exposes metrics on :9402 by default (confirmed live,
+# `cert-manager` Service already has that port) - just needed a ServiceMonitor to
+# actually get scraped. Synced by the plain-manifest "infrastructure" ArgoCD app.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cert-manager
+  namespace: cert-manager
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cert-manager
+      app.kubernetes.io/component: controller
+  endpoints:
+    - port: tcp-prometheus-servicemonitor
+      interval: 60s

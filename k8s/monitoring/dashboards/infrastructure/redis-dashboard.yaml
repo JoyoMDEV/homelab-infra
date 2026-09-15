@@ -70,7 +70,7 @@ spec:
           "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "targets": [
-            { "expr": "100 * redis_memory_used_bytes{namespace=\"infrastructure\"} / redis_memory_max_bytes{namespace=\"infrastructure\"}", "refId": "A" }
+            { "expr": "(100 * redis_memory_used_bytes{namespace=\"infrastructure\"} / redis_memory_max_bytes{namespace=\"infrastructure\"}) and (redis_memory_max_bytes{namespace=\"infrastructure\"} > 0)", "refId": "A" }
           ],
           "fieldConfig": { "defaults": { "unit": "percent", "max": 100, "min": 0 } }
         },
