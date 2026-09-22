@@ -26,7 +26,7 @@ set -euo pipefail
 
 VAULT_NS="security"
 VAULT_POD="vault-0"
-VAULT_PATH="gitlab/runner-secret"
+VAULT_PATH="homelab/gitlab/runner-secret"
 NAMESPACE="gitlab"
 
 : "${VAULT_TOKEN:?Bitte VAULT_TOKEN als Env-Var setzen}"
@@ -107,7 +107,7 @@ echo "    homelab-ca Secret: OK"
 
 # ─── Token nach Vault schreiben ──────────────────────────────────────────────
 echo ""
-echo "==> Schreibe Runner Token nach Vault ('homelab/${VAULT_PATH}')..."
+echo "==> Schreibe Runner Token nach Vault ('${VAULT_PATH}')..."
 
 # runner-registration-token bleibt leer - GitLab vergibt darüber nur
 # einmalig neue Registrierungen, der eigentliche Runner läuft über
