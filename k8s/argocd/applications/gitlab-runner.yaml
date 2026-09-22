@@ -48,6 +48,25 @@ spec:
                 [[runners.kubernetes.volumes.empty_dir]]
                   name = "repo"
                   mount_path = "/builds"
+              # Distributed cache on Garage (in-cluster S3, infrastructure
+              # namespace) - without this, cache: paths never survive between
+              # pipeline runs, since the kubernetes executor's job pods are
+              # thrown away after every job. AccessKey/SecretKey come from
+              # the Kubernetes Secret named below (runners.cache.secretName),
+              # never inlined here.
+              [runners.cache]
+                Type = "s3"
+                Path = "gitlab-runner"
+                Shared = true
+                [runners.cache.s3]
+                  ServerAddress = "garage.infrastructure.svc.cluster.local:3900"
+                  BucketName = "gitlab-runner-cache"
+                  BucketLocation = "garage"
+                  Insecure = true
+                  AuthenticationType = "access-key"
+
+          cache:
+            secretName: gitlab-runner-cache-secret
 
         resources:
           requests:

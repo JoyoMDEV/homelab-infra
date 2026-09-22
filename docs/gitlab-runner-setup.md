@@ -16,7 +16,8 @@ Instance Runner im k3s Cluster für alle GitLab Repos.
 3. [Runner deployen](#3-runner-deployen)
 4. [Verifikation](#4-verifikation)
 5. [Pipeline einrichten](#5-pipeline-einrichten)
-6. [Troubleshooting](#6-troubleshooting)
+6. [Distributed Cache (Garage/S3)](#6-distributed-cache-garages3)
+7. [Troubleshooting](#7-troubleshooting)
 
 ---
 
@@ -141,6 +142,9 @@ build:
   image: node:${NODE_VERSION}-alpine
   tags:
     - k8s
+  # Läuft über den Garage-Distributed-Cache (Abschnitt 6) - ohne den würde
+  # dieser cache-Block bei jedem Job leer sein, da jeder Job-Pod des
+  # kubernetes-Executors nach dem Job wieder verworfen wird.
   cache:
     key:
       files:
@@ -203,7 +207,57 @@ GitLab → Repository → Settings → CI/CD → Variables
 
 ---
 
-## 6. Troubleshooting
+## 6. Distributed Cache (Garage/S3)
+
+Der `kubernetes`-Executor startet für jeden Job einen frischen, ephemeren
+Pod — ohne distributed Cache ist ein `cache:`-Block in `.gitlab-ci.yml`
+wirkungslos, weil nichts zwischen zwei Pipeline-Läufen erhalten bleibt.
+Seit [context-hub#26](https://gitlab.homelab.local/homelab/projects/context-hub/-/issues/26)
+nutzt der Runner dafür die im Cluster laufende [Garage](https://garagehq.deuxfleurs.fr)-
+Instanz (S3-kompatibel, `infrastructure` Namespace) als Backend. Details zur
+Entscheidung: `decisions/0001-garage-gitlab-runner-cache.md` im context-hub-Wiki.
+
+**Einmaliges Setup:**
+
+```bash
+export VAULT_TOKEN="..."
+./scripts/setup-gitlab-runner-cache.sh
+```
+
+Das Script:
+- Legt den Garage-Bucket `gitlab-runner-cache` und einen darauf beschränkten
+  Access-Key an (gleiches Muster wie `setup-supabase-storage.sh`).
+- Schreibt die Credentials nach Vault (`homelab/gitlab/runner-cache-secret`).
+- Stößt einen Sync des `gitlab-runner-cache-secret` ExternalSecrets an.
+
+Idempotent — bereits vorhandene Vault-Einträge werden nicht überschrieben.
+
+**Wie es verdrahtet ist:**
+
+- `k8s/argocd/applications/gitlab-runner.yaml`: `[runners.cache]`/
+  `[runners.cache.s3]` in der TOML-Konfiguration (Type, ServerAddress,
+  BucketName, BucketLocation, Insecure — alles unkritische Struktur, keine
+  Secrets) plus `runners.cache.secretName: gitlab-runner-cache-secret` als
+  eigener Helm-Value. Das ist der offizielle Chart-Mechanismus, um
+  AccessKey/SecretKey aus einem Kubernetes Secret statt aus der Application
+  selbst (und damit aus Git) zu ziehen.
+- `k8s/security/external-secrets/gitlab/gitlab-runner-cache-secret.yaml`:
+  ExternalSecret, das die Vault-Credentials unter den vom Chart erwarteten
+  Keys `accesskey`/`secretkey` bereitstellt.
+
+**Verifikation:**
+
+Nach einem Pipeline-Lauf mit `cache:`-Block sollten die Runner-Logs
+`Creating cache ...` und beim nächsten Lauf `Cache ... found` bzw. eine
+schnellere `npm ci`/vergleichbare Install-Stage zeigen:
+
+```bash
+kubectl logs -n gitlab -l app=gitlab-runner --tail=50 | grep -i cache
+```
+
+---
+
+## 7. Troubleshooting
 
 ### Token-Probleme (PANIC: registration-token needs to be entered)
 
