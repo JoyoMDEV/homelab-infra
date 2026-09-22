@@ -1,0 +1,27 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: everything-app-registry-pull
+  namespace: everything-app
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: vault
+    kind: ClusterSecretStore
+  target:
+    name: everything-app-registry-pull
+    creationPolicy: Owner
+    template:
+      type: kubernetes.io/dockerconfigjson
+      data:
+        .dockerconfigjson: |
+          {"auths":{"registry.homelab.local":{"username":"{{ .username }}", "password":"{{ .token }}", "auth":"{{ printf "%s:%s" .username .token | b64enc }}"}}}
+  data:
+    - secretKey: username
+      remoteRef:
+        key: homelab/everything-app/registry-pull-secret
+        property: username
+    - secretKey: token
+      remoteRef:
+        key: homelab/everything-app/registry-pull-secret
+        property: token

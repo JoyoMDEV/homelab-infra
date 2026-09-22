@@ -1,0 +1,19 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: everything-app
+  description: Personal life-management super-app (web build) - Kalender, Kochbuch, Chat, Standort, Notizen, Journal, Partner
+  annotations:
+    argocd/app-name: everything-app
+    backstage.io/kubernetes-id: everything-app
+    backstage.io/techdocs-ref: dir:.
+  links:
+    - url: https://everything-app.homelab.local
+      title: everything-app (web)
+    - url: https://homelab.pages.homelab.local/projects/context-hub/everything-app/decisions/0001-architecture-foundations/
+      title: Architecture ADR (context-hub)
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:homelab
+  system: homelab

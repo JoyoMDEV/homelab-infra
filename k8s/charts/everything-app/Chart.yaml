@@ -1,0 +1,6 @@
+apiVersion: v2
+name: everything-app
+description: everything-app web (static Expo export, served via nginx)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

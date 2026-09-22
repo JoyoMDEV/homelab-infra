@@ -1,0 +1,33 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app: everything-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: everything-app
+  template:
+    metadata:
+      labels:
+        app: everything-app
+    spec:
+      imagePullSecrets:
+        - name: everything-app-registry-pull
+      containers:
+        - name: everything-app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 80
+          resources:
+            requests:
+              memory: {{ .Values.resources.requests.memory }}
+              cpu: {{ .Values.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.resources.limits.memory }}
+              cpu: {{ .Values.resources.limits.cpu | quote }}

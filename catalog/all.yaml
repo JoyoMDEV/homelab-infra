@@ -9,6 +9,7 @@ spec:
     - ./backstage/catalog-info.yaml
     - ./cert-manager-webhook-hetzner/catalog-info.yaml
     - ./coder/catalog-info.yaml
+    - ./everything-app/catalog-info.yaml
     - ./external-secrets/catalog-info.yaml
     - ./garage/catalog-info.yaml
     - ./gitlab/catalog-info.yaml
