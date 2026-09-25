@@ -1,0 +1,41 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+  labels:
+    app: powersync
+data:
+  service.yaml: |
+    # yaml-language-server: $schema=https://unpkg.com/@powersync/service-schema@latest/json-schema/powersync-config.json
+    telemetry:
+      disable_telemetry_sharing: true
+
+    # sslmode: disable matches every other in-cluster Postgres connection
+    # here (no pod-to-pod TLS within the cluster network) - same as
+    # supabase-pg's own connections.
+    replication:
+      connections:
+        - type: postgresql
+          uri: !env PS_DATA_SOURCE_URI
+          sslmode: disable
+
+    storage:
+      type: postgresql
+      uri: !env PS_STORAGE_URI
+
+    port: {{ .Values.port }}
+
+    sync_config:
+      path: sync-config.yaml
+
+    # Reuses Supabase's existing HS256 JWT secret (client_auth.supabase's
+    # legacy shared-secret mode) rather than standing up a separate
+    # JWKS/asymmetric-key setup - see everything-app's ADR-0001 and this
+    # chart's ExternalSecret for where PS_JWT_SECRET comes from.
+    client_auth:
+      supabase: true
+      supabase_jwt_secret: !env PS_JWT_SECRET
+      audience: ["authenticated"]
+  sync-config.yaml: |
+{{ .Values.syncRules | indent 4 }}

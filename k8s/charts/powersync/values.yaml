@@ -1,0 +1,36 @@
+image:
+  repository: journeyapps/powersync-service
+  tag: "1.26.1"
+  pullPolicy: IfNotPresent
+
+hostname: powersync.homelab.local
+
+port: 8080
+
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 100m
+  limits:
+    memory: 512Mi
+    cpu: 500m
+
+# Sync rules, mirrored from everything-app's supabase/powersync/
+# sync-rules.yaml (source of truth lives in the app repo, per this repo's
+# "app repo owns config content, infra repo owns deployment" split - see
+# CLAUDE.md). Copy the app repo's file here whenever it changes; the
+# PowerSync service needs a restart to pick up edits either way (it
+# doesn't watch this file), so there's no live-sync mechanism to build.
+syncRules: |
+  config:
+    edition: 3
+
+  streams:
+    notes:
+      auto_subscribe: true
+      queries:
+        - SELECT * FROM notes WHERE owner_id = auth.user_id()
+        - SELECT n.* FROM notes n
+            INNER JOIN resource_shares rs
+              ON rs.resource_type = 'note' AND rs.resource_id = n.id
+            WHERE rs.shared_with_id = auth.user_id()

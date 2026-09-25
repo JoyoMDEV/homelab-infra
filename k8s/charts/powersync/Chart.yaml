@@ -1,0 +1,6 @@
+apiVersion: v2
+name: powersync
+description: Self-hosted PowerSync (Open Edition) - offline-first sync for everything-app
+type: application
+version: 0.1.0
+appVersion: "1.26.1"

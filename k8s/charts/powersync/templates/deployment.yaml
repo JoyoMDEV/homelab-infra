@@ -1,0 +1,57 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app: powersync
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: powersync
+  template:
+    metadata:
+      labels:
+        app: powersync
+    spec:
+      containers:
+        - name: powersync
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["start", "-r", "unified"]
+          env:
+            - name: POWERSYNC_CONFIG_PATH
+              value: /config/service.yaml
+            - name: PS_PORT
+              value: {{ .Values.port | quote }}
+            - name: NODE_OPTIONS
+              # ~80% of the container's memory limit, per PowerSync's own
+              # guidance.
+              value: "--max-old-space-size=400"
+          envFrom:
+            - secretRef:
+                name: powersync-secret
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+          livenessProbe:
+            httpGet:
+              path: /probes/liveness
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: {{ .Values.resources.requests.memory }}
+              cpu: {{ .Values.resources.requests.cpu | quote }}
+            limits:
+              memory: {{ .Values.resources.limits.memory }}
+              cpu: {{ .Values.resources.limits.cpu | quote }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config

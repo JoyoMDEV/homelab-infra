@@ -24,6 +24,7 @@ spec:
     - ./nocodb/catalog-info.yaml
     - ./overleaf/catalog-info.yaml
     - ./paperless/catalog-info.yaml
+    - ./powersync/catalog-info.yaml
     - ./public/catalog-info.yaml
     - ./redis/catalog-info.yaml
     - ./renovate/catalog-info.yaml

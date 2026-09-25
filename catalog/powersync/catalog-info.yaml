@@ -1,0 +1,17 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: powersync
+  description: Self-hosted PowerSync (Open Edition) - offline-first sync for everything-app
+  annotations:
+    argocd/app-name: powersync
+    backstage.io/kubernetes-id: powersync
+    backstage.io/techdocs-ref: dir:.
+  links:
+    - url: https://powersync.homelab.local
+      title: PowerSync API
+spec:
+  type: service
+  lifecycle: production
+  owner: group:homelab
+  system: homelab

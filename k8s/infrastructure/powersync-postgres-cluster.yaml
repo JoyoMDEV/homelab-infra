@@ -1,0 +1,71 @@
+---
+# Dedicated storage backend for the self-hosted PowerSync service
+# (context-hub#21) - holds PowerSync's own sync-bucket metadata, entirely
+# separate from supabase-pg (the *source* database PowerSync replicates
+# from). Plain CNPG default image is fine here - unlike supabase-pg, this
+# doesn't need any Supabase-specific extensions.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: powersync-pg
+  namespace: powersync
+spec:
+  instances: 1
+
+  postgresql:
+    parameters:
+      shared_buffers: "128MB"
+      effective_cache_size: "256MB"
+      max_connections: "50"
+
+  storage:
+    size: 5Gi
+
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
+
+  bootstrap:
+    initdb:
+      database: powersync
+      owner: powersync
+
+  # ── Backup via Barman + the existing MinIO ────────────────────────────────
+  backup:
+    barmanObjectStore:
+      destinationPath: s3://cnpg-backups/powersync-pg/
+      endpointURL: http://minio.infrastructure.svc.cluster.local:9000
+      s3Credentials:
+        accessKeyId:
+          name: minio-secret
+          key: rootUser
+        secretAccessKey:
+          name: minio-secret
+          key: rootPassword
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+        immediateCheckpoint: false
+        jobs: 2
+    retentionPolicy: "30d"
+
+  monitoring:
+    enablePodMonitor: true
+
+---
+# Staggered after supabase-pg's 03:15 backup, before restic's 03:30.
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: powersync-pg-daily
+  namespace: powersync
+spec:
+  schedule: "20 3 * * *"
+  backupOwnerReference: self
+  cluster:
+    name: powersync-pg
+  immediate: false
