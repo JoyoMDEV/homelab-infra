@@ -19,7 +19,14 @@ spec:
         - name: powersync
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["start", "-r", "unified"]
+          # `args`, not `command` - Kubernetes' `command` replaces the
+          # image's own ENTRYPOINT entirely (unlike Docker Compose's
+          # `command:`, which only overrides CMD and leaves ENTRYPOINT
+          # running). Setting this as `command` made the container try to
+          # exec a literal binary named "start", which doesn't exist -
+          # confirmed live: "exec: \"start\": executable file not found in
+          # $PATH", CrashLoopBackOff/StartError, exit code 128.
+          args: ["start", "-r", "unified"]
           env:
             - name: POWERSYNC_CONFIG_PATH
               value: /config/service.yaml
