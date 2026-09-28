@@ -33,15 +33,18 @@ data:
     sophisticated-storage:1.20.1-1.4.83.2111
     sophisticated-core:1.20.1-1.3.81.2280
     sophisticated-backpacks:1.20.1-3.24.67.2109
+    pamhc2foodcore:1.0.5
 
     # Utility / QoL
-    jei:15.49.0.191
+    jei:15.56.0.205
     waystones:14.1.20+forge-1.20.1
     xaeros-minimap:forge-1.20.1-26.4.2
+    xaeros-worldmap:forge-1.20.1-1.46.0
     appleskin:2.5.1+mc1.20.1
     clumps:12.0.0.4
     mouse-tweaks:1.20.1-2.25.1-forge
     veinminer:1.1.0+mod
+    voicechat:forge-1.20.1-2.6.22
 
     # Optimization
     entityculling:1.10.5
