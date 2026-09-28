@@ -21,6 +21,19 @@
 # service port - standard k8s Ingress supports per-path backends, and
 # Traefik proxies the WS upgrade on it transparently. RWA_WEBSOCKET_URL_SSL
 # on the sidecar must point at this exact path (see minecraft-statefulset.yaml).
+#
+# pathType MUST be Exact here, not Prefix: Traefik's k8s Ingress provider
+# matches Prefix as a plain string prefix (not path-element-aware like the
+# upstream k8s Ingress spec technically requires), so a Prefix "/ws" also
+# swallows "/wsconfig" - the plain HTTP GET the frontend fires first (see
+# rcon-web-admin's public/scripts/socket.js: `$.getJSON("wsconfig", ...)`,
+# handled by its Express route in src/routes.js) to learn the actual
+# websocket URL/port. With Prefix, that GET was misrouted to this raw `ws`
+# server on 4327, which can't answer plain HTTP and returned "426 Upgrade
+# Required" - so the frontend never got its config and the page stayed
+# blank, even across pod restarts (this is a static routing bug, not a
+# runtime RCON connection issue). The real websocket only ever connects to
+# this exact path (no subpaths), so Exact is safe and fixes the overlap.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -40,7 +53,7 @@ spec:
           # about the path itself, it's only here to give Traefik something
           # to route on separately from the port-4326 static/HTTP path below.
           - path: /ws
-            pathType: Prefix
+            pathType: Exact
             backend:
               service:
                 name: minecraft
