@@ -33,7 +33,7 @@ data:
     sophisticated-storage:1.20.1-1.4.83.2111
     sophisticated-core:1.20.1-1.3.81.2280
     sophisticated-backpacks:1.20.1-3.24.67.2109
-    pams-harvestcraft-2:food-core:1.0.5
+    pams-harvestcraft-2-food-core:1.0.5
 
     # Utility / QoL
     jei:15.56.0.205
