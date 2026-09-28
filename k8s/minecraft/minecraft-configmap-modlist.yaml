@@ -35,8 +35,8 @@ data:
     sophisticated-backpacks:1.20.1-3.24.67.2109
     pams-harvestcraft-2-food-core:1.0.5
     pams-harvestcraft-2-food-extended:1.0.0
-    pams-harvestcraft-2-crops:1.0.0
-    pams-harvestcraft-2-trees:1.0.0
+    pams-harvestcraft-2-crops
+    pams-harvestcraft-2-trees
 
     # Utility / QoL
     jei:15.56.0.205
