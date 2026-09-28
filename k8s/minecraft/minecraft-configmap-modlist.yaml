@@ -7,40 +7,40 @@ metadata:
 data:
   modrinth-mods.txt: |
     # Automatisierung / Tech
-    cc-tweaked
-    advancedperipherals
+    cc-tweaked:1.120.2
+    advancedperipherals:1.20.1-0.7.48r
     mekanism:10.4.16.80
     mekanism-generators:10.4.16.80
     mekanism-tools:10.4.16.80
-    ae2
+    ae2:15.3.6
 
     # Magie
-    ars-nouveau
-    botania
+    ars-nouveau:4.12.7
+    botania:1.20.1-454-forge
 
     # Welt / Dimension
-    forge:advanced-mining-dimension:beta
-    terralith
-    yungs-better-mineshafts
+    forge:advanced-mining-dimension:forge-1.20.1-1.0.4
+    terralith:2.5.4
+    yungs-better-mineshafts:1.20-Forge-4.0.4
 
     # Ausruestung
-    silent-gear
+    silent-gear:3.6.7
 
     # Vanilla+ Content
-    farmers-delight
-    quark
-    supplementaries
+    farmers-delight:1.20.1-1.3.3
+    quark:1.20.1-4.0-462
+    supplementaries:1.20-3.1.43-forge
     sophisticated-storage:1.20.1-1.4.83.2111
     sophisticated-core:1.20.1-1.3.81.2280
     sophisticated-backpacks:1.20.1-3.24.67.2109
 
     # Utility / QoL
-    jei:beta
-    waystones
-    xaeros-minimap
-    appleskin
-    clumps
-    mouse-tweaks
+    jei:15.49.0.191
+    waystones:14.1.20+forge-1.20.1
+    xaeros-minimap:forge-1.20.1-26.4.2
+    appleskin:2.5.1+mc1.20.1
+    clumps:12.0.0.4
+    mouse-tweaks:1.20.1-2.25.1-forge
     veinminer:1.1.0+mod
 
     # Optimization
