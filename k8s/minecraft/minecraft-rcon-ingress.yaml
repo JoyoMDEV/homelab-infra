@@ -22,18 +22,28 @@
 # Traefik proxies the WS upgrade on it transparently. RWA_WEBSOCKET_URL_SSL
 # on the sidecar must point at this exact path (see minecraft-statefulset.yaml).
 #
-# pathType MUST be Exact here, not Prefix: Traefik's k8s Ingress provider
-# matches Prefix as a plain string prefix (not path-element-aware like the
-# upstream k8s Ingress spec technically requires), so a Prefix "/ws" also
-# swallows "/wsconfig" - the plain HTTP GET the frontend fires first (see
-# rcon-web-admin's public/scripts/socket.js: `$.getJSON("wsconfig", ...)`,
-# handled by its Express route in src/routes.js) to learn the actual
-# websocket URL/port. With Prefix, that GET was misrouted to this raw `ws`
-# server on 4327, which can't answer plain HTTP and returned "426 Upgrade
-# Required" - so the frontend never got its config and the page stayed
-# blank, even across pod restarts (this is a static routing bug, not a
-# runtime RCON connection issue). The real websocket only ever connects to
-# this exact path (no subpaths), so Exact is safe and fixes the overlap.
+# Traefik's k8s Ingress provider matches "/ws" as a plain string prefix (not
+# path-element-aware like the upstream k8s Ingress spec technically
+# requires), so a Prefix "/ws" also swallows "/wsconfig" - the plain HTTP GET
+# the frontend fires first (see rcon-web-admin's public/scripts/socket.js:
+# `$.getJSON("wsconfig", ...)`, handled by its Express route in
+# src/routes.js) to learn the actual websocket URL/port. That GET was
+# misrouted to this raw `ws` server on 4327, which can't answer plain HTTP
+# and returned "426 Upgrade Required" - so the frontend never got its config
+# and the page stayed blank, even across pod restarts (this was a static
+# routing bug, not a runtime RCON connection issue).
+#
+# Tried pathType: Exact on /ws to fix this directly - that broke the real
+# websocket route instead (a genuine "/ws" request then landed on 4326 and
+# got a 404 from Express, confirmed with curl --http1.1 + Upgrade headers
+# through the internal Traefik service IP). This Traefik version doesn't
+# route Exact the way the k8s Ingress spec describes, so don't use it here.
+#
+# Fix that actually works: give "/wsconfig" its own explicit, more specific
+# path to 4326, listed first - Traefik assigns router priority by matcher
+# length, so this wins over the "/ws" prefix below regardless of pathType.
+# The "/ws" prefix rule then only ever sees the real "/ws" request the
+# websocket itself opens, exactly as before this whole investigation.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -49,11 +59,21 @@ spec:
     - host: minecraft-rcon.homelab.local
       http:
         paths:
-          # More specific path first - the raw `ws` server doesn't care
-          # about the path itself, it's only here to give Traefik something
-          # to route on separately from the port-4326 static/HTTP path below.
-          - path: /ws
+          # Most specific path first - carves the one Express route that
+          # would otherwise be swallowed by the "/ws" prefix below out to
+          # its real backend (4326).
+          - path: /wsconfig
             pathType: Exact
+            backend:
+              service:
+                name: minecraft
+                port:
+                  number: 4326
+          # The raw `ws` server doesn't care about the path itself, it's
+          # only here to give Traefik something to route on separately from
+          # the port-4326 static/HTTP path below.
+          - path: /ws
+            pathType: Prefix
             backend:
               service:
                 name: minecraft
