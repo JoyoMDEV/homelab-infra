@@ -74,15 +74,6 @@ spec:
               includedResources:
                 - "*"
 
-        # ── Prometheus Metriken ──────────────────────────────────────────────
-        metrics:
-          enabled: true
-          scrapeInterval: 30s
-          serviceMonitor:
-            enabled: true
-            additionalLabels:
-              release: monitoring
-
         # ── Init Container: AWS Plugin für MinIO S3-Kompatibilität ───────────
         initContainers:
           - name: velero-plugin-for-aws

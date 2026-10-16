@@ -74,13 +74,6 @@ spec:
         environment:
           MINIO_BROWSER_REDIRECT_URL: "https://minio-console.homelab.local"
 
-        # Metrics für Prometheus
-        metrics:
-          serviceMonitor:
-            enabled: true
-            additionalLabels:
-              release: monitoring
-
   destination:
     server: https://kubernetes.default.svc
     namespace: infrastructure

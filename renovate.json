@@ -52,12 +52,6 @@
       "labels": ["dependencies", "terraform"]
     },
     {
-      "description": "Disable major updates for kube-prometheus-stack (breaking changes)",
-      "matchPackageNames": ["kube-prometheus-stack"],
-      "matchUpdateTypes": ["major"],
-      "enabled": false
-    },
-    {
       "description": "Disable major updates for GitLab (requires DB migrations)",
       "matchPackageNames": ["gitlab/gitlab-ce"],
       "matchUpdateTypes": ["major"],

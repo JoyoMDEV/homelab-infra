@@ -114,14 +114,6 @@ spec:
           enabled: true
           serviceType: ClusterIP
 
-        # ── Prometheus Metrics ───────────────────────────────────────────────
-        serverTelemetry:
-          prometheusOperator: true
-          serviceMonitor:
-            enabled: true
-            selectors:
-              release: monitoring
-
   destination:
     server: https://kubernetes.default.svc
     namespace: security
