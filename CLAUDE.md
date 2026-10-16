@@ -10,10 +10,9 @@ Hybrid k3s cluster (2 Hetzner Cloud servers + 2 home nodes) managed with Terrafo
 - `terraform/` — Hetzner Cloud provisioning (servers, network, firewall). State is local and gitignored.
 - `ansible/` — server configuration (`roles/`: `common`, `hardening`, `k3s_server`, `k3s_agent`, `samba`, `tailscale`, `backup`).
 - `k8s/argocd/applications/` — one ArgoCD `Application` per deployed service. `k8s/argocd/root.yaml` is the app-of-apps that watches this directory.
-- `k8s/security/external-secrets/<category>/` — one `ExternalSecret` per service, grouped by category (`auth`, `productivity`, `infrastructure`, `monitoring`, `dashboard`, `gitlab`, `cert-manager`, `security`, `backstage`).
+- `k8s/security/external-secrets/<category>/` — one `ExternalSecret` per service, grouped by category (`auth`, `productivity`, `infrastructure`, `dashboard`, `gitlab`, `cert-manager`, `security`).
 - `k8s/charts/` — local Helm charts for services not available upstream.
 - `k8s/values/` — standalone Helm values files referenced by ArgoCD apps.
-- `catalog/` — Backstage software catalog (`catalog/org/` for org/group/user entities, `catalog/<service>/catalog-info.yaml` per service, all registered via `catalog/all.yaml`).
 - `scripts/` — one-off `setup-<service>.sh` bootstrap scripts (Vault secret seeding, storage provisioning, etc.) run manually, not by CI.
 
 ## Conventions
@@ -24,11 +23,7 @@ Hybrid k3s cluster (2 Hetzner Cloud servers + 2 home nodes) managed with Terrafo
 
 **Ingress**: Traefik (`ingressClassName: traefik`), host `<service>.homelab.local`, TLS via the `homelab-wildcard-tls` secret (cert-manager internal CA). DNS for `*.homelab.local` is served by the Samba AD DC over Tailscale split DNS.
 
-**Backstage catalog** (`catalog/`) should stay in sync with `k8s/argocd/applications/` — every deployed service should have a matching `catalog/<service>/catalog-info.yaml` registered in `catalog/all.yaml`, with `argocd/app-name` and `backstage.io/kubernetes-id` annotations matching the ArgoCD app name and k8s namespace/labels. Every service also gets `catalog/<service>/docs/index.md` (referenced via a `backstage.io/techdocs-ref: dir:.` annotation) with four fixed sections, in order: **What it is**, **Why it's here**, **How it's configured** (citing the real ArgoCD Application/Helm values/ExternalSecret/Vault path for that service), and **How to change it** (concrete steps, e.g. "to rotate this token, run `scripts/setup-X.sh`"). Keep it in sync whenever the service's config changes. Rendered via TechDocs' local generator (`mkdocs`, no external pipeline) — see `docs/superpowers/specs/2026-09-03-backstage-narrative-docs-design.md`.
-
 **Never edit directly**: `kubeconfig`, `terraform/*.tfstate*`, `certs/**` — these are gitignored, high-blast-radius files (cluster credentials, Terraform state, internal CA cert). A project hook in `.claude/settings.json` blocks edits to these paths.
-
-**Monitoring: alerts and dashboards as code.** Every service that gets real alerting gets a `PrometheusRule` at `k8s/monitoring/rules/<category>/<service>-rules.yaml` (label `release: monitoring` — required for Prometheus to pick it up, since `ruleSelectorNilUsesHelmValues` is unset/true on the `monitoring` app) and, once its metrics are verified to actually exist in this cluster's Prometheus (query them via the Grafana MCP connector before writing rules — don't alert on a metric you haven't confirmed is scraped), a matching dashboard at `k8s/monitoring/dashboards/<category>/<service>-dashboard.yaml` (a `GrafanaDashboard` CR, `instanceSelector.matchLabels: {dashboards: "monitoring-grafana"}`). Both directories sync via their own ArgoCD Applications (`monitoring-rules`, `monitoring-dashboards`), category-by-category matching the `external-secrets` category list. Dashboards are managed by `grafana-operator` (its own ArgoCD app, `sync-wave: "-1"` so its CRDs land before `monitoring-dashboards` syncs) against the *existing* kube-prometheus-stack Grafana, registered as an `external` instance in `k8s/monitoring/dashboards/grafana-instance.yaml` — the operator does not deploy its own Grafana. See `docs/superpowers/specs/2026-09-15-monitoring-alerting-dashboards-design.md` for the full design (including the planned Alertmanager → Claude Code routine auto-triage pipeline, not yet built).
 
 ## Linting
 

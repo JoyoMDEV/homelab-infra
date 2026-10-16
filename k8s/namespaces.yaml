@@ -58,14 +58,6 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: monitoring
-  labels:
-    managed-by: argocd
-    homelab.local/inject-ca: "true"
----
-apiVersion: v1
-kind: Namespace
-metadata:
   name: infrastructure
   labels:
     managed-by: argocd
@@ -114,39 +106,7 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: backstage
-  labels:
-    managed-by: argocd
-    homelab.local/inject-ca: "true"
----
-apiVersion: v1
-kind: Namespace
-metadata:
   name: coder
-  labels:
-    managed-by: argocd
-    homelab.local/inject-ca: "true"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: supabase
-  labels:
-    managed-by: argocd
-    homelab.local/inject-ca: "true"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: everything-app
-  labels:
-    managed-by: argocd
-    homelab.local/inject-ca: "true"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: powersync
   labels:
     managed-by: argocd
     homelab.local/inject-ca: "true"

@@ -79,19 +79,14 @@ homelab-infra/
 │   │   ├── letsencrypt-issuer.yaml
 │   │   ├── network-policies/    #   CiliumNetworkPolicy, default-deny + explicit exceptions
 │   │   └── external-secrets/    #   One ExternalSecret per service, grouped by category
-│   │       ├── auth/ automation/ backstage/ backup/ cert-manager/
-│   │       └── gitlab/ infrastructure/ monitoring/ productivity/ security/
+│   │       ├── auth/ automation/ backup/ cert-manager/
+│   │       └── gitlab/ infrastructure/ productivity/ security/
 │   ├── infrastructure/          #   Postgres cluster, cert-sync, MinIO backup, CA hooks
-│   ├── charts/                  #   Local Helm charts (gitlab-omnibus, backstage)
+│   ├── charts/                  #   Local Helm charts (gitlab-omnibus)
 │   ├── values/                  #   Standalone Helm values (argocd.yaml)
 │   ├── public/                  #   Authelia + public-domain IngressRoutes (overleaf, minecraft)
 │   ├── overleaf/                #   Raw manifests (mongo replica set, etc.)
 │   └── minecraft/               #   Raw manifests
-│
-├── catalog/                     # Backstage software catalog
-│   ├── all.yaml                 #   Location - registers every catalog-info.yaml below
-│   ├── org/homelab.yaml         #   System/Group/User entities
-│   └── <service>/catalog-info.yaml   # One per deployed service
 │
 ├── scripts/                     # One-off setup scripts, run manually (not by CI)
 │   ├── bootstrap-argocd.sh          #   One-time: CNPG, Redis, ArgoCD (pre-Vault bootstrap)
@@ -99,15 +94,15 @@ homelab-infra/
 │   ├── setup-hcvault.sh             #   One-time: Vault init/unseal, policies, K8s auth
 │   ├── migrate-secrets-to-vault.sh  #   One-time: seed Vault from already-live secrets
 │   ├── setup-databases.sh           #   Postgres DBs/roles + Vault secrets (Keycloak, GitLab, Nextcloud, Paperless phase 1)
-│   ├── setup-<service>.sh           #   Per-service Vault secret setup (gitlab-runner, minio, monitoring,
-│   │                                     nocodb, paperless, renovate, restic-ssh, vaultwarden, velero)
+│   ├── setup-<service>.sh           #   Per-service Vault secret setup (gitlab-runner, minio,
+│   │                                     paperless, renovate, restic-ssh, vaultwarden, velero)
 │   ├── add-authelia-user.sh         #   Add/update an Authelia user in Vault
 │   ├── setup-coredns.sh / setup-nextcloud-storage.sh
 │   └── test-cnpg-recovery.sh / test-velero-recovery.sh
 │
 ├── docs/                        # Runbooks
 │   ├── vault-setup.md / backup-strategy.md / cilium-migration.md
-│   ├── gitlab-runner-setup.md / keycloak-setup.md / monitoring-setup.md
+│   ├── gitlab-runner-setup.md / keycloak-setup.md
 │   └── nextcloud-setup.md / nextcloud-apps.md / paperless-setup.md / group-management.md
 │
 ├── certs/                      # gitignored - local CA cert for device import
@@ -160,10 +155,9 @@ export VAULT_TOKEN="..."          # root token from setup-hcvault.sh's output
 make cert-ca
 
 # 9. Set up individual services (each reads/writes Vault directly)
-#    See scripts/setup-<service>.sh - GitLab Runner, MinIO, Monitoring,
-#    NocoDB, Paperless, Renovate, Restic SSH, Vaultwarden, Velero
+#    See scripts/setup-<service>.sh - GitLab Runner, MinIO,
+#    Paperless, Renovate, Restic SSH, Vaultwarden, Velero
 make runner-setup
-make setup-monitoring
 # ... etc, one per service - see the Makefile / scripts/ list above
 
 # 10. Verify
@@ -174,7 +168,7 @@ make runner-status
 
 Adding a service later? See "Adding a New Service" below, or ask Claude Code to run the
 `/new-service` skill (see `.claude/skills/new-service/`), which scaffolds the ArgoCD
-Application, ExternalSecret, and catalog entry together.
+Application and ExternalSecret together.
 
 ## What Gets Deployed
 
@@ -211,11 +205,7 @@ never committed to Git - see "Secrets Management" below.
 | `vaultwarden` | security | Bitwarden-compatible password manager |
 | `nextcloud` | productivity | File sync & sharing |
 | `paperless` | productivity | Document management (Paperless-ngx) |
-| `nocodb` | productivity | No-code database / spreadsheet UI |
 | `overleaf` | overleaf | Collaborative LaTeX editor |
-| `backstage` | backstage | Internal developer portal / this software catalog |
-| `monitoring` | monitoring | Prometheus + Grafana + Alertmanager (kube-prometheus-stack) |
-| `loki` + `alloy` | monitoring | Log aggregation (Loki) + log/metrics shipping (Alloy) |
 | `renovate` | automation | Automated dependency update bot |
 | `velero` | backup | Cluster backup/restore |
 | `public` | public | Authelia forward-auth + public IngressRoutes (overleaf, minecraft) |
@@ -311,7 +301,6 @@ scaffolds all three.
 | `make bootstrap` | Bootstrap k8s services (CNPG, Redis, ArgoCD) |
 | `make bootstrap-certs` | Bootstrap cert-manager + internal CA |
 | `make setup-coredns` | Configure CoreDNS for `*.homelab.local` |
-| `make setup-monitoring` | Setup Grafana OIDC + Alertmanager secrets (writes to Vault) |
 | `make runner-setup` / `runner-status` / `runner-logs` | GitLab instance runner setup + status |
 | `make status` | Cluster overview (nodes, pods, certs, resources) |
 | `make pods` | List all pods |
@@ -364,10 +353,7 @@ public Traefik instance + Authelia for the few internet-facing ones.
 | Vaultwarden | https://vault.homelab.local |
 | Nextcloud | https://nextcloud.homelab.local |
 | Paperless-ngx | https://paperless.homelab.local |
-| NocoDB | https://nocodb.homelab.local |
 | MinIO Console | https://minio-console.homelab.local |
-| Grafana | https://grafana.homelab.local |
-| Backstage | https://backstage.homelab.local |
 | Overleaf (public) | https://overleaf.svc.johannesmoseler.de |
 | Authelia (public) | https://login.svc.johannesmoseler.de |
 

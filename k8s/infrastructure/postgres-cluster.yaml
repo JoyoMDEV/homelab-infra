@@ -48,9 +48,6 @@ spec:
         jobs: 2
     retentionPolicy: "30d"
 
-  monitoring:
-    enablePodMonitor: true
-
 ---
 # Täglicher Backup um 03:00 Uhr – nach Velero (02:00) und vor Restic (03:30)
 apiVersion: postgresql.cnpg.io/v1
