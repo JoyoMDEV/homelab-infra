@@ -3,7 +3,7 @@ set -euo pipefail
 
 # =============================================================================
 #  setup-databases.sh
-#  Legt die Postgres-Datenbanken/Rollen für Keycloak, GitLab, Backstage,
+#  Legt die Postgres-Datenbanken/Rollen für Keycloak, GitLab,
 #  Nextcloud und Paperless an, und schreibt die zugehörigen Secrets nach
 #  Vault. Die jeweiligen ExternalSecrets übernehmen von dort die Pflege der
 #  Kubernetes Secrets.
@@ -68,7 +68,7 @@ db_password_for() {
   fi
 }
 
-echo "==> Creating databases for Keycloak, GitLab, Backstage, Nextcloud, Paperless..."
+echo "==> Creating databases for Keycloak, GitLab, Nextcloud, Paperless..."
 
 # Wait for PostgreSQL to be ready
 kubectl wait --for=condition=Ready pod/homelab-pg-1 -n infrastructure --timeout=120s
@@ -119,37 +119,6 @@ kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -d gitlab -c "
   CREATE EXTENSION IF NOT EXISTS btree_gist;
 "
 echo "    GitLab database created"
-
-# ─── Backstage DB ──────────────────────────────────────────────────────────────
-# backstage-secret ist bereits Vault-nativ befüllt (siehe docs/vault-setup.md) -
-# hier nur die Postgres-Rolle auf das dort hinterlegte Passwort synchronisieren.
-BACKSTAGE_DB_PW=$(vault_kv_get "backstage/backstage-secret" "db-password")
-if [[ -z "${BACKSTAGE_DB_PW}" ]]; then
-  echo "    WARNUNG: kein db-password unter homelab/backstage/backstage-secret in Vault -"
-  echo "    generiere eins, aber es muss danach dort hinterlegt werden:"
-  BACKSTAGE_DB_PW=$(openssl rand -base64 24)
-  echo "      kubectl exec -n security vault-0 -- env VAULT_ADDR=http://127.0.0.1:8200 \\"
-  echo "        VAULT_TOKEN=\$VAULT_TOKEN vault kv patch secret/homelab/backstage/backstage-secret \\"
-  echo "        db-password='${BACKSTAGE_DB_PW}'"
-fi
-
-kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "CREATE DATABASE backstage;" 2>/dev/null || echo "    backstage database already exists"
-kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "
-  DO \$\$ BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'backstage') THEN
-      CREATE ROLE backstage WITH LOGIN PASSWORD '$BACKSTAGE_DB_PW' CREATEDB;
-    ELSE
-      ALTER ROLE backstage WITH PASSWORD '$BACKSTAGE_DB_PW' CREATEDB;
-    END IF;
-  END \$\$;
-  GRANT ALL PRIVILEGES ON DATABASE backstage TO backstage;
-  ALTER DATABASE backstage OWNER TO backstage;
-"
-# Backstage's backend auto-creates one database per plugin on startup
-# (backstage_plugin_app, backstage_plugin_catalog, ...), which requires
-# CREATEDB on the role - unlike the other services above that use a single
-# pre-created database.
-echo "    Backstage database created"
 
 # ─── Nextcloud DB + Secret (nur initial) ──────────────────────────────────────
 if vault_kv_path_exists "productivity/nextcloud-secret"; then

@@ -22,11 +22,9 @@ Samba AD (Source of Truth)
 5. [Service-Konfiguration](#5-service-konfiguration)
    - [ArgoCD](#argocd)
    - [Vault](#vault)
-   - [Grafana](#grafana)
    - [GitLab](#gitlab)
    - [Nextcloud](#nextcloud)
    - [Paperless](#paperless)
-   - [NocoDB](#nocodb)
    - [Homarr](#homarr)
    - [Vaultwarden](#vaultwarden)
 6. [Keycloak Gruppen-Sync](#6-keycloak-gruppen-sync)
@@ -43,10 +41,8 @@ Alle Gruppen liegen in `OU=HomelabGroups,DC=homelab,DC=local`.
 | `homelab-admins` | Vault, Keycloak | Full Admin |
 | `argocd-admins` | ArgoCD | role:admin |
 | `gitlab-admins` | GitLab | Administrator |
-| `grafana-admins` | Grafana | Admin |
 | `nextcloud-admins` | Nextcloud | Admin |
 | `paperless-admins` | Paperless-ngx | Superuser |
-| `nocodb-admins` | NocoDB | Org Admin |
 | `homarr-admins` | Homarr | Admin |
 | `vaultwarden-admins` | Vaultwarden | Admin |
 
@@ -90,8 +86,8 @@ ssh root@${SERVER_IP} \
    -U Administrator --password='<pw>'"
 
 # Alle Admin-Gruppen auf einmal
-for GROUP in homelab-admins argocd-admins gitlab-admins grafana-admins \
-             nextcloud-admins paperless-admins nocodb-admins \
+for GROUP in homelab-admins argocd-admins gitlab-admins \
+             nextcloud-admins paperless-admins \
              homarr-admins vaultwarden-admins; do
   ssh root@${SERVER_IP} \
     "samba-tool group addmembers '${GROUP}' '<username>' \
@@ -170,20 +166,6 @@ kubectl exec -n security vault-0 -- \
 
 ---
 
-### Grafana
-
-**Status: ✅ konfiguriert**
-
-Konfiguration in `k8s/argocd/applications/monitoring.yaml`:
-```yaml
-role_attribute_path: >-
-  contains(groups[*], 'grafana-admins') && 'Admin' || 'Viewer'
-```
-
-Keycloak Client `grafana` → Client Scopes → `grafana-dedicated` → Mapper `groups` muss vorhanden sein.
-
----
-
 ### GitLab
 
 **Status: ⚠️ manuell**
@@ -259,17 +241,6 @@ u.save()
 print(f'User {u.username}: superuser={u.is_superuser}')
 "
 ```
-
----
-
-### NocoDB
-
-**Status: ⚠️ manuell**
-
-NocoDB unterstützt kein OIDC-Gruppen-Mapping für Admin-Rechte.
-Admin-Status in NocoDB UI setzen:
-
-**https://nocodb.homelab.local → Team & Auth → User als Org-Admin setzen**
 
 ---
 

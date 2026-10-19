@@ -52,7 +52,7 @@ force_sync() {
 
 garage_exec() {
   # The garage binary is at an absolute path and isn't on $PATH - there's no
-  # shell at all in this image (confirmed live in setup-supabase-storage.sh),
+  # shell at all in this image (confirmed live on the since-removed Supabase storage setup),
   # so the container's own entrypoint invokes it the same way.
   kubectl exec -n "${GARAGE_NS}" "${GARAGE_POD}" -- /garage "$@"
 }

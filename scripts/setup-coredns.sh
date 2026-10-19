@@ -73,14 +73,11 @@ data:
             ${TRAEFIK_IP} gitlab.homelab.local
             ${TRAEFIK_IP} registry.homelab.local
             ${TRAEFIK_IP} argocd.homelab.local
-            ${TRAEFIK_IP} grafana.homelab.local
             ${TRAEFIK_IP} nextcloud.homelab.local
             ${TRAEFIK_IP} homarr.homelab.local
             ${TRAEFIK_IP} vault.homelab.local
             ${TRAEFIK_IP} hcvault.homelab.local
             ${TRAEFIK_IP} paperless.homelab.local
-            ${TRAEFIK_IP} nocodb.homelab.local
-            ${TRAEFIK_IP} backstage.homelab.local
             ${TRAEFIK_IP} coder.homelab.local
             ${TRAEFIK_IP} homelab.local
             fallthrough
@@ -120,14 +117,11 @@ else
         ${TRAEFIK_IP} gitlab.homelab.local
         ${TRAEFIK_IP} registry.homelab.local
         ${TRAEFIK_IP} argocd.homelab.local
-        ${TRAEFIK_IP} grafana.homelab.local
         ${TRAEFIK_IP} nextcloud.homelab.local
         ${TRAEFIK_IP} homarr.homelab.local
         ${TRAEFIK_IP} vault.homelab.local
         ${TRAEFIK_IP} hcvault.homelab.local
         ${TRAEFIK_IP} paperless.homelab.local
-        ${TRAEFIK_IP} nocodb.homelab.local
-        ${TRAEFIK_IP} backstage.homelab.local
         ${TRAEFIK_IP} coder.homelab.local
         ${TRAEFIK_IP} homelab.local
         fallthrough
@@ -165,8 +159,8 @@ kubectl run -it --rm dns-test --image=alpine --restart=Never -- \
     nslookup auth.homelab.local
     echo '--- gitlab.homelab.local ---'
     nslookup gitlab.homelab.local
-    echo '--- nocodb.homelab.local ---'
-    nslookup nocodb.homelab.local
+    echo '--- argocd.homelab.local ---'
+    nslookup argocd.homelab.local
   " 2>/dev/null || echo "    (DNS test pod cleanup complete)"
 
 # ─── Done ────────────────────────────────────────────────────────────────────
@@ -189,11 +183,9 @@ echo "  Services:"
 echo "    - auth.homelab.local       (Keycloak)"
 echo "    - gitlab.homelab.local     (GitLab)"
 echo "    - argocd.homelab.local     (ArgoCD)"
-echo "    - grafana.homelab.local    (Grafana)"
 echo "    - nextcloud.homelab.local  (Nextcloud)"
 echo "    - homarr.homelab.local     (Homarr)"
 echo "    - vault.homelab.local      (Vaultwarden)"
 echo "    - hcvault.homelab.local    (HashiCorp Vault)"
 echo "    - paperless.homelab.local  (Paperless-ngx)"
-echo "    - nocodb.homelab.local     (NocoDB)"
 echo "============================================"

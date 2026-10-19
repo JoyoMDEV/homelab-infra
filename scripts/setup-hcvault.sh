@@ -273,7 +273,7 @@ path "auth/token/lookup-self" {
 success "Policy 'reader' angelegt."
 
 # Namespace-spezifische Policies
-for NS in gitlab auth productivity monitoring security automation dashboard infrastructure; do
+for NS in gitlab auth productivity security automation dashboard infrastructure; do
   write_policy "ns-${NS}" "path \"secret/data/homelab/${NS}/*\" {
   capabilities = [\"read\"]
 }

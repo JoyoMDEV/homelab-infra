@@ -226,7 +226,7 @@ export VAULT_TOKEN="..."
 
 Das Script:
 - Legt den Garage-Bucket `gitlab-runner-cache` und einen darauf beschränkten
-  Access-Key an (gleiches Muster wie `setup-supabase-storage.sh`).
+  Access-Key an (Garage-Admin-API, siehe `scripts/setup-gitlab-runner-cache.sh`).
 - Schreibt die Credentials nach Vault (`homelab/gitlab/runner-cache-secret`).
 - Stößt einen Sync des `gitlab-runner-cache-secret` ExternalSecrets an.
 

@@ -47,8 +47,7 @@ Vault (hcvault.homelab.local)
       └── homelab/
           ├── gitlab/          ← GitLab Secrets
           ├── auth/            ← Keycloak Secrets
-          ├── productivity/    ← Nextcloud, Paperless, NocoDB
-          ├── monitoring/      ← Grafana, Alertmanager
+          ├── productivity/    ← Nextcloud, Paperless
           ├── security/        ← Vaultwarden, Vault selbst
           └── test/            ← Demo + Recovery-Tests
 
@@ -335,7 +334,6 @@ kubectl get secret gitlab-oidc-secret -n gitlab
 | `auth` | `keycloak-db-secret` | ☐ offen |
 | `productivity` | `nextcloud-secret` | ☐ offen |
 | `productivity` | `paperless-secret` | ☐ offen |
-| `monitoring` | `grafana-keycloak-secret` | ☐ offen |
 | `security` | `vaultwarden-secret` | ☐ offen |
 | `infrastructure` | `minio-secret` | ☐ offen |
 | `infrastructure` | `restic-ssh-key` | ☐ offen |
