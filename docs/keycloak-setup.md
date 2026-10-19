@@ -24,7 +24,7 @@ Keycloak läuft bereits unter **https://auth.homelab.local**.
 4. [OIDC-Client: GitLab](#4-oidc-client-gitlab)
 5. [OIDC-Client: ArgoCD](#5-oidc-client-argocd)
 6. [OIDC-Client: Coder](#6-oidc-client-coder)
-7. [OIDC-Client: Grafana](#7-oidc-client-grafana-vorbereitung)
+7. ~~OIDC-Client: Grafana~~ (entfernt)
 8. [OIDC-Client: Nextcloud](#8-oidc-client-nextcloud-vorbereitung)
 9. [GitLab OIDC aktivieren](#9-gitlab-oidc-aktivieren)
 10. [ArgoCD OIDC aktivieren](#10-argocd-oidc-aktivieren)
@@ -300,27 +300,9 @@ kubectl rollout status deployment/coder -n coder --timeout=300s
 
 ---
 
-## 7. OIDC-Client: Grafana (Vorbereitung)
+## 7. (entfernt)
 
-> Noch nicht deployed – Client jetzt schon anlegen damit er beim Deployment bereit ist.
-
-**Navigation:** Realm `homelab` → **Clients** → **"Create client"**
-
-| Feld | Wert |
-|------|------|
-| Client ID | `grafana` |
-| Client authentication | ON |
-| Valid redirect URIs | `https://grafana.homelab.local/login/generic_oauth` |
-| Web origins | `https://grafana.homelab.local` |
-
-→ **Save** → Client Secret kopieren und in Kubernetes eintragen:
-
-```bash
-kubectl create namespace monitoring 2>/dev/null || true
-kubectl create secret generic grafana-keycloak-secret \
-  --from-literal=client-secret="<DEIN_SECRET_HIER>" \
-  -n monitoring
-```
+Der Grafana-Client entfällt, der Monitoring-Stack wurde aus dem Cluster entfernt.
 
 ---
 

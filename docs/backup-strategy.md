@@ -183,7 +183,7 @@ make vault-edit
 
 ## Monitoring
 
-**Prometheus Alert:** `CNPGBackupFailed` – feuert wenn kein erfolgreicher Backup in den letzten 26 Stunden.
+Seit dem Entfernen des Monitoring-Stacks gibt es **keine automatischen Alerts** für fehlgeschlagene Backups – Status regelmäßig manuell prüfen:
 
 ```bash
 # Backup Status prüfen
@@ -194,8 +194,6 @@ kubectl cnpg status homelab-pg -n infrastructure
 kubectl create job restic-check-$(date +%s) \
   --from=cronjob/minio-backup-restic -n infrastructure
 ```
-
-**Grafana Dashboard:** CNPG Dashboard (ID 20417) zeigt Backup-Status, WAL-Archivierung und DB-Größen.
 
 ---
 
@@ -267,7 +265,7 @@ dig @127.0.0.1 auth.homelab.local
 **Schritt 5: Keycloak LDAP-Sync prüfen**
 ```bash
 # In Keycloak: User Federation → samba-ad → Synchronize all users
-# Alle OIDC-Services (GitLab, ArgoCD, Grafana, Nextcloud) sollten
+# Alle OIDC-Services (GitLab, ArgoCD, Nextcloud) sollten
 # danach wieder funktionieren
 ```
 

@@ -37,7 +37,7 @@ spec:
             memory: 512Mi
 
         # No ingress - Garage is shared *infra*, reached only from other
-        # in-cluster services (Supabase Storage today, more services later),
+        # in-cluster services (GitLab Runner cache, more services later),
         # never directly from outside the cluster.
         ingress:
           s3:

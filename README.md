@@ -232,7 +232,7 @@ git clone ssh://git@gitlab.homelab.local:2222/jmoseler/my-repo.git
 
 ## Adding a New Service
 
-Three pieces, following the conventions in `CLAUDE.md`:
+Two pieces, following the conventions in `CLAUDE.md`:
 
 1. **`k8s/argocd/applications/my-service.yaml`** - the ArgoCD Application:
 
@@ -276,11 +276,8 @@ spec:
    pointing at `homelab/my-namespace/my-service-secret` in Vault. Seed the actual values with a
    `scripts/setup-my-service.sh` script (see existing ones for the pattern) - never inline them.
 
-3. **`catalog/my-service/catalog-info.yaml`** - registered in `catalog/all.yaml`, so it shows up
-   in Backstage.
-
 Commit and push - ArgoCD syncs automatically. Or ask Claude Code to run `/new-service`, which
-scaffolds all three.
+scaffolds both.
 
 ## Makefile Commands
 
@@ -371,10 +368,8 @@ public Traefik instance + Authelia for the few internet-facing ones.
 - [x] HashiCorp Vault + External Secrets Operator - all service secrets migrated off direct kubectl-created Secrets
 - [x] GitLab CE (Omnibus) + SSH on Port 2222 (Tailscale only) + GitLab Runner
 - [x] cert-manager + internal CA + wildcard TLS for *.homelab.local
-- [x] Keycloak SSO (LDAP → Samba AD, OIDC for GitLab, ArgoCD, Nextcloud, Grafana, Paperless)
-- [x] Nextcloud, Paperless-ngx, NocoDB, Vaultwarden, MinIO, Overleaf
-- [x] Backstage software catalog (all deployed services registered)
-- [x] Monitoring stack (Prometheus, Grafana, Loki, Alloy, Alertmanager)
+- [x] Keycloak SSO (LDAP → Samba AD, OIDC for GitLab, ArgoCD, Nextcloud, Paperless)
+- [x] Nextcloud, Paperless-ngx, Vaultwarden, MinIO, Overleaf
 - [x] Renovate (automated dependency updates)
 - [x] Velero (cluster backup/restore) + quarterly recovery tests
 - [x] Authelia + public IngressRoutes (Overleaf, Minecraft) on a separate public Traefik instance
