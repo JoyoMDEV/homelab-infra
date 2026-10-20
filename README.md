@@ -81,7 +81,7 @@ homelab-infra/
 │   │   └── external-secrets/    #   One ExternalSecret per service, grouped by category
 │   │       ├── auth/ automation/ backup/ cert-manager/
 │   │       └── gitlab/ infrastructure/ productivity/ security/
-│   ├── infrastructure/          #   Postgres cluster, cert-sync, MinIO backup, CA hooks
+│   ├── infrastructure/          #   Postgres cluster, cert-sync, CA hooks
 │   ├── charts/                  #   Local Helm charts (gitlab-omnibus)
 │   ├── values/                  #   Standalone Helm values (argocd.yaml)
 │   ├── public/                  #   Authelia + public-domain IngressRoutes (overleaf, minecraft)
@@ -94,8 +94,8 @@ homelab-infra/
 │   ├── setup-hcvault.sh             #   One-time: Vault init/unseal, policies, K8s auth
 │   ├── migrate-secrets-to-vault.sh  #   One-time: seed Vault from already-live secrets
 │   ├── setup-databases.sh           #   Postgres DBs/roles + Vault secrets (Keycloak, GitLab, Nextcloud, Paperless phase 1)
-│   ├── setup-<service>.sh           #   Per-service Vault secret setup (gitlab-runner, minio,
-│   │                                     paperless, renovate, restic-ssh, vaultwarden, velero)
+│   ├── setup-<service>.sh           #   Per-service Vault secret setup (gitlab-runner, forgejo,
+│   │                                     garage-backups, paperless, renovate, vaultwarden)
 │   ├── add-authelia-user.sh         #   Add/update an Authelia user in Vault
 │   ├── setup-coredns.sh / setup-nextcloud-storage.sh
 │   └── test-cnpg-recovery.sh / test-velero-recovery.sh
@@ -155,8 +155,8 @@ export VAULT_TOKEN="..."          # root token from setup-hcvault.sh's output
 make cert-ca
 
 # 9. Set up individual services (each reads/writes Vault directly)
-#    See scripts/setup-<service>.sh - GitLab Runner, MinIO,
-#    Paperless, Renovate, Restic SSH, Vaultwarden, Velero
+#    See scripts/setup-<service>.sh - GitLab Runner, Forgejo,
+#    Garage backups, Paperless, Renovate, Vaultwarden
 make runner-setup
 # ... etc, one per service - see the Makefile / scripts/ list above
 
@@ -196,9 +196,10 @@ never committed to Git - see "Secrets Management" below.
 | `security-manifests` | security | Network policies, ExternalSecrets, Vault ClusterSecretStore |
 | `traefik-public` | public | Second Traefik instance for internet-facing services |
 | `cert-manager-webhook-hetzner` | cert-manager | Hetzner DNS webhook for DNS-01 challenges |
-| `infrastructure` | infrastructure | Postgres cluster, cert-sync CronJob, wildcard cert, MinIO backup |
+| `infrastructure` | infrastructure | Postgres cluster, cert-sync CronJob, wildcard cert |
 | `redis` | infrastructure | Shared Redis cache |
-| `minio` | infrastructure | S3-compatible object storage |
+| `garage` | infrastructure | S3-compatible object storage (Velero, CNPG backups, runner cache) |
+| `forgejo` | forgejo | Git hosting, replaces GitLab (migration in progress) |
 | `keycloak` | auth | SSO / identity provider (LDAP → Samba AD, OIDC for everything else) |
 | `gitlab` + `gitlab-runner` | gitlab | Self-hosted GitLab CE (Omnibus) + Instance Runner |
 | `vault` | security | HashiCorp Vault (also managed as an ArgoCD app for upgrades) |
@@ -350,7 +351,7 @@ public Traefik instance + Authelia for the few internet-facing ones.
 | Vaultwarden | https://vault.homelab.local |
 | Nextcloud | https://nextcloud.homelab.local |
 | Paperless-ngx | https://paperless.homelab.local |
-| MinIO Console | https://minio-console.homelab.local |
+| Forgejo | https://forgejo.homelab.local |
 | Overleaf (public) | https://overleaf.svc.johannesmoseler.de |
 | Authelia (public) | https://login.svc.johannesmoseler.de |
 
@@ -369,7 +370,7 @@ public Traefik instance + Authelia for the few internet-facing ones.
 - [x] GitLab CE (Omnibus) + SSH on Port 2222 (Tailscale only) + GitLab Runner
 - [x] cert-manager + internal CA + wildcard TLS for *.homelab.local
 - [x] Keycloak SSO (LDAP → Samba AD, OIDC for GitLab, ArgoCD, Nextcloud, Paperless)
-- [x] Nextcloud, Paperless-ngx, Vaultwarden, MinIO, Overleaf
+- [x] Nextcloud, Paperless-ngx, Vaultwarden, Overleaf
 - [x] Renovate (automated dependency updates)
 - [x] Velero (cluster backup/restore) + quarterly recovery tests
 - [x] Authelia + public IngressRoutes (Overleaf, Minecraft) on a separate public Traefik instance

@@ -335,8 +335,6 @@ kubectl get secret gitlab-oidc-secret -n gitlab
 | `productivity` | `nextcloud-secret` | ☐ offen |
 | `productivity` | `paperless-secret` | ☐ offen |
 | `security` | `vaultwarden-secret` | ☐ offen |
-| `infrastructure` | `minio-secret` | ☐ offen |
-| `infrastructure` | `restic-ssh-key` | ☐ offen |
 
 ---
 

@@ -8,7 +8,7 @@ Dieses Dokument beschreibt die Backup-Strategie für das Homelab-Setup bestehend
 
 | Komponente | Typ | Kritikalität | Sicherung |
 |---|---|---|---|
-| PostgreSQL (CNPG) | Datenbank | 🔴 Kritisch | ✅ CNPG Barman via Garage (Restic-Offsite aktuell defekt, siehe unten) |
+| PostgreSQL (CNPG) | Datenbank | 🔴 Kritisch | ✅ CNPG Barman via Garage (kein Offsite, siehe unten) |
 | Kubernetes Cluster State | K8s-Ressourcen | 🟠 Hoch | ✅ Velero (täglich 02:00, 14 Tage Retention) |
 | Nextcloud Nutzerdaten | Dateien | 🟠 Hoch | ⚠️ ZFS-Snapshots (Storage Box) |
 | Samba AD DC | Verzeichnisdienst | 🔴 Kritisch | ✅ Ansible-Rolle backup (täglich 01:00, 7 Tage lokal, Storage Box via rsync) |
@@ -28,16 +28,13 @@ CNPG
   → WAL-Archivierung (kontinuierlich) → Garage (s3://cnpg-backups/)
   → Base-Backup (täglich 03:00)       → Garage (s3://cnpg-backups/)
 
-MinIO PVC (lokal im Cluster)
-  → Restic SFTP (täglich 03:30)       → Storage Box (/restic-minio/)
 ```
 
 **Details:**
 - WAL-Archivierung: kontinuierlich, gzip-komprimiert
 - Base-Backup: täglich 03:00 Uhr via ScheduledBackup CRD
 - Retention CNPG: 30 Tage
-- Offsite via Restic: täglich 03:30, 30 tägliche + 4 wöchentliche + 3 monatliche Snapshots
-- SSH Key Auth: `restic-ssh-key` Secret (→ Vault Migration: Issue #7)
+- Kein Offsite (Restic und Storage Box entfernt, siehe "Bekannte Lücken")
 
 **Recovery:**
 ```bash
@@ -66,8 +63,6 @@ Velero (täglich 02:00)
   → Backup aller Namespaces (außer kube-system) → Garage (velero-backups/)
   → Retention: 14 Tage (ttl: 336h)
 
-MinIO PVC (lokal im Cluster)
-  → Restic Offsite (täglich 03:30) → Storage Box (/restic-minio/)
 ```
 
 **Details:**
@@ -174,7 +169,6 @@ make vault-edit
 |---|---|---|---|
 | 02:30 | ZFS-Snapshot (Storage Box, automatisch) | Storage Box intern | ✅ |
 | 03:00 | CNPG Base-Backup (ScheduledBackup) | Garage → lokal | ✅ |
-| 03:30 | Restic Offsite (CronJob) | MinIO → Storage Box SFTP | ✅ |
 | 02:00 | Velero Cluster-Backup | Garage → lokal | ✅ |
 | 03:30 | Restic Nextcloud-Dateien | Backblaze B2 | ❌ geplant |
 | 01:00 | Samba AD Backup (systemd Timer) | Storage Box | ✅ |
@@ -183,9 +177,10 @@ make vault-edit
 
 ## Bekannte Lücken (Stand 2026-10-20)
 
-- **Restic-Offsite ist defekt.** Der CronJob `minio-backup-restic` scheitert seit mindestens 2026-10-18: Die Storage Box lehnt SSH auf Port 23 ab (`Connection refused` von `k3s-server` aus, IPv6 ist im Pod nicht erreichbar). Ursache wahrscheinlich in der Hetzner-Konsole prüfen (Storage Box -> SSH-Support / externe Erreichbarkeit aktiviert?). Außerdem sichert der Job das MinIO-Volume, in das nach der Umstellung auf Garage nichts mehr geschrieben wird. Für Garage braucht es einen neuen Offsite-Weg (z. B. `rclone sync` der Buckets auf die Storage Box).
+- **Kein Offsite-Backup.** Der Restic-Job (MinIO -> Storage Box) ist entfernt, er scheiterte ohnehin seit mindestens 2026-10-18 (Storage Box lehnte SSH auf Port 23 ab), und die Storage Box wird abgeschafft. Garage ist die einzige Kopie, sie liegt im selben Cluster. Ein Konzept für eine zweite Kopie außerhalb des Clusters steht aus.
 - **PVC-Inhalte werden nicht gesichert.** Velero läuft ohne node-agent (`defaultVolumesToFsBackup: false`, `local-path` wird von Kopia nicht unterstützt). Gesichert werden nur Cluster-Objekte und die Postgres-Daten (CNPG). Minecraft-Welt, Nextcloud-/Paperless-Dateien, Overleaf und GitLab/Forgejo-Repos liegen nur auf dem jeweiligen Node.
-- Die alten Backups in MinIO bleiben dort liegen, bis MinIO entfernt wird. CNPG beginnt in Garage eine neue Backup-Linie (erstes Base-Backup nach der Umstellung manuell anstoßen).
+- MinIO ist entfernt, die alten Backups dort sind weg. CNPG hat in Garage eine neue Backup-Linie begonnen (erstes Base-Backup am 2026-10-20).
+- Weitere Abhängigkeiten von der Storage Box, die mit ihr wegfallen: Samba-AD-Backup (`ansible/roles/backup`, rsync) und der Nextcloud-External-Storage `StorageBox` (WebDAV).
 
 ---
 
@@ -198,9 +193,8 @@ Seit dem Entfernen des Monitoring-Stacks gibt es **keine automatischen Alerts** 
 kubectl get backup -n infrastructure
 kubectl cnpg status homelab-pg -n infrastructure
 
-# Restic Snapshots auf Storage Box prüfen
-kubectl create job restic-check-$(date +%s) \
-  --from=cronjob/minio-backup-restic -n infrastructure
+# Backups im Bucket (Größe/Objekte)
+kubectl exec -n infrastructure garage-0 -c garage -- /garage bucket info cnpg-backups
 ```
 
 ---

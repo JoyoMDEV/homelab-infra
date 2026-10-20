@@ -60,10 +60,8 @@ ENTRIES=(
   "gitlab|gitlab-secret|gitlab/gitlab-secret|db-password:db-password,redis-password:redis-password,oidc-client-secret:oidc-client-secret"
   "gitlab|gitlab-rails-secrets|gitlab/rails-secrets|secret_key_base:secret-key-base,db_key_base:db-key-base,otp_key_base:otp-key-base,ci_job_token_signing_key:ci-job-token-signing-key"
   "gitlab|gitlab-runner-secret|gitlab/runner-secret|runner-registration-token:runner-registration-token,runner-token:runner-token"
-  "infrastructure|minio-secret|infrastructure/minio|rootUser:rootUser,rootPassword:rootPassword,storage-box-password:storage-box-password"
   "security|vaultwarden-secret|security/vaultwarden-secret|admin-token:admin-token"
   "security|vaultwarden|security/vaultwarden-smtp|SMTP_USERNAME:SMTP_USERNAME,SMTP_PASSWORD:SMTP_PASSWORD"
-  "infrastructure|restic-ssh-key|infrastructure/restic-ssh|ssh-privatekey:ssh-privatekey,ssh-publickey:ssh-publickey,storage-box-host:storage-box-host,storage-box-user:storage-box-user,storage-box-port:storage-box-port"
 )
 
 k8s_get() {

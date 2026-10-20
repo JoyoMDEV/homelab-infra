@@ -54,4 +54,4 @@ spec:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=false # Namespace existiert bereits (MinIO etc.)
+      - CreateNamespace=false # Namespace existiert bereits (infrastructure)

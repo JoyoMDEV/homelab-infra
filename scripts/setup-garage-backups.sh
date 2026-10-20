@@ -3,7 +3,7 @@ set -euo pipefail
 
 # =============================================================================
 #  setup-garage-backups.sh
-#  Replaces setup-velero.sh / the MinIO backup target. Creates the Garage
+#  Replaces setup-velero.sh and the former MinIO backup target. Creates the Garage
 #  buckets 'velero-backups' and 'cnpg-backups' plus one scoped access key and
 #  writes the credentials to Vault:
 #
@@ -12,9 +12,9 @@ set -euo pipefail
 #    homelab/backup/velero-garage-secret          cloud (AWS credentials file)
 #       -> ExternalSecret velero-secret (ns backup), used by Velero
 #
-#  The old MinIO-based Vault paths are left untouched, so this script can run
-#  BEFORE the PR that switches Velero/CNPG to Garage is merged without
-#  breaking the running backups.
+#  The former MinIO-based Vault paths (homelab/infrastructure/minio,
+#  homelab/infrastructure/restic-ssh, homelab/backup/velero-secret) are no
+#  longer read by anything and can be deleted from Vault.
 #
 #  IDEMPOTENT: if both Vault paths already exist, nothing is changed.
 #
