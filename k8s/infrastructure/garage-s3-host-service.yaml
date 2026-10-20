@@ -1,0 +1,23 @@
+# Fixed-IP ClusterIP Service for the Samba AD backup that runs on a node host
+# (systemd timer from ansible/roles/backup, outside the pod network). Hosts
+# cannot resolve cluster DNS, but every k3s node reaches ClusterIPs through
+# kube-proxy. A pinned IP survives a recreate of the garage release; the
+# garage Service itself gets a random one.
+# 10.43.0.50 is in the static-allocation band of the default k3s service CIDR
+# (10.43.0.0/16). The ansible var backup_s3_endpoint must match.
+apiVersion: v1
+kind: Service
+metadata:
+  name: garage-s3-host
+  namespace: infrastructure
+spec:
+  type: ClusterIP
+  clusterIP: 10.43.0.50
+  selector:
+    app.kubernetes.io/instance: garage
+    app.kubernetes.io/name: garage
+  ports:
+    - name: s3-api
+      port: 3900
+      targetPort: 3900
+      protocol: TCP

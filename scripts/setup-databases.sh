@@ -143,11 +143,6 @@ kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "
 
 if ! vault_kv_path_exists "productivity/nextcloud-secret"; then
   NEXTCLOUD_ADMIN_PW=$(openssl rand -base64 16)
-  echo ""
-  echo "==> Hetzner Storage Box Passwort für Nextcloud"
-  read -rsp "    Storage Box Passwort (wird nicht angezeigt, leer = Platzhalter): " STORAGE_BOX_PW
-  echo ""
-  [[ -z "${STORAGE_BOX_PW}" ]] && STORAGE_BOX_PW="REPLACE_ME"
 
   vault_kv_put "productivity/nextcloud-secret" \
     "nextcloud-username=admin" \
@@ -155,7 +150,6 @@ if ! vault_kv_path_exists "productivity/nextcloud-secret"; then
     "db-username=nextcloud" \
     "db-password=${NEXTCLOUD_DB_PW}" \
     "redis-password=${REDIS_PW}" \
-    "storage-box-password=${STORAGE_BOX_PW}" \
     "oidc-client-secret=REPLACE_AFTER_KEYCLOAK_SETUP"
 
   force_sync nextcloud-secret productivity

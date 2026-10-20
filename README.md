@@ -97,7 +97,7 @@ homelab-infra/
 │   ├── setup-<service>.sh           #   Per-service Vault secret setup (gitlab-runner, forgejo,
 │   │                                     garage-backups, paperless, renovate, vaultwarden)
 │   ├── add-authelia-user.sh         #   Add/update an Authelia user in Vault
-│   ├── setup-coredns.sh / setup-nextcloud-storage.sh
+│   ├── setup-coredns.sh
 │   └── test-cnpg-recovery.sh / test-velero-recovery.sh
 │
 ├── docs/                        # Runbooks

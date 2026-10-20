@@ -19,9 +19,8 @@ Nextcloud läuft unter **https://nextcloud.homelab.local**.
 2. [Keycloak OIDC-Client anlegen](#2-keycloak-oidc-client-anlegen)
 3. [Traefik Middleware deployen](#3-traefik-middleware-deployen)
 4. [Nextcloud deployen](#4-nextcloud-deployen)
-5. [Storage Box einrichten](#5-storage-box-einrichten)
-6. [Verifikation](#6-verifikation)
-7. [Troubleshooting](#7-troubleshooting)
+5. [Verifikation](#5-verifikation)
+6. [Troubleshooting](#6-troubleshooting)
 
 ---
 
@@ -63,9 +62,6 @@ REDIS_PW=$(kubectl get secret redis-secret -n infrastructure \
 # Admin Passwort generieren
 NEXTCLOUD_ADMIN_PW=$(openssl rand -base64 16)
 
-# Storage Box Passwort – aus terraform.tfvars oder Hetzner Console
-STORAGE_BOX_PW="<DEIN_STORAGE_BOX_PASSWORT>"
-
 # Nextcloud Secret anlegen
 # oidc-client-secret wird nach Schritt 2 nachgetragen
 kubectl create secret generic nextcloud-secret \
@@ -74,7 +70,6 @@ kubectl create secret generic nextcloud-secret \
   --from-literal=db-username="nextcloud" \
   --from-literal=db-password="${NEXTCLOUD_DB_PW}" \
   --from-literal=redis-password="${REDIS_PW}" \
-  --from-literal=storage-box-password="${STORAGE_BOX_PW}" \
   --from-literal=oidc-client-secret="PLACEHOLDER_REPLACE_AFTER_KEYCLOAK" \
   -n productivity
 
@@ -222,67 +217,7 @@ kubectl logs -n productivity \
 
 ---
 
-## 5. Storage Box einrichten
-
-### 5.1 Verzeichnis auf Storage Box anlegen
-
-```bash
-cd terraform
-STORAGE_HOST=$(terraform output -raw storage_box_host)
-STORAGE_USER=$(terraform output -raw storage_box_username)
-cd ..
-
-# Per SFTP verbinden (Port 23 für SFTP-Zugang)
-sftp -P 23 -o StrictHostKeyChecking=no ${STORAGE_USER}@${STORAGE_HOST} <<EOF
-mkdir nextcloud
-ls -la
-bye
-EOF
-```
-
-### 5.2 WebDAV External Storage einrichten
-
-> **Wichtig:** Das Nextcloud `fpm-alpine` Image enthält keine `php-ssh2` Extension,
-> daher funktioniert SFTP-External-Storage nicht. Wir nutzen stattdessen **WebDAV**
-> (HTTPS Port 443) – die Storage Box unterstützt das out-of-the-box.
-
-```bash
-chmod +x scripts/setup-nextcloud-storage.sh
-./scripts/setup-nextcloud-storage.sh
-```
-
-Das Script:
-- Prüft alle Voraussetzungen
-- Testet die WebDAV-Verbindung aus dem Cluster
-- Aktiviert die `files_external` App (idempotent)
-- Legt den WebDAV-Mount zur Storage Box an
-- Gibt den Mount für alle Benutzer frei
-
-### 5.3 Mount verifizieren
-
-```bash
-POD=$(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
-  -o jsonpath='{.items[0].metadata.name}')
-
-kubectl exec -n productivity ${POD} -- \
-  su -s /bin/sh www-data -c "php /var/www/html/occ files_external:list"
-```
-
-Erwartete Ausgabe:
-
-```
-+----------+-------------+---------+---------------------+------------------------------------------+
-| Mount ID | Mount Point | Storage | Authentication Type | Configuration                            |
-+----------+-------------+---------+---------------------+------------------------------------------+
-| 1        | /StorageBox | WebDAV  | Login and password  | host: "https://u....your-storagebox.de"  |
-+----------+-------------+---------+---------------------+------------------------------------------+
-```
-
-In der Nextcloud-UI erscheint die Storage Box unter **Dateien → StorageBox**.
-
----
-
-## 6. Verifikation
+## 5. Verifikation
 
 ### Nextcloud erreichbar
 
@@ -328,7 +263,7 @@ curl -sv https://nextcloud.homelab.local/.well-known/caldav 2>&1 | grep -E "< HT
 
 ---
 
-## 7. Troubleshooting
+## 6. Troubleshooting
 
 ### OIDC-Button erscheint nicht
 
@@ -396,19 +331,6 @@ kubectl exec -n productivity ${POD} -- \
 
 Bekanntes Session-Timing-Problem beim allerersten Login. Einfach nochmal auf
 **"Mit Keycloak anmelden"** klicken.
-
-### Storage Box: "Ordner nicht gefunden"
-
-Das `fpm-alpine` Image hat keine `php-ssh2` Extension → SFTP-Mounts funktionieren nicht.
-Nur **WebDAV** verwenden:
-
-```bash
-POD=$(kubectl get pod -n productivity -l app.kubernetes.io/name=nextcloud \
-  -o jsonpath='{.items[0].metadata.name}')
-
-# SFTP-Mount löschen und als WebDAV neu anlegen
-./scripts/setup-nextcloud-storage.sh --reset
-```
 
 ### Nextcloud-Installation schlägt fehl (config.php leer)
 
