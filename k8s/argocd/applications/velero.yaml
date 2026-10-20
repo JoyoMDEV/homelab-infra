@@ -18,7 +18,7 @@ spec:
           useSecret: true
           existingSecret: velero-secret
 
-        # ── BackupStorageLocation (MinIO) ────────────────────────────────────
+        # ── BackupStorageLocation (Garage) ───────────────────────────────────
         configuration:
           backupStorageLocation:
             - name: default
@@ -26,10 +26,10 @@ spec:
               bucket: velero-backups
               default: true
               config:
-                region: minio
+                region: garage
                 s3ForcePathStyle: "true"
-                s3Url: http://minio.infrastructure.svc.cluster.local:9000
-                publicUrl: http://minio.infrastructure.svc.cluster.local:9000
+                s3Url: http://garage.infrastructure.svc.cluster.local:3900
+                publicUrl: http://garage.infrastructure.svc.cluster.local:3900
 
           uploaderType: kopia
           logLevel: info
@@ -74,7 +74,7 @@ spec:
               includedResources:
                 - "*"
 
-        # ── Init Container: AWS Plugin für MinIO S3-Kompatibilität ───────────
+        # ── Init Container: AWS Plugin für S3-Kompatibilität (Garage) ───────────
         initContainers:
           - name: velero-plugin-for-aws
             image: velero/velero-plugin-for-aws:v1.12.2

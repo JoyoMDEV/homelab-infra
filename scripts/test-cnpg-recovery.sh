@@ -6,7 +6,7 @@ set -euo pipefail
 #  Testet die PostgreSQL Wiederherstellung aus einem CNPG Barman Backup.
 #
 #  Was dieser Test macht:
-#  1. Neuesten Backup aus MinIO ermitteln
+#  1. Neuesten Backup aus Garage ermitteln
 #  2. Temporären Wiederherstellungs-Cluster erstellen
 #  3. Warten bis der Cluster bereit ist
 #  4. Datenbanken und Tabellen im wiederhergestellten Cluster prüfen
@@ -16,7 +16,7 @@ set -euo pipefail
 #
 #  VORAUSSETZUNGEN:
 #  - kubectl cnpg Plugin installiert
-#  - MinIO läuft und enthält mindestens einen Backup
+#  - Garage läuft und enthält mindestens einen Backup
 #  - CNPG Operator läuft im Cluster
 #
 #  USAGE:
@@ -26,7 +26,7 @@ set -euo pipefail
 NAMESPACE="infrastructure"
 ORIGINAL_CLUSTER="homelab-pg"
 RESTORE_CLUSTER="homelab-pg-recovery-test"
-MINIO_SECRET="minio-secret"
+S3_SECRET="garage-backup-secret"
 
 echo ""
 echo "============================================"
@@ -101,14 +101,17 @@ spec:
     - name: ${ORIGINAL_CLUSTER}
       barmanObjectStore:
         destinationPath: s3://cnpg-backups/
-        endpointURL: http://minio.infrastructure.svc.cluster.local:9000
+        endpointURL: http://garage.infrastructure.svc.cluster.local:3900
         s3Credentials:
           accessKeyId:
-            name: ${MINIO_SECRET}
-            key: rootUser
+            name: ${S3_SECRET}
+            key: access-key-id
           secretAccessKey:
-            name: ${MINIO_SECRET}
-            key: rootPassword
+            name: ${S3_SECRET}
+            key: secret-access-key
+          region:
+            name: ${S3_SECRET}
+            key: region
 YAML
 
 echo "    Recovery-Cluster erstellt."
