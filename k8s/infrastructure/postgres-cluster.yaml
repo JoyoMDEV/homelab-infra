@@ -52,14 +52,15 @@ spec:
     retentionPolicy: "30d"
 
 ---
-# Täglicher Backup um 03:00 Uhr – nach Velero (02:00) und vor Restic (03:30)
+# Täglicher Backup um 03:00 Uhr – nach Velero (02:00) und vor Restic (03:30).
+# CNPG erwartet 6 Cron-Felder (Sekunden zuerst); mit 5 Feldern lief es stündlich.
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
   name: homelab-pg-daily
   namespace: infrastructure
 spec:
-  schedule: "0 3 * * *"
+  schedule: "0 0 3 * * *"
   backupOwnerReference: self
   cluster:
     name: homelab-pg
