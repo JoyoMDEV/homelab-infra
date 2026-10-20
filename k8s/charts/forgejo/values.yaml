@@ -1,0 +1,22 @@
+hostname: forgejo.homelab.local
+
+image:
+  repository: codeberg.org/forgejo/forgejo
+  # Forgejo v15 is an LTS line (v7, v11, v15, ...)
+  tag: "15.0.10-rootless"
+
+# Port shown in clone URLs. Forgejo itself listens on 2222 inside the pod;
+# the node-level entrypoint is added separately (see docs/forgejo-setup.md).
+sshPublicPort: 2223
+
+secretName: forgejo-secret
+
+persistence:
+  size: 20Gi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi

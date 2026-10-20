@@ -1,0 +1,6 @@
+apiVersion: v2
+name: forgejo
+description: Forgejo (rootless) as single container deployment, SQLite on a PVC
+type: application
+version: 0.1.0
+appVersion: "15.0.10"

@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: forgejo
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/JoyoMDEV/homelab-infra.git
+    # Chart lives in this repo; the pinned version is image.tag in
+    # k8s/charts/forgejo/values.yaml (Forgejo v15 LTS).
+    targetRevision: main
+    path: k8s/charts/forgejo
+    helm:
+      values: |
+        hostname: forgejo.homelab.local
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: forgejo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

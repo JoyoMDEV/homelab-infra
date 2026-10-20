@@ -71,6 +71,7 @@ data:
             # IP is the Traefik ClusterIP, read dynamically by setup-coredns.sh
             ${TRAEFIK_IP} auth.homelab.local
             ${TRAEFIK_IP} gitlab.homelab.local
+            ${TRAEFIK_IP} forgejo.homelab.local
             ${TRAEFIK_IP} registry.homelab.local
             ${TRAEFIK_IP} argocd.homelab.local
             ${TRAEFIK_IP} nextcloud.homelab.local
@@ -115,6 +116,7 @@ else
     hosts {
         ${TRAEFIK_IP} auth.homelab.local
         ${TRAEFIK_IP} gitlab.homelab.local
+        ${TRAEFIK_IP} forgejo.homelab.local
         ${TRAEFIK_IP} registry.homelab.local
         ${TRAEFIK_IP} argocd.homelab.local
         ${TRAEFIK_IP} nextcloud.homelab.local
@@ -182,6 +184,7 @@ echo ""
 echo "  Services:"
 echo "    - auth.homelab.local       (Keycloak)"
 echo "    - gitlab.homelab.local     (GitLab)"
+echo "    - forgejo.homelab.local    (Forgejo)"
 echo "    - argocd.homelab.local     (ArgoCD)"
 echo "    - nextcloud.homelab.local  (Nextcloud)"
 echo "    - homarr.homelab.local     (Homarr)"
