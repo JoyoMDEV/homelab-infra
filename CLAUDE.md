@@ -10,7 +10,7 @@ Hybrid k3s cluster (2 Hetzner Cloud servers + 2 home nodes) managed with Terrafo
 - `terraform/` — Hetzner Cloud provisioning (servers, network, firewall). State is local and gitignored.
 - `ansible/` — server configuration (`roles/`: `common`, `hardening`, `k3s_server`, `k3s_agent`, `samba`, `tailscale`, `backup`).
 - `k8s/argocd/applications/` — one ArgoCD `Application` per deployed service. `k8s/argocd/root.yaml` is the app-of-apps that watches this directory.
-- `k8s/security/external-secrets/<category>/` — one `ExternalSecret` per service, grouped by category (`auth`, `productivity`, `infrastructure`, `dashboard`, `gitlab`, `cert-manager`, `security`).
+- `k8s/security/external-secrets/<category>/` — one `ExternalSecret` per service, grouped by category (`auth`, `productivity`, `infrastructure`, `dashboard`, `gitlab`, `forgejo`, `cert-manager`, `security`).
 - `k8s/charts/` — local Helm charts for services not available upstream.
 - `k8s/values/` — standalone Helm values files referenced by ArgoCD apps.
 - `scripts/` — one-off `setup-<service>.sh` bootstrap scripts (Vault secret seeding, storage provisioning, etc.) run manually, not by CI.

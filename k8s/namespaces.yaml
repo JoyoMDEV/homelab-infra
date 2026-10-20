@@ -110,3 +110,11 @@ metadata:
   labels:
     managed-by: argocd
     homelab.local/inject-ca: "true"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: forgejo
+  labels:
+    managed-by: argocd
+    homelab.local/inject-ca: "true"
