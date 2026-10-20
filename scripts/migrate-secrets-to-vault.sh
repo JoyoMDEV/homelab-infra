@@ -53,7 +53,7 @@ ENTRIES=(
   "infrastructure|redis-secret|infrastructure/redis-secret|redis-password:redis-password"
   "automation|renovate-secret|automation/renovate-secret|RENOVATE_TOKEN:RENOVATE_TOKEN"
   "backup|velero-secret|backup/velero-secret|cloud:cloud"
-  "productivity|nextcloud-secret|productivity/nextcloud-secret|nextcloud-username:nextcloud-username,nextcloud-password:nextcloud-password,db-username:db-username,db-password:db-password,redis-password:redis-password,storage-box-password:storage-box-password,oidc-client-secret:oidc-client-secret"
+  "productivity|nextcloud-secret|productivity/nextcloud-secret|nextcloud-username:nextcloud-username,nextcloud-password:nextcloud-password,db-username:db-username,db-password:db-password,redis-password:redis-password,oidc-client-secret:oidc-client-secret"
   "productivity|paperless-secret|productivity/paperless-secret|db-username:db-username,db-password:db-password,redis-password:redis-password,redis-url:redis-url,secret-key:secret-key,oidc-client-secret:oidc-client-secret,smtp-username:smtp-username,smtp-password:smtp-password"
   "auth|keycloak-secret|auth/keycloak-secret|admin-password:admin-password"
   "auth|keycloak-db-secret|auth/keycloak-db-secret|password:password"

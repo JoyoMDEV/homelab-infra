@@ -5,18 +5,22 @@ set -euo pipefail
 #  samba-backup.sh
 #  Täglich ausgeführt von systemd Timer (01:00 Uhr)
 #  1. Samba AD Online Backup erstellen
-#  2. Backup zur Storage Box syncen
+#  2. Backup nach Garage (S3) hochladen, alte Remote-Backups löschen
 #  3. Alte lokale Backups bereinigen
 # =============================================================================
 
 BACKUP_DIR="{{ backup_dir }}"
-STORAGE_BOX_HOST="{{ backup_storage_box_host }}"
-STORAGE_BOX_USER="{{ backup_storage_box_user }}"
-STORAGE_BOX_PORT="{{ backup_storage_box_port }}"
-STORAGE_BOX_PATH="{{ backup_storage_box_remote_path }}"
-SSH_KEY="{{ backup_ssh_key_path }}"
+S3_BUCKET="{{ backup_s3_bucket }}"
 RETENTION_DAYS="{{ backup_retention_days }}"
-REMOTE_RETENTION_DAYS="{{ backup_storage_box_retention_days }}"
+REMOTE_RETENTION_DAYS="{{ backup_s3_retention_days }}"
+
+# rclone configured via environment, no config file with secrets on disk
+export RCLONE_CONFIG_GARAGE_TYPE=s3
+export RCLONE_CONFIG_GARAGE_PROVIDER=Other
+export RCLONE_CONFIG_GARAGE_ENDPOINT="{{ backup_s3_endpoint }}"
+export RCLONE_CONFIG_GARAGE_REGION="{{ backup_s3_region }}"
+export RCLONE_CONFIG_GARAGE_ACCESS_KEY_ID="{{ backup_s3_access_key_id }}"
+export RCLONE_CONFIG_GARAGE_SECRET_ACCESS_KEY="{{ backup_s3_secret_access_key }}"
 TIMESTAMP=$(date +%Y-%m-%d_%H-%M-%S)
 LOG_TAG="samba-backup"
 
@@ -54,23 +58,18 @@ if [[ -z "${BACKUP_FILE}" ]]; then
 fi
 log "    Backup-Datei: ${BACKUP_FILE}"
 
-# ── Rsync zur Storage Box ─────────────────────────────────────────────────────
-log "==> [2/4] Sync zur Storage Box..."
+# ── Upload nach Garage ────────────────────────────────────────────────────────
+log "==> [2/4] Upload nach Garage (${S3_BUCKET})..."
 
-rsync \
-  --archive \
-  --compress \
-  --delete \
-  --rsh="ssh -i ${SSH_KEY} -p ${STORAGE_BOX_PORT} -o StrictHostKeyChecking=accept-new" \
-  "${BACKUP_DIR}/" \
-  "${STORAGE_BOX_USER}@${STORAGE_BOX_HOST}:${STORAGE_BOX_PATH}/" \
-  2>&1
+# copy, not sync: a local cleanup must never delete remote backups
+rclone copy "${BACKUP_DIR}" "GARAGE:${S3_BUCKET}" --s3-no-check-bucket 2>&1
 
-log "    Sync abgeschlossen."
+log "    Upload abgeschlossen."
 
 # ── Alte Remote-Backups bereinigen ────────────────────────────────────────────
-log "==> [3/4] Remote-Retention wird durch lokale Bereinigung + rsync --delete gesteuert..."
-log "    Alte Remote-Verzeichnisse werden beim nächsten Sync automatisch gelöscht."
+log "==> [3/4] Lösche Remote-Backups älter als ${REMOTE_RETENTION_DAYS} Tage..."
+rclone delete "GARAGE:${S3_BUCKET}" --min-age "${REMOTE_RETENTION_DAYS}d" 2>&1
+rclone rmdirs "GARAGE:${S3_BUCKET}" --leave-root 2>&1
 
 # ── Alte lokale Backups bereinigen ────────────────────────────────────────────
 log "==> [4/4] Bereinige alte lokale Backups (älter als ${RETENTION_DAYS} Tage)..."

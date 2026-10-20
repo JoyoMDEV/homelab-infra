@@ -241,9 +241,8 @@ Falls du Nextcloud nutzt, kannst du dort einen Ordner anlegen der via WebDAV
 auf das Consumption-Verzeichnis zeigt — oder einfach Dateien in Nextcloud ablegen
 und von dort manuell ins Consumption-Verzeichnis schieben.
 
-**Geplante Erweiterung:** Consumption-Ordner auf Storage Box via WebDAV einbinden
-(analog Nextcloud External Storage) — dann kannst du Dokumente per WebDAV
-von jedem Gerät einwerfen.
+**Mögliche Erweiterung:** Consumption-Ordner per WebDAV (z. B. über Nextcloud) einbinden,
+dann kannst du Dokumente von jedem Gerät einwerfen.
 
 ### 7.3 Consumption per E-Mail (IMAP)
 
