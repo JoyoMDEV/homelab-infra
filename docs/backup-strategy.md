@@ -8,7 +8,7 @@ Dieses Dokument beschreibt die Backup-Strategie für das Homelab-Setup bestehend
 
 | Komponente | Typ | Kritikalität | Sicherung |
 |---|---|---|---|
-| PostgreSQL (CNPG) | Datenbank | 🔴 Kritisch | ✅ CNPG Barman via MinIO + Restic Offsite |
+| PostgreSQL (CNPG) | Datenbank | 🔴 Kritisch | ✅ CNPG Barman via Garage (Restic-Offsite aktuell defekt, siehe unten) |
 | Kubernetes Cluster State | K8s-Ressourcen | 🟠 Hoch | ✅ Velero (täglich 02:00, 14 Tage Retention) |
 | Nextcloud Nutzerdaten | Dateien | 🟠 Hoch | ⚠️ ZFS-Snapshots (Storage Box) |
 | Samba AD DC | Verzeichnisdienst | 🔴 Kritisch | ✅ Ansible-Rolle backup (täglich 01:00, 7 Tage lokal, Storage Box via rsync) |
@@ -25,8 +25,8 @@ Dieses Dokument beschreibt die Backup-Strategie für das Homelab-Setup bestehend
 **Architektur:**
 ```
 CNPG
-  → WAL-Archivierung (kontinuierlich) → MinIO (s3://cnpg-backups/)
-  → Base-Backup (täglich 03:00)       → MinIO (s3://cnpg-backups/)
+  → WAL-Archivierung (kontinuierlich) → Garage (s3://cnpg-backups/)
+  → Base-Backup (täglich 03:00)       → Garage (s3://cnpg-backups/)
 
 MinIO PVC (lokal im Cluster)
   → Restic SFTP (täglich 03:30)       → Storage Box (/restic-minio/)
@@ -63,7 +63,7 @@ kubectl cnpg status homelab-pg -n infrastructure
 **Architektur:**
 ```
 Velero (täglich 02:00)
-  → Backup aller Namespaces (außer kube-system) → MinIO (velero-backups/)
+  → Backup aller Namespaces (außer kube-system) → Garage (velero-backups/)
   → Retention: 14 Tage (ttl: 336h)
 
 MinIO PVC (lokal im Cluster)
@@ -173,11 +173,19 @@ make vault-edit
 | Zeit | Job | Ziel | Status |
 |---|---|---|---|
 | 02:30 | ZFS-Snapshot (Storage Box, automatisch) | Storage Box intern | ✅ |
-| 03:00 | CNPG Base-Backup (ScheduledBackup) | MinIO → lokal | ✅ |
+| 03:00 | CNPG Base-Backup (ScheduledBackup) | Garage → lokal | ✅ |
 | 03:30 | Restic Offsite (CronJob) | MinIO → Storage Box SFTP | ✅ |
-| 02:00 | Velero Cluster-Backup | MinIO → lokal | ✅ |
+| 02:00 | Velero Cluster-Backup | Garage → lokal | ✅ |
 | 03:30 | Restic Nextcloud-Dateien | Backblaze B2 | ❌ geplant |
 | 01:00 | Samba AD Backup (systemd Timer) | Storage Box | ✅ |
+
+---
+
+## Bekannte Lücken (Stand 2026-10-20)
+
+- **Restic-Offsite ist defekt.** Der CronJob `minio-backup-restic` scheitert seit mindestens 2026-10-18: Die Storage Box lehnt SSH auf Port 23 ab (`Connection refused` von `k3s-server` aus, IPv6 ist im Pod nicht erreichbar). Ursache wahrscheinlich in der Hetzner-Konsole prüfen (Storage Box -> SSH-Support / externe Erreichbarkeit aktiviert?). Außerdem sichert der Job das MinIO-Volume, in das nach der Umstellung auf Garage nichts mehr geschrieben wird. Für Garage braucht es einen neuen Offsite-Weg (z. B. `rclone sync` der Buckets auf die Storage Box).
+- **PVC-Inhalte werden nicht gesichert.** Velero läuft ohne node-agent (`defaultVolumesToFsBackup: false`, `local-path` wird von Kopia nicht unterstützt). Gesichert werden nur Cluster-Objekte und die Postgres-Daten (CNPG). Minecraft-Welt, Nextcloud-/Paperless-Dateien, Overleaf und GitLab/Forgejo-Repos liegen nur auf dem jeweiligen Node.
+- Die alten Backups in MinIO bleiben dort liegen, bis MinIO entfernt wird. CNPG beginnt in Garage eine neue Backup-Linie (erstes Base-Backup nach der Umstellung manuell anstoßen).
 
 ---
 
@@ -208,7 +216,7 @@ make recovery-test   # Verifiziert dass Backup funktioniert
 
 ### Szenario B: Kompletter Cluster-Verlust
 1. Neuen Hetzner-Server provisionieren: `make tf-apply && make ansible-run`
-2. CNPG aus MinIO/Barman-Backup wiederherstellen
+2. CNPG aus Garage/Barman-Backup wiederherstellen
 3. Velero Cluster-State wiederherstellen (sobald implementiert)
 4. Samba AD aus Backup restoren (sobald implementiert)
 

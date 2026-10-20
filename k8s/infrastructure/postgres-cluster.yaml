@@ -28,18 +28,21 @@ spec:
       database: homelab
       owner: homelab
 
-  # ── Backup via Barman + MinIO ─────────────────────────────────────────────
+  # ── Backup via Barman + Garage ─────────────────────────────────────────────
   backup:
     barmanObjectStore:
       destinationPath: s3://cnpg-backups/
-      endpointURL: http://minio.infrastructure.svc.cluster.local:9000
+      endpointURL: http://garage.infrastructure.svc.cluster.local:3900
       s3Credentials:
         accessKeyId:
-          name: minio-secret
-          key: rootUser
+          name: garage-backup-secret
+          key: access-key-id
         secretAccessKey:
-          name: minio-secret
-          key: rootPassword
+          name: garage-backup-secret
+          key: secret-access-key
+        region:
+          name: garage-backup-secret
+          key: region
       wal:
         compression: gzip
       data:
