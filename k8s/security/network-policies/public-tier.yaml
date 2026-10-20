@@ -201,6 +201,11 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app: overleaf
+        # PostSync hook Job (k8s/overleaf/mongo.yaml) initialises the replica
+        # set. Its own egress was allowed by overleaf-mongo-init, but without
+        # this entry mongo dropped it at ingress and the Job hung forever.
+        - matchLabels:
+            job-name: overleaf-mongo-init-replicaset
   egress:
     - toEndpoints:
         - matchLabels:
