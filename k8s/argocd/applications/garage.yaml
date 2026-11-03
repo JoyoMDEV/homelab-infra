@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: https://git.deuxfleurs.fr/Deuxfleurs/garage.git
     path: script/helm/garage
-    targetRevision: v2.4.1
+    targetRevision: v2.5.0
     helm:
       values: |
         garage:
