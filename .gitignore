@@ -4,7 +4,7 @@ terraform/*.tfstate*
 terraform/*.tfvars
 terraform/.terraform.lock.hcl
 
-# Terraform (Coder workspace templates)
+# Terraform (any nested working dirs)
 **/.terraform/
 **/.terraform.lock.hcl
 

@@ -18,8 +18,8 @@ assignees: ""
 3.
 
 ## Environment
-- Component: <!-- e.g. GitLab, Keycloak, Traefik, cert-manager -->
-- Namespace: <!-- e.g. gitlab, auth, kube-system -->
+- Component: <!-- e.g. Forgejo, Keycloak, Traefik, cert-manager -->
+- Namespace: <!-- e.g. forgejo, auth, kube-system -->
 
 ## Logs / Output
 ```

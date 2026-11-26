@@ -8,7 +8,7 @@ set -euo pipefail
 #  WHY THIS IS NEEDED:
 #  Pods use CoreDNS for DNS resolution, not Tailscale Split DNS.
 #  Without this, a pod trying to reach auth.homelab.local gets NXDOMAIN,
-#  breaking OIDC flows (e.g. GitLab → Keycloak) and inter-service calls.
+#  breaking OIDC flows (e.g. ArgoCD → Keycloak) and inter-service calls.
 #
 #  HOW IT WORKS:
 #  We use the 'coredns-custom' ConfigMap (not 'coredns') which k3s imports
@@ -70,16 +70,13 @@ data:
             # Wildcard: all *.homelab.local → Traefik (routes via Host header)
             # IP is the Traefik ClusterIP, read dynamically by setup-coredns.sh
             ${TRAEFIK_IP} auth.homelab.local
-            ${TRAEFIK_IP} gitlab.homelab.local
             ${TRAEFIK_IP} forgejo.homelab.local
-            ${TRAEFIK_IP} registry.homelab.local
             ${TRAEFIK_IP} argocd.homelab.local
             ${TRAEFIK_IP} nextcloud.homelab.local
             ${TRAEFIK_IP} homarr.homelab.local
             ${TRAEFIK_IP} vault.homelab.local
             ${TRAEFIK_IP} hcvault.homelab.local
             ${TRAEFIK_IP} paperless.homelab.local
-            ${TRAEFIK_IP} coder.homelab.local
             ${TRAEFIK_IP} homelab.local
             fallthrough
         }
@@ -115,16 +112,13 @@ else
   HOMELAB_BLOCK="homelab.local:53 {
     hosts {
         ${TRAEFIK_IP} auth.homelab.local
-        ${TRAEFIK_IP} gitlab.homelab.local
         ${TRAEFIK_IP} forgejo.homelab.local
-        ${TRAEFIK_IP} registry.homelab.local
         ${TRAEFIK_IP} argocd.homelab.local
         ${TRAEFIK_IP} nextcloud.homelab.local
         ${TRAEFIK_IP} homarr.homelab.local
         ${TRAEFIK_IP} vault.homelab.local
         ${TRAEFIK_IP} hcvault.homelab.local
         ${TRAEFIK_IP} paperless.homelab.local
-        ${TRAEFIK_IP} coder.homelab.local
         ${TRAEFIK_IP} homelab.local
         fallthrough
     }
@@ -159,8 +153,8 @@ kubectl run -it --rm dns-test --image=alpine --restart=Never -- \
     apk add --no-cache bind-tools -q 2>/dev/null
     echo '--- auth.homelab.local ---'
     nslookup auth.homelab.local
-    echo '--- gitlab.homelab.local ---'
-    nslookup gitlab.homelab.local
+    echo '--- forgejo.homelab.local ---'
+    nslookup forgejo.homelab.local
     echo '--- argocd.homelab.local ---'
     nslookup argocd.homelab.local
   " 2>/dev/null || echo "    (DNS test pod cleanup complete)"
@@ -183,7 +177,7 @@ echo "  inside the cluster → Traefik → Service"
 echo ""
 echo "  Services:"
 echo "    - auth.homelab.local       (Keycloak)"
-echo "    - gitlab.homelab.local     (GitLab)"
+echo "    - forgejo.homelab.local    (Forgejo)"
 echo "    - forgejo.homelab.local    (Forgejo)"
 echo "    - argocd.homelab.local     (ArgoCD)"
 echo "    - nextcloud.homelab.local  (Nextcloud)"

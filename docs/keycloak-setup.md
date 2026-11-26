@@ -11,7 +11,7 @@ Keycloak läuft bereits unter **https://auth.homelab.local**.
   ```bash
   make setup-coredns
   ```
-  > Ohne diesen Schritt können Pods (z.B. GitLab) `auth.homelab.local` nicht
+  > Ohne diesen Schritt können Pods (z.B. ArgoCD) `auth.homelab.local` nicht
   > auflösen und OIDC-Logins schlagen mit "getaddrinfo: name or service not known" fehl. und CA ist importiert
 
 ---
@@ -21,12 +21,9 @@ Keycloak läuft bereits unter **https://auth.homelab.local**.
 1. [Admin-Passwort auslesen](#1-admin-passwort-auslesen)
 2. [Realm anlegen](#2-realm-homelab-anlegen)
 3. [LDAP-Federation mit Samba AD](#3-ldap-federation-mit-samba-ad)
-4. [OIDC-Client: GitLab](#4-oidc-client-gitlab)
 5. [OIDC-Client: ArgoCD](#5-oidc-client-argocd)
-6. [OIDC-Client: Coder](#6-oidc-client-coder)
 7. ~~OIDC-Client: Grafana~~ (entfernt)
 8. [OIDC-Client: Nextcloud](#8-oidc-client-nextcloud-vorbereitung)
-9. [GitLab OIDC aktivieren](#9-gitlab-oidc-aktivieren)
 10. [ArgoCD OIDC aktivieren](#10-argocd-oidc-aktivieren)
 11. [Verifikation](#11-verifikation)
 12. [Troubleshooting](#12-troubleshooting)
@@ -134,57 +131,6 @@ User: `admin` / Passwort aus dem Befehl oben
 
 ---
 
-## 4. OIDC-Client: GitLab
-
-**Navigation:** Realm `homelab` → **Clients** → **"Create client"**
-
-### 4.1 General Settings
-
-| Feld | Wert |
-|------|------|
-| Client type | `OpenID Connect` |
-| Client ID | `gitlab` |
-| Name | `GitLab` |
-
-→ **Next**
-
-### 4.2 Capability Config
-
-| Feld | Wert |
-|------|------|
-| Client authentication | ON (confidential client) |
-| Authorization | OFF |
-| Standard flow | ON |
-| Direct access grants | OFF |
-
-→ **Next**
-
-### 4.3 Login Settings
-
-| Feld | Wert |
-|------|------|
-| Root URL | `https://gitlab.homelab.local` |
-| Home URL | `https://gitlab.homelab.local` |
-| Valid redirect URIs | `https://gitlab.homelab.local/users/auth/openid_connect/callback` |
-| Valid post logout redirect URIs | `https://gitlab.homelab.local` |
-| Web origins | `https://gitlab.homelab.local` |
-
-→ **Save**
-
-### 4.4 Client Secret in Kubernetes eintragen
-
-1. Tab **"Credentials"** öffnen
-2. **"Client secret"** kopieren
-3. Secret in Kubernetes aktualisieren:
-
-```bash
-kubectl patch secret gitlab-secret -n gitlab \
-  --type merge \
-  -p '{"stringData":{"oidc-client-secret":"<DEIN_SECRET_HIER>"}}'
-```
-
----
-
 ## 5. OIDC-Client: ArgoCD
 
 **Navigation:** Realm `homelab` → **Clients** → **"Create client"**
@@ -239,67 +185,6 @@ Damit AD-Benutzer Admin-Rechte in ArgoCD bekommen:
 
 ---
 
-## 6. OIDC-Client: Coder
-
-**Navigation:** Realm `homelab` → **Clients** → **"Create client"**
-
-### 6.1 General Settings
-
-| Feld | Wert |
-|------|------|
-| Client type | `OpenID Connect` |
-| Client ID | `coder` |
-| Name | `Coder` |
-
-→ **Next**
-
-### 6.2 Capability Config
-
-| Feld | Wert |
-|------|------|
-| Client authentication | ON (confidential client) |
-| Standard flow | ON |
-| Direct access grants | OFF |
-
-→ **Next**
-
-### 6.3 Login Settings
-
-| Feld | Wert |
-|------|------|
-| Root URL | `https://coder.homelab.local` |
-| Home URL | `https://coder.homelab.local` |
-| Valid redirect URIs | `https://coder.homelab.local/api/v2/users/oidc/callback` |
-| Valid post logout redirect URIs | `https://coder.homelab.local` |
-| Web origins | `https://coder.homelab.local` |
-
-→ **Save**
-
-### 6.4 Client Secret in Vault eintragen
-
-1. Tab **"Credentials"** öffnen
-2. **"Client secret"** kopieren
-3. In Vault hinterlegen (ersetzt den `REPLACE_AFTER_KEYCLOAK_SETUP`-Platzhalter aus `scripts/setup-coder.sh`):
-
-```bash
-kubectl exec -n security vault-0 -- env VAULT_ADDR=http://127.0.0.1:8200 \
-  VAULT_TOKEN=$VAULT_TOKEN vault kv patch secret/homelab/coder/coder-secret \
-  oidc-client-secret='<DEIN_SECRET_HIER>'
-
-kubectl annotate externalsecret coder-secret -n coder \
-  force-sync="$(date +%s)" --overwrite
-```
-
-4. Coder neu starten, damit der neue Secret-Wert (als Env-Var injiziert, wird
-   nicht automatisch neu geladen) greift:
-
-```bash
-kubectl rollout restart deployment/coder -n coder
-kubectl rollout status deployment/coder -n coder --timeout=300s
-```
-
----
-
 ## 7. (entfernt)
 
 Der Grafana-Client entfällt, der Monitoring-Stack wurde aus dem Cluster entfernt.
@@ -327,37 +212,6 @@ kubectl create secret generic nextcloud-keycloak-secret \
   --from-literal=client-secret="<DEIN_SECRET_HIER>" \
   -n productivity
 ```
-
----
-
-## 9. GitLab OIDC aktivieren
-
-In `k8s/argocd/applications/gitlab.yaml` den OIDC-Block aktivieren:
-
-```yaml
-oidc:
-  enabled: true
-  issuer: https://auth.homelab.local/realms/homelab
-  clientId: gitlab
-```
-
-Committen und pushen – ArgoCD deployed automatisch:
-
-```bash
-git add k8s/argocd/applications/gitlab.yaml
-git commit -m "feat: enable Keycloak OIDC for GitLab"
-git push
-```
-
-GitLab neu starten damit die Konfiguration greift:
-
-```bash
-kubectl rollout restart deployment/gitlab -n gitlab
-kubectl rollout status deployment/gitlab -n gitlab --timeout=300s
-```
-
-> Erfolgreich wenn auf https://gitlab.homelab.local der Button
-> **"Sign in with Keycloak"** erscheint.
 
 ---
 
@@ -429,13 +283,6 @@ curl -s https://auth.homelab.local/realms/homelab/.well-known/openid-configurati
 kubectl logs -n auth -l app.kubernetes.io/name=keycloakx --tail=50 | grep -i ldap
 ```
 
-### GitLab Login testen
-
-1. https://gitlab.homelab.local in **privatem Fenster** öffnen
-2. **"Sign in with Keycloak"** klicken
-3. AD-Credentials eingeben (z.B. `Administrator` + Samba-Passwort)
-4. GitLab legt automatisch einen neuen User an
-
 ### ArgoCD Login testen
 
 1. https://argocd.homelab.local in **privatem Fenster** öffnen
@@ -446,6 +293,8 @@ kubectl logs -n auth -l app.kubernetes.io/name=keycloakx --tail=50 | grep -i lda
 ---
 
 ## 12. Troubleshooting
+
+> GitLab und Coder wurden im November 2026 entfernt. Ihre OIDC-Clients `gitlab` und `coder` können im Realm `homelab` gelöscht werden.
 
 **OIDC-Fehler: "getaddrinfo: name or service not known"**
 ```bash
@@ -478,58 +327,11 @@ kubectl run -it --rm ldap-test --image=alpine --restart=Never -- \
 # dann: git commit + push, ArgoCD synct automatisch
 ```
 
-**GitLab Omnibus: "certificate verify failed" trotz CA-Secret**
-
-GitLab Omnibus hat ein eigenes eingebettetes OpenSSL das den System-Trust-Store
-und `SSL_CERT_FILE` komplett ignoriert. Custom CAs müssen in
-`/etc/gitlab/trusted-certs/` liegen **bevor** GitLab startet.
-
-Das GitLab Helm Chart löst das via initContainer der das `homelab-ca` Secret
-in das `/etc/gitlab` PVC schreibt:
-
-```yaml
-initContainers:
-  - name: install-ca
-    image: alpine:3.19
-    command:
-      - sh
-      - -c
-      - |
-        mkdir -p /etc/gitlab/trusted-certs
-        cp /ca-certs/homelab-ca.crt /etc/gitlab/trusted-certs/homelab-ca.crt
-    volumeMounts:
-      - name: homelab-ca
-        mountPath: /ca-certs
-        readOnly: true
-      - name: config          # das /etc/gitlab PVC
-        mountPath: /etc/gitlab
-```
-
-GitLab liest `/etc/gitlab/trusted-certs/` automatisch beim Start –
-kein `gitlab-ctl reconfigure` nötig.
-
-> **Gilt für alle Services mit eingebetteten Runtimes** (z.B. andere Java/Ruby Apps).
-> Wenn `SSL_CERT_FILE` ignoriert wird → prüfen ob die App einen eigenen CA-Store hat.
-
 **OIDC-Redirect schlägt fehl**
 
 - Issuer-URL muss exakt stimmen: `https://auth.homelab.local/realms/homelab`
 - Redirect URI in Keycloak muss exakt mit der App-URL übereinstimmen (kein trailing slash)
 - `https://` nicht `http://` – CA muss auf dem Client importiert sein
-
-**GitLab zeigt keinen "Sign in with Keycloak" Button**
-
-```bash
-# OIDC Secret gesetzt?
-kubectl get secret gitlab-secret -n gitlab \
-  -o jsonpath='{.data.oidc-client-secret}' | base64 -d
-
-# GitLab Logs
-kubectl logs -n gitlab -l app=gitlab --tail=100 | grep -i oidc
-
-# GitLab neu starten
-kubectl rollout restart deployment/gitlab -n gitlab
-```
 
 **User hat keine Rechte in ArgoCD**
 

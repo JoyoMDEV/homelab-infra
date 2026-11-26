@@ -85,14 +85,23 @@
     - "80"
     - "443"
 
-- name: Allow GitLab SSH via Tailscale only (port 2222)
+- name: Remove the old GitLab SSH rule (port 2222, GitLab is gone)
   community.general.ufw:
     rule: allow
     interface: tailscale0
     direction: in
     port: "2222"
     proto: tcp
-    comment: "GitLab SSH (Tailscale only)"
+    delete: true
+
+- name: Allow Forgejo SSH via Tailscale only (port 2223)
+  community.general.ufw:
+    rule: allow
+    interface: tailscale0
+    direction: in
+    port: "2223"
+    proto: tcp
+    comment: "Forgejo SSH (Tailscale only)"
 
 - name: Enable UFW
   community.general.ufw:
