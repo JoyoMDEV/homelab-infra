@@ -49,6 +49,14 @@ spec:
               value: "true"
             - name: FORGEJO__actions__ENABLED
               value: "true"
+            {{- with .Values.migrations }}
+            - name: FORGEJO__migrations__ALLOW_LOCALNETWORKS
+              value: {{ .allowLocalNetworks | quote }}
+            {{- if .allowedDomains }}
+            - name: FORGEJO__migrations__ALLOWED_DOMAINS
+              value: {{ .allowedDomains | quote }}
+            {{- end }}
+            {{- end }}
             - name: FORGEJO__security__SECRET_KEY
               valueFrom:
                 secretKeyRef:
