@@ -19,6 +19,26 @@ spec:
     spec:
       securityContext:
         fsGroup: 1000
+      # System CA bundle + homelab CA, mounted over the image's bundle so git
+      # and Go trust *.homelab.local (GitLab import, webhooks, mirrors)
+      # without losing the public CAs.
+      initContainers:
+        - name: ca-bundle
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          command:
+            - sh
+            - -c
+            - |
+              cat /etc/ssl/certs/ca-certificates.crt > /ca-bundle/ca-certificates.crt
+              if [ -f /homelab-ca/homelab-ca.crt ]; then
+                cat /homelab-ca/homelab-ca.crt >> /ca-bundle/ca-certificates.crt
+              fi
+          volumeMounts:
+            - name: ca-bundle
+              mountPath: /ca-bundle
+            - name: homelab-ca
+              mountPath: /homelab-ca
+              readOnly: true
       containers:
         - name: forgejo
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -87,7 +107,19 @@ spec:
             - name: data
               mountPath: /etc/gitea
               subPath: config
+            - name: ca-bundle
+              mountPath: /etc/ssl/certs/ca-certificates.crt
+              subPath: ca-certificates.crt
+              readOnly: true
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: {{ .Release.Name }}-data
+        - name: ca-bundle
+          emptyDir: {}
+        # Synced into namespaces labelled homelab.local/inject-ca=true by the
+        # cert-sync CronJob.
+        - name: homelab-ca
+          secret:
+            secretName: homelab-ca
+            optional: true
