@@ -76,17 +76,14 @@ homelab-infra/
 │   │   └── applications/        #   One Application per service - see "What Gets Deployed"
 │   ├── security/                #   RBAC, network policies, Vault, ExternalSecrets
 │   │   ├── vault-cluster-secret-store.yaml
-│   │   ├── letsencrypt-issuer.yaml
 │   │   ├── network-policies/    #   CiliumNetworkPolicy, default-deny + explicit exceptions
 │   │   └── external-secrets/    #   One ExternalSecret per service, grouped by category
-│   │       ├── auth/ automation/ backup/ cert-manager/
+│   │       ├── auth/ automation/ backup/
 │   │       └── gitlab/ infrastructure/ productivity/ security/
 │   ├── infrastructure/          #   Postgres cluster, cert-sync, CA hooks
 │   ├── charts/                  #   Local Helm charts (gitlab-omnibus)
 │   ├── values/                  #   Standalone Helm values (argocd.yaml)
-│   ├── public/                  #   Authelia + public-domain IngressRoutes (overleaf, minecraft)
-│   ├── overleaf/                #   Raw manifests (mongo replica set, etc.)
-│   └── minecraft/               #   Raw manifests
+│   └── overleaf/                #   Raw manifests (mongo replica set, etc.)
 │
 ├── scripts/                     # One-off setup scripts, run manually (not by CI)
 │   ├── bootstrap-argocd.sh          #   One-time: CNPG, Redis, ArgoCD (pre-Vault bootstrap)
@@ -96,7 +93,6 @@ homelab-infra/
 │   ├── setup-databases.sh           #   Postgres DBs/roles + Vault secrets (Keycloak, GitLab, Nextcloud, Paperless phase 1)
 │   ├── setup-<service>.sh           #   Per-service Vault secret setup (gitlab-runner, forgejo,
 │   │                                     garage-backups, paperless, renovate, vaultwarden)
-│   ├── add-authelia-user.sh         #   Add/update an Authelia user in Vault
 │   ├── setup-coredns.sh
 │   └── test-cnpg-recovery.sh / test-velero-recovery.sh
 │
@@ -194,8 +190,6 @@ never committed to Git - see "Secrets Management" below.
 |-----|-----------|------------|
 | `external-secrets` | external-secrets | External Secrets Operator |
 | `security-manifests` | security | Network policies, ExternalSecrets, Vault ClusterSecretStore |
-| `traefik-public` | public | Second Traefik instance for internet-facing services |
-| `cert-manager-webhook-hetzner` | cert-manager | Hetzner DNS webhook for DNS-01 challenges |
 | `infrastructure` | infrastructure | Postgres cluster, cert-sync CronJob, wildcard cert |
 | `redis` | infrastructure | Shared Redis cache |
 | `garage` | infrastructure | S3-compatible object storage (Velero, CNPG backups, runner cache) |
@@ -209,7 +203,6 @@ never committed to Git - see "Secrets Management" below.
 | `overleaf` | overleaf | Collaborative LaTeX editor |
 | `renovate` | automation | Automated dependency update bot |
 | `velero` | backup | Cluster backup/restore |
-| `public` | public | Authelia forward-auth + public IngressRoutes (overleaf, minecraft) |
 
 ## TLS / HTTPS
 
@@ -338,8 +331,8 @@ External Secrets Operator  →  creates/owns the actual Kubernetes Secret  →  
 
 ## DNS
 
-All services accessible via `*.homelab.local` through Tailscale Split DNS (internal), or via the
-public Traefik instance + Authelia for the few internet-facing ones.
+All services are reachable only via `*.homelab.local` through Tailscale Split DNS. Nothing is
+exposed to the internet (the public Traefik instance + Authelia were removed in 2026-11).
 
 | Service | URL |
 |---------|-----|
@@ -352,8 +345,7 @@ public Traefik instance + Authelia for the few internet-facing ones.
 | Nextcloud | https://nextcloud.homelab.local |
 | Paperless-ngx | https://paperless.homelab.local |
 | Forgejo | https://forgejo.homelab.local |
-| Overleaf (public) | https://overleaf.svc.johannesmoseler.de |
-| Authelia (public) | https://login.svc.johannesmoseler.de |
+| Overleaf | https://overleaf.homelab.local |
 
 ## Progress
 
@@ -362,7 +354,7 @@ public Traefik instance + Authelia for the few internet-facing ones.
 - [x] Ansible: common, hardening, tailscale, k3s_server, k3s_agent, samba, backup
 - [x] Samba AD DC: HOMELAB.LOCAL with wildcard DNS over Tailscale
 - [x] k3s cluster over Tailscale, migrated Flannel → Cilium
-- [x] Traefik ingress (hostPort 80/443) + HTTP→HTTPS redirect + second public instance
+- [x] Traefik ingress (hostPort 80/443) + HTTP→HTTPS redirect
 - [x] ArgoCD bootstrap + App-of-Apps
 - [x] CloudNativePG + shared PostgreSQL cluster
 - [x] Redis
@@ -373,5 +365,4 @@ public Traefik instance + Authelia for the few internet-facing ones.
 - [x] Nextcloud, Paperless-ngx, Vaultwarden, Overleaf
 - [x] Renovate (automated dependency updates)
 - [x] Velero (cluster backup/restore) + quarterly recovery tests
-- [x] Authelia + public IngressRoutes (Overleaf, Minecraft) on a separate public Traefik instance
 - [ ] kube-proxy replacement (Cilium-native)

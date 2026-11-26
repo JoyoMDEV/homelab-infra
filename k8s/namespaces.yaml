@@ -74,14 +74,6 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: public
-  labels:
-    managed-by: argocd
-    tier: public
----
-apiVersion: v1
-kind: Namespace
-metadata:
   name: overleaf
   labels:
     managed-by: argocd
@@ -94,14 +86,6 @@ metadata:
   labels:
     managed-by: argocd
     homelab.local/inject-ca: "true"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: minecraft
-  labels:
-    managed-by: argocd
-    tier: public
 ---
 apiVersion: v1
 kind: Namespace

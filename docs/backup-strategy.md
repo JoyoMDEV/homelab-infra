@@ -175,7 +175,7 @@ make vault-edit
 ## Bekannte Lücken (Stand 2026-10-20)
 
 - **Kein Offsite-Backup.** Der Restic-Job (MinIO -> Storage Box) ist entfernt, er scheiterte ohnehin seit mindestens 2026-10-18 (Storage Box lehnte SSH auf Port 23 ab), und die Storage Box wird abgeschafft. Garage ist die einzige Kopie, sie liegt im selben Cluster. Ein Konzept für eine zweite Kopie außerhalb des Clusters steht aus.
-- **PVC-Inhalte werden nicht gesichert.** Velero läuft ohne node-agent (`defaultVolumesToFsBackup: false`, `local-path` wird von Kopia nicht unterstützt). Gesichert werden nur Cluster-Objekte und die Postgres-Daten (CNPG). Minecraft-Welt, Nextcloud-/Paperless-Dateien, Overleaf und GitLab/Forgejo-Repos liegen nur auf dem jeweiligen Node.
+- **PVC-Inhalte werden nicht gesichert.** Velero läuft ohne node-agent (`defaultVolumesToFsBackup: false`, `local-path` wird von Kopia nicht unterstützt). Gesichert werden nur Cluster-Objekte und die Postgres-Daten (CNPG). Nextcloud-/Paperless-Dateien, Overleaf und GitLab/Forgejo-Repos liegen nur auf dem jeweiligen Node.
 - MinIO ist entfernt, die alten Backups dort sind weg. CNPG hat in Garage eine neue Backup-Linie begonnen (erstes Base-Backup am 2026-10-20).
 - Die Storage Box wird nicht mehr genutzt (Samba-Backup läuft über Garage, der Nextcloud-Mount ist entfernt). Die Terraform-Ressource `hcloud_storage_box.main` existiert noch und kann entfernt werden.
 - Auch das Samba-Backup liegt in Garage, also im selben Cluster und nicht offsite.

@@ -32,20 +32,8 @@ resource "hcloud_firewall" "k3s" {
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 
-  # HTTP/HTTPS (for later public phase)
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "80"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "443"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
+  # No public HTTP/HTTPS anymore: traefik-public (Overleaf, Minecraft,
+  # Authelia) was removed in 2026-11, everything is Tailscale-only.
 }
 
 # CX53 - Control Plane (start here)
