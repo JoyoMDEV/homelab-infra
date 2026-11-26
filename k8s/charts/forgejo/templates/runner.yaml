@@ -101,6 +101,11 @@ spec:
             - |
               until [ -S /var/run/dind/docker.sock ]; do echo "waiting for dind"; sleep 2; done
               exec forgejo-runner daemon --config /config/config.yaml
+          # Explicit group: the image's USER 1000:1000 ends up as gid 0 here,
+          # which cannot open the socket (group 1000, mode 660).
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
           env:
             - name: DOCKER_HOST
               value: unix:///var/run/dind/docker.sock
@@ -126,6 +131,12 @@ spec:
           # Unix socket in a shared emptyDir, no TCP listener at all: whoever
           # reaches this privileged daemon is root on the node. Socket group
           # 1000 = the runner container's user.
+          # `command` bypasses dockerd-entrypoint.sh, which always prepends
+          # --host=tcp://0.0.0.0:2375 when TLS is off. `dind` is the image's
+          # own wrapper that sets up cgroups/mounts for nested Docker.
+          command:
+            - dind
+            - dockerd
           args:
             - --host=unix:///var/run/dind/docker.sock
             - --group=1000
