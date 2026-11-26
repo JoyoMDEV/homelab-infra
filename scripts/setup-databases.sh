@@ -3,7 +3,7 @@ set -euo pipefail
 
 # =============================================================================
 #  setup-databases.sh
-#  Legt die Postgres-Datenbanken/Rollen für Keycloak, GitLab,
+#  Legt die Postgres-Datenbanken/Rollen für Keycloak,
 #  Nextcloud und Paperless an, und schreibt die zugehörigen Secrets nach
 #  Vault. Die jeweiligen ExternalSecrets übernehmen von dort die Pflege der
 #  Kubernetes Secrets.
@@ -68,7 +68,7 @@ db_password_for() {
   fi
 }
 
-echo "==> Creating databases for Keycloak, GitLab, Nextcloud, Paperless..."
+echo "==> Creating databases for Keycloak, Nextcloud, Paperless..."
 
 # Wait for PostgreSQL to be ready
 kubectl wait --for=condition=Ready pod/homelab-pg-1 -n infrastructure --timeout=120s
@@ -97,28 +97,6 @@ kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "
   ALTER DATABASE keycloak OWNER TO keycloak;
 "
 echo "    Keycloak database created"
-
-# ─── GitLab DB ─────────────────────────────────────────────────────────────────
-GITLAB_DB_PW=$(vault_kv_get "gitlab/gitlab-secret" "db-password")
-[[ -z "${GITLAB_DB_PW}" ]] && GITLAB_DB_PW=$(openssl rand -base64 24)
-
-kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "CREATE DATABASE gitlab;" 2>/dev/null || echo "    gitlab database already exists"
-kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -c "
-  DO \$\$ BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'gitlab') THEN
-      CREATE ROLE gitlab WITH LOGIN PASSWORD '$GITLAB_DB_PW';
-    ELSE
-      ALTER ROLE gitlab WITH PASSWORD '$GITLAB_DB_PW';
-    END IF;
-  END \$\$;
-  GRANT ALL PRIVILEGES ON DATABASE gitlab TO gitlab;
-  ALTER DATABASE gitlab OWNER TO gitlab;
-"
-kubectl exec homelab-pg-1 -n infrastructure -- psql -U postgres -d gitlab -c "
-  CREATE EXTENSION IF NOT EXISTS pg_trgm;
-  CREATE EXTENSION IF NOT EXISTS btree_gist;
-"
-echo "    GitLab database created"
 
 # ─── Nextcloud DB + Secret (nur initial) ──────────────────────────────────────
 if vault_kv_path_exists "productivity/nextcloud-secret"; then
@@ -211,42 +189,10 @@ if [[ -z "$(vault_kv_get "auth/keycloak-db-secret" "password")" ]]; then
   force_sync keycloak-db-secret auth
 fi
 
-# ─── GitLab Secrets ─────────────────────────────────────────────────────────
-echo "==> Writing GitLab secrets to Vault..."
-if ! vault_kv_path_exists "gitlab/gitlab-secret"; then
-  vault_kv_put "gitlab/gitlab-secret" \
-    "db-password=${GITLAB_DB_PW}" \
-    "redis-password=${REDIS_PW}" \
-    "oidc-client-secret=REPLACE_AFTER_KEYCLOAK_SETUP"
-  force_sync gitlab-secret gitlab
-fi
-
-echo "==> Writing GitLab Rails secrets (encryption keys) to Vault..."
-if ! vault_kv_path_exists "gitlab/rails-secrets"; then
-  SECRET_KEY_BASE=$(openssl rand -hex 64)
-  DB_KEY_BASE=$(openssl rand -hex 64)
-  OTP_KEY_BASE=$(openssl rand -hex 64)
-  # CI job token signing key must be an RSA 2048 private key in PEM format
-  CI_JOB_TOKEN_SIGNING_KEY=$(openssl genrsa 2048 2>/dev/null)
-  vault_kv_put "gitlab/rails-secrets" \
-    "secret-key-base=${SECRET_KEY_BASE}" \
-    "db-key-base=${DB_KEY_BASE}" \
-    "otp-key-base=${OTP_KEY_BASE}" \
-    "ci-job-token-signing-key=${CI_JOB_TOKEN_SIGNING_KEY}"
-  force_sync gitlab-rails-secrets gitlab
-  echo "    GitLab Rails secrets created"
-  echo "    IMPORTANT: These keys encrypt data in the database."
-  echo "    They now live in Vault at homelab/gitlab/rails-secrets."
-  echo "    Do NOT delete/overwrite this path or you will lose access to encrypted data!"
-else
-  echo "    GitLab Rails secrets already exist in Vault, skipping"
-fi
-
 echo ""
 echo "============================================"
 echo "  Secrets written to Vault!"
 echo ""
 echo "  Keycloak Admin:  admin / $KEYCLOAK_ADMIN_PW"
 echo "  Keycloak DB:     keycloak / $KEYCLOAK_DB_PW"
-echo "  GitLab DB:       gitlab / $GITLAB_DB_PW"
 echo "============================================"

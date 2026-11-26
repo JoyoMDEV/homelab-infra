@@ -1,6 +1,6 @@
 # Backup-Strategie
 
-Dieses Dokument beschreibt die Backup-Strategie für das Homelab-Setup bestehend aus einem k3s-Cluster auf Hetzner + zwei Home-Nodes, Samba AD DC, CloudNativePG, GitLab, Keycloak und Nextcloud.
+Dieses Dokument beschreibt die Backup-Strategie für das Homelab-Setup bestehend aus einem k3s-Cluster (Hetzner-Server + zwei Home-Nodes, Ziel: nur Home-Nodes), Samba AD DC, CloudNativePG, Forgejo, Keycloak und Nextcloud.
 
 ---
 
@@ -12,7 +12,7 @@ Dieses Dokument beschreibt die Backup-Strategie für das Homelab-Setup bestehend
 | Kubernetes Cluster State | K8s-Ressourcen | 🟠 Hoch | ✅ Velero (täglich 02:00, 14 Tage Retention) |
 | Nextcloud Nutzerdaten | Dateien | 🟠 Hoch | ❌ nicht gesichert (Storage Box entfällt) |
 | Samba AD DC | Verzeichnisdienst | 🔴 Kritisch | ✅ Ansible-Rolle backup (täglich 01:00, 7 Tage lokal, 30 Tage in Garage via rclone) |
-| GitLab Repositories | Git-Daten | 🟠 Hoch | ✅ Liegt in PostgreSQL (gesichert) |
+| Forgejo (Repos, Issues, SQLite) | Git-Daten | 🟠 Hoch | ✅ Nächtlicher `forgejo dump` nach Garage (`forgejo-backups`) |
 | Kubernetes Secrets | Credentials | 🔴 Kritisch | ⚠️ Teilweise (Ansible Vault) |
 | TLS / CA | Zertifikate | 🟡 Mittel | ⚠️ Nur im Cluster-Secret |
 
@@ -70,7 +70,6 @@ Velero (täglich 02:00)
 - PVC-Backup: nicht aktiv (k3s local-path Storage Class nicht unterstützt)
 - Retention Velero: 14 Tage
 - Kritische Secrets zusätzlich in Ansible Vault gesichert:
-  - `gitlab-rails-secrets` ✅
   - `homelab-ca-keypair` ✅
 
 **Recovery:**
@@ -148,12 +147,11 @@ kubectl exec -n infrastructure garage-0 -c garage -- /garage bucket info samba-b
 **Aktuell:** Teile in Ansible Vault. Kubernetes Secrets nur im Cluster.
 
 **Kritische Secrets die in Ansible Vault gesichert werden müssen:**
-- `gitlab-rails-secrets` (gitlab Namespace)
 - `homelab-ca-keypair` (cert-manager Namespace)
 
 ```bash
-# Secret exportieren und in Vault sichern
-kubectl get secret gitlab-rails-secrets -n gitlab \
+# Secret exportieren und in Ansible Vault sichern
+kubectl get secret homelab-ca-keypair -n cert-manager \
   -o jsonpath='{.data}' | python3 -m json.tool
 # → Werte in ansible/inventory/group_vars/all/vault.yml eintragen
 make vault-edit
@@ -175,7 +173,7 @@ make vault-edit
 ## Bekannte Lücken (Stand 2026-10-20)
 
 - **Kein Offsite-Backup.** Der Restic-Job (MinIO -> Storage Box) ist entfernt, er scheiterte ohnehin seit mindestens 2026-10-18 (Storage Box lehnte SSH auf Port 23 ab), und die Storage Box wird abgeschafft. Garage ist die einzige Kopie, sie liegt im selben Cluster. Ein Konzept für eine zweite Kopie außerhalb des Clusters steht aus.
-- **PVC-Inhalte werden nicht gesichert.** Velero läuft ohne node-agent (`defaultVolumesToFsBackup: false`, `local-path` wird von Kopia nicht unterstützt). Gesichert werden nur Cluster-Objekte und die Postgres-Daten (CNPG). Nextcloud-/Paperless-Dateien, Overleaf und GitLab/Forgejo-Repos liegen nur auf dem jeweiligen Node.
+- **PVC-Inhalte werden nicht gesichert.** Velero läuft ohne node-agent (`defaultVolumesToFsBackup: false`, `local-path` wird von Kopia nicht unterstützt). Gesichert werden nur Cluster-Objekte und die Postgres-Daten (CNPG). Nextcloud-/Paperless-Dateien, Overleaf und die Forgejo-Repos liegen nur auf dem jeweiligen Node (Forgejo zusätzlich als nächtlicher Dump in Garage).
 - MinIO ist entfernt, die alten Backups dort sind weg. CNPG hat in Garage eine neue Backup-Linie begonnen (erstes Base-Backup am 2026-10-20).
 - Die Storage Box wird nicht mehr genutzt (Samba-Backup läuft über Garage, der Nextcloud-Mount ist entfernt). Die Terraform-Ressource `hcloud_storage_box.main` existiert noch und kann entfernt werden.
 - Auch das Samba-Backup liegt in Garage, also im selben Cluster und nicht offsite.
@@ -267,7 +265,7 @@ dig @127.0.0.1 auth.homelab.local
 **Schritt 5: Keycloak LDAP-Sync prüfen**
 ```bash
 # In Keycloak: User Federation → samba-ad → Synchronize all users
-# Alle OIDC-Services (GitLab, ArgoCD, Nextcloud) sollten
+# Alle OIDC-Services (ArgoCD, Nextcloud, Paperless) sollten
 # danach wieder funktionieren
 ```
 

@@ -156,7 +156,7 @@ kubectl apply -f k8s/namespaces.yaml
 
 # ─── Step 8: Seed homelab-ca secret to all labeled namespaces ───────────────
 # The CronJob handles ongoing sync, but we seed immediately on bootstrap so
-# services like GitLab can verify Keycloak TLS without waiting until 03:00.
+# services like ArgoCD can verify Keycloak TLS without waiting until 03:00.
 echo ""
 echo "==> Seeding homelab-ca secret to labeled namespaces..."
 CA_CRT=$(kubectl get secret homelab-ca-keypair -n cert-manager \

@@ -1,6 +1,6 @@
 # Forgejo
 
-Replaces GitLab (see context-hub: `homelab-infra/ideas/cluster-shrink-local-only`).
+Git hosting for the homelab; replaced GitLab in 2026-11 (see context-hub: `homelab-infra/ideas/cluster-shrink-local-only`).
 Single pod, SQLite on a 20 Gi PVC, chart in `k8s/charts/forgejo`, ArgoCD app
 `forgejo`, namespace `forgejo`, UI at `https://forgejo.homelab.local`.
 
@@ -27,12 +27,14 @@ Git über SSH läuft über Port **2223** (`ssh://git@forgejo.homelab.local:2223/
 - `IngressRouteTCP` `forgejo-ssh` im Chart (`templates/ssh-ingressroute.yaml`) auf den Service `forgejo`, Port 22 (Pod: 2222).
 - Eigenen SSH-Key in Forgejo unter Einstellungen -> SSH-Schlüssel hinterlegen.
 
-## Migration von GitLab
+## Migration von GitLab (abgeschlossen 2026-11)
 
-Forgejo hat einen eingebauten GitLab-Importer (Neues Repository -> Migration ->
-GitLab, mit Issues, Labels, Merge Requests). CI-Pipelines (`.gitlab-ci.yml`)
-müssen als Actions-Workflows neu geschrieben werden, CI-Variablen und
-Registry-Images ziehen separat um. Inventar siehe context-hub.
+Alle 15 GitLab-Repos sind per Forgejo-Migrations-API importiert (mit Issues, Labels und MRs) und gegen GitLab geprüft. GitLab ist danach abgeschaltet worden. Zwei Lehren daraus:
+
+- Der GitLab-Importer ruft die API über `clone_addr` auf, klont aber über die `http_url_to_repo`, die GitLab meldet. Forgejo muss diesem Host also per TLS vertrauen (dafür das CA-Bundle im Init-Container) und ihn in `migrations.allowedDomains` haben.
+- In GitLab als „hidden“ markierte CI-Variablen gibt die API nicht heraus. Die müssen von Hand übertragen werden.
+
+Für einen künftigen Import aus einem internen Dienst: `migrations` in `values.yaml` vorübergehend öffnen.
 
 ## Actions-Runner
 

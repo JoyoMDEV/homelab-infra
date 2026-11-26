@@ -22,15 +22,13 @@ resources:
   limits:
     memory: 512Mi
 
-# Repo migrations (Neue Migration -> GitLab). Forgejo refuses private/cluster
-# addresses by default; allowing local networks is limited to the listed
-# hosts. Only needed while moving off the in-cluster GitLab - set to "" and
-# false once GitLab is gone.
+# Repo migrations from private/cluster addresses. Forgejo refuses them by
+# default; set allowLocalNetworks: true plus allowedDomains to the source host
+# for an import from an internal service. Was opened for the GitLab move
+# (2026-11) and closed again afterwards.
 migrations:
-  allowLocalNetworks: true
-  # The GitLab importer clones via the URL GitLab reports
-  # (https://gitlab.homelab.local), not via clone_addr.
-  allowedDomains: gitlab.gitlab.svc.cluster.local,gitlab.homelab.local
+  allowLocalNetworks: false
+  allowedDomains: ""
 
 # Forgejo Actions runner (templates/runner.yaml). Registered offline: the
 # uuid/token pair comes from Vault via the ExternalSecret

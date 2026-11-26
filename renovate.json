@@ -52,12 +52,6 @@
       "labels": ["dependencies", "terraform"]
     },
     {
-      "description": "Disable major updates for GitLab (requires DB migrations)",
-      "matchPackageNames": ["gitlab/gitlab-ce"],
-      "matchUpdateTypes": ["major"],
-      "enabled": false
-    },
-    {
       "description": "Ignore Nextcloud initContainer image – must stay in sync mit Chart",
       "matchPackageNames": ["nextcloud"],
       "matchManagers": ["helm-values"],

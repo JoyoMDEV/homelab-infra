@@ -9,7 +9,7 @@ metadata:
 spec:
   project: default
   source:
-    # REPLACE with your GitLab/GitHub repo URL
+    # This repo (GitHub)
     repoURL: https://github.com/JoyoMDEV/homelab-infra.git
     targetRevision: main
     path: k8s/argocd/applications

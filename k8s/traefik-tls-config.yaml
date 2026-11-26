@@ -32,15 +32,6 @@ spec:
         port: 443
         tls:
           enabled: true
-      # Ersetzt das k8s-native "hostPort: 2222" im GitLab-Omnibus-Deployment,
-      # das seit dem Wechsel zu Cilium (kubeProxyReplacement: false -> Ciliums
-      # hostPort-BPF-Datapath bleibt inaktiv) nicht mehr funktioniert. Traefik
-      # bindet den Port ganz normal über sein bestehendes hostNetwork - kein
-      # CNI-hostPort-Mechanismus mehr im Spiel. Kein TLS hier: SSH macht seine
-      # eigene Verschlüsselung, das ist reines TCP-Passthrough.
-      ssh:
-        port: 2222
-        protocol: TCP
       # Git over SSH for Forgejo (IngressRouteTCP in k8s/charts/forgejo).
       # Bound to the Tailscale IP only, see additionalArguments below.
       forgejo-ssh:

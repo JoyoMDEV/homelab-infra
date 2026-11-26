@@ -22,21 +22,22 @@ DNS:     *.homelab.local → Samba AD DC (Tailscale Split DNS)
 Ingress: Traefik (hostPort 80/443) → Services
 TLS:     cert-manager internal CA → Wildcard *.homelab.local
 Secrets: HashiCorp Vault → External Secrets Operator → K8s Secrets
-CI/CD:   GitLab Runner (k3s) → Job Pods → Deploy
+CI/CD:   Forgejo Actions → Runner (Docker-in-Docker) → Job-Container
 ```
 
 ## CI/CD
 
 ```
 git push
-  └── GitLab (gitlab.homelab.local)
-        └── GitLab Runner Pod (k3s, Namespace: gitlab)   ← läuft dauerhaft
-              └── Job Pod (image per Pipeline definiert)  ← startet pro Job
-                    └── build / test / deploy
+  └── Forgejo (forgejo.homelab.local)
+        └── forgejo-runner Pod (Namespace: forgejo, auf dem minipc)
+              └── Docker-in-Docker
+                    └── Job-Container pro Workflow-Job (ubuntu-latest = node:24-bookworm)
 ```
 
-Der Runner ist ein **Instance Runner** — ein Runner für alle Repos.
-Job-Images werden pro Pipeline definiert (`node:20-alpine`, `golang:1.22`, etc.)
+Ein globaler Runner für alle Repos, Workflows liegen unter `.forgejo/workflows/`.
+Job-Container erreichen Forgejo und das Internet, aber nicht Vault, Garage oder
+die Kube-API (CiliumNetworkPolicy). Details: `docs/forgejo-setup.md`.
 
 ## Project Structure
 
@@ -79,9 +80,9 @@ homelab-infra/
 │   │   ├── network-policies/    #   CiliumNetworkPolicy, default-deny + explicit exceptions
 │   │   └── external-secrets/    #   One ExternalSecret per service, grouped by category
 │   │       ├── auth/ automation/ backup/
-│   │       └── gitlab/ infrastructure/ productivity/ security/
+│   │       └── infrastructure/ productivity/ security/
 │   ├── infrastructure/          #   Postgres cluster, cert-sync, CA hooks
-│   ├── charts/                  #   Local Helm charts (gitlab-omnibus)
+│   ├── charts/                  #   Local Helm charts (forgejo)
 │   ├── values/                  #   Standalone Helm values (argocd.yaml)
 │   └── overleaf/                #   Raw manifests (mongo replica set, etc.)
 │
@@ -90,15 +91,15 @@ homelab-infra/
 │   ├── bootstrap-certmanager.sh     #   One-time: cert-manager, internal CA (pre-Vault bootstrap)
 │   ├── setup-hcvault.sh             #   One-time: Vault init/unseal, policies, K8s auth
 │   ├── migrate-secrets-to-vault.sh  #   One-time: seed Vault from already-live secrets
-│   ├── setup-databases.sh           #   Postgres DBs/roles + Vault secrets (Keycloak, GitLab, Nextcloud, Paperless phase 1)
-│   ├── setup-<service>.sh           #   Per-service Vault secret setup (gitlab-runner, forgejo,
+│   ├── setup-databases.sh           #   Postgres DBs/roles + Vault secrets (Keycloak, Nextcloud, Paperless phase 1)
+│   ├── setup-<service>.sh           #   Per-service Vault secret setup (forgejo, forgejo-runner, forgejo-backup,
 │   │                                     garage-backups, paperless, renovate, vaultwarden)
 │   ├── setup-coredns.sh
 │   └── test-cnpg-recovery.sh / test-velero-recovery.sh
 │
 ├── docs/                        # Runbooks
 │   ├── vault-setup.md / backup-strategy.md / cilium-migration.md
-│   ├── gitlab-runner-setup.md / keycloak-setup.md
+│   ├── forgejo-setup.md / keycloak-setup.md
 │   └── nextcloud-setup.md / nextcloud-apps.md / paperless-setup.md / group-management.md
 │
 ├── certs/                      # gitignored - local CA cert for device import
@@ -151,9 +152,8 @@ export VAULT_TOKEN="..."          # root token from setup-hcvault.sh's output
 make cert-ca
 
 # 9. Set up individual services (each reads/writes Vault directly)
-#    See scripts/setup-<service>.sh - GitLab Runner, Forgejo,
+#    See scripts/setup-<service>.sh - Forgejo (+ runner, backup),
 #    Garage backups, Paperless, Renovate, Vaultwarden
-make runner-setup
 # ... etc, one per service - see the Makefile / scripts/ list above
 
 # 10. Verify
@@ -193,9 +193,8 @@ never committed to Git - see "Secrets Management" below.
 | `infrastructure` | infrastructure | Postgres cluster, cert-sync CronJob, wildcard cert |
 | `redis` | infrastructure | Shared Redis cache |
 | `garage` | infrastructure | S3-compatible object storage (Velero, CNPG backups, runner cache) |
-| `forgejo` | forgejo | Git hosting, replaces GitLab (migration in progress) |
+| `forgejo` | forgejo | Git hosting, Actions runner, nightly backup to Garage |
 | `keycloak` | auth | SSO / identity provider (LDAP → Samba AD, OIDC for everything else) |
-| `gitlab` + `gitlab-runner` | gitlab | Self-hosted GitLab CE (Omnibus) + Instance Runner |
 | `vault` | security | HashiCorp Vault (also managed as an ArgoCD app for upgrades) |
 | `vaultwarden` | security | Bitwarden-compatible password manager |
 | `nextcloud` | productivity | File sync & sharing |
@@ -209,20 +208,16 @@ never committed to Git - see "Secrets Management" below.
 All `*.homelab.local` services are served over HTTPS using an internal CA managed by cert-manager.
 See `make cert-ca` for device import instructions.
 
-## GitLab SSH
+## Git über SSH (Forgejo)
 
-GitLab SSH läuft auf Port **2222** (Tailscale only):
+Forgejo SSH läuft auf Port **2223** (Tailscale only):
 
 ```bash
-# ~/.ssh/config (wird automatisch vom Devcontainer post-create.sh gesetzt)
-Host gitlab.homelab.local
-    Port 2222
-    User git
-    IdentityFile ~/.ssh/id_ed25519
-
 # Clone
-git clone ssh://git@gitlab.homelab.local:2222/jmoseler/my-repo.git
+git clone ssh://git@forgejo.homelab.local:2223/<owner>/<repo>.git
 ```
+
+Den eigenen Public Key unter https://forgejo.homelab.local/user/settings/keys hinterlegen.
 
 ## Adding a New Service
 
@@ -292,7 +287,6 @@ scaffolds both.
 | `make bootstrap` | Bootstrap k8s services (CNPG, Redis, ArgoCD) |
 | `make bootstrap-certs` | Bootstrap cert-manager + internal CA |
 | `make setup-coredns` | Configure CoreDNS for `*.homelab.local` |
-| `make runner-setup` / `runner-status` / `runner-logs` | GitLab instance runner setup + status |
 | `make status` | Cluster overview (nodes, pods, certs, resources) |
 | `make pods` | List all pods |
 | `make apps` | ArgoCD application status |
@@ -338,13 +332,11 @@ exposed to the internet (the public Traefik instance + Authelia were removed in 
 |---------|-----|
 | ArgoCD | https://argocd.homelab.local |
 | Keycloak | https://auth.homelab.local |
-| GitLab | https://gitlab.homelab.local (SSH: Port 2222) |
-| GitLab Registry | https://registry.homelab.local |
 | Vault (HashiCorp) | https://hcvault.homelab.local |
 | Vaultwarden | https://vault.homelab.local |
 | Nextcloud | https://nextcloud.homelab.local |
 | Paperless-ngx | https://paperless.homelab.local |
-| Forgejo | https://forgejo.homelab.local |
+| Forgejo | https://forgejo.homelab.local (SSH: Port 2223) |
 | Overleaf | https://overleaf.homelab.local |
 
 ## Progress
@@ -359,9 +351,9 @@ exposed to the internet (the public Traefik instance + Authelia were removed in 
 - [x] CloudNativePG + shared PostgreSQL cluster
 - [x] Redis
 - [x] HashiCorp Vault + External Secrets Operator - all service secrets migrated off direct kubectl-created Secrets
-- [x] GitLab CE (Omnibus) + SSH on Port 2222 (Tailscale only) + GitLab Runner
+- [x] Forgejo + SSH on Port 2223 (Tailscale only) + Actions runner (replaced GitLab CE in 2026-11)
 - [x] cert-manager + internal CA + wildcard TLS for *.homelab.local
-- [x] Keycloak SSO (LDAP → Samba AD, OIDC for GitLab, ArgoCD, Nextcloud, Paperless)
+- [x] Keycloak SSO (LDAP → Samba AD, OIDC for ArgoCD, Nextcloud, Paperless)
 - [x] Nextcloud, Paperless-ngx, Vaultwarden, Overleaf
 - [x] Renovate (automated dependency updates)
 - [x] Velero (cluster backup/restore) + quarterly recovery tests

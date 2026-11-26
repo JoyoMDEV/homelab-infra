@@ -10,7 +10,7 @@ Base hardening and configuration applied to every host in the inventory.
 - Sets the hostname from `inventory_hostname`
 - Hardens SSH (key-only auth, no root password login, max 3 auth tries)
 - Configures UFW firewall (default deny incoming, allow SSH/6443/80/443)
-- Allows GitLab SSH on port 2222 via Tailscale interface only
+- Allows Forgejo SSH on port 2223 via Tailscale interface only (and removes the old GitLab 2222 rule)
 - Enables unattended-upgrades for automatic security patches
 - Reboots the host if a kernel update requires it
 

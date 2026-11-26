@@ -22,7 +22,6 @@ Samba AD (Source of Truth)
 5. [Service-Konfiguration](#5-service-konfiguration)
    - [ArgoCD](#argocd)
    - [Vault](#vault)
-   - [GitLab](#gitlab)
    - [Nextcloud](#nextcloud)
    - [Paperless](#paperless)
    - [Homarr](#homarr)
@@ -40,7 +39,6 @@ Alle Gruppen liegen in `OU=HomelabGroups,DC=homelab,DC=local`.
 |---|---|---|
 | `homelab-admins` | Vault, Keycloak | Full Admin |
 | `argocd-admins` | ArgoCD | role:admin |
-| `gitlab-admins` | GitLab | Administrator |
 | `nextcloud-admins` | Nextcloud | Admin |
 | `paperless-admins` | Paperless-ngx | Superuser |
 | `homarr-admins` | Homarr | Admin |
@@ -86,7 +84,7 @@ ssh root@${SERVER_IP} \
    -U Administrator --password='<pw>'"
 
 # Alle Admin-Gruppen auf einmal
-for GROUP in homelab-admins argocd-admins gitlab-admins \
+for GROUP in homelab-admins argocd-admins \
              nextcloud-admins paperless-admins \
              homarr-admins vaultwarden-admins; do
   ssh root@${SERVER_IP} \
@@ -163,29 +161,6 @@ kubectl exec -n security vault-0 -- \
   env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=<token> \
   vault read auth/oidc/role/homelab-admin
 ```
-
----
-
-### GitLab
-
-**Status: ⚠️ manuell**
-
-GitLab unterstützt kein automatisches Admin-Mapping via OIDC-Gruppen.
-Admin-Status muss manuell gesetzt werden:
-
-**Via UI:**
-Admin Area → Users → `<username>` → Edit → Access Level: Administrator → Save
-
-**Via CLI:**
-```bash
-kubectl exec -n gitlab \
-  $(kubectl get pod -n gitlab -l app=gitlab \
-    -o jsonpath='{.items[0].metadata.name}') -- \
-  gitlab-rails runner \
-  "User.find_by_username('<username>').update!(admin: true)"
-```
-
-Keycloak Client `gitlab` → Client Scopes → `gitlab-dedicated` → Mapper `groups` muss vorhanden sein (für GitLab-Gruppen-Sync).
 
 ---
 

@@ -154,7 +154,7 @@ kubectl wait --for=condition=ready pod/"${RESTORE_POD}" \
 echo ""
 echo "    Datenbanken im wiederhergestellten Cluster:"
 kubectl exec -n "${NAMESPACE}" "${RESTORE_POD}" -c postgres -- \
-  psql -U postgres -c "\l" | grep -E "gitlab|keycloak|nextcloud|paperless"
+  psql -U postgres -c "\l" | grep -E "keycloak|nextcloud|paperless"
 
 echo ""
 echo "    Tabellen in keycloak:"

@@ -37,7 +37,7 @@ spec:
             memory: 512Mi
 
         # No ingress - Garage is shared *infra*, reached only from other
-        # in-cluster services (GitLab Runner cache, more services later),
+        # in-cluster services (Velero, CNPG, Forgejo backups),
         # never directly from outside the cluster.
         ingress:
           s3:
