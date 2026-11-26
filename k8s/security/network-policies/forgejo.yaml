@@ -19,6 +19,12 @@ spec:
   endpointSelector:
     matchLabels:
       app: forgejo-runner
+  # Nothing needs to connect to the runner pod. Defense in depth in case the
+  # privileged dind daemon ever listens on TCP again (the image's entrypoint
+  # does that by default).
+  ingressDeny:
+    - fromEntities:
+        - all
   egress:
     - toEndpoints:
         - matchLabels:
