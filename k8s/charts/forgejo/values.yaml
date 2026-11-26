@@ -6,7 +6,8 @@ image:
   tag: "15.0.10-rootless"
 
 # Port shown in clone URLs. Forgejo itself listens on 2222 inside the pod;
-# the node-level entrypoint is added separately (see docs/forgejo-setup.md).
+# Traefik exposes it on the node entrypoint "forgejo-ssh" (2223, see
+# k8s/traefik-tls-config.yaml and templates/ssh-ingressroute.yaml).
 sshPublicPort: 2223
 
 secretName: forgejo-secret
@@ -20,3 +21,43 @@ resources:
     memory: 128Mi
   limits:
     memory: 512Mi
+
+# Forgejo Actions runner (templates/runner.yaml). Registered offline: the
+# uuid/token pair comes from Vault via the ExternalSecret
+# forgejo-runner-secret, seeded by scripts/setup-forgejo-runner.sh.
+runner:
+  enabled: true
+  image: code.forgejo.org/forgejo/runner:13.2.2
+  dindImage: docker:29.10.1-dind
+  # amd64 node: CI images (node, pulumi) and plenty of RAM.
+  nodeName: k3s-worker-minipc
+  # Pod network MTU (Cilium over Tailscale). Docker-in-Docker defaults to
+  # 1500, which silently stalls larger downloads inside job containers.
+  mtu: 1280
+  capacity: 2
+  labels:
+    - ubuntu-latest:docker://node:24-bookworm
+    - docker:docker://node:24-bookworm
+  secretName: forgejo-runner-secret
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 4Gi
+  # Caps /var/lib/docker (images, job workspaces). No ephemeral-storage limit
+  # on the container: kubelet counts emptyDir usage against the sum of
+  # container limits and would evict far below this.
+  dockerDataSizeLimit: 30Gi
+
+# Nightly `forgejo dump` (repos, SQLite, config) to the Garage bucket
+# forgejo-backups (templates/backup-cronjob.yaml). Bucket + key are created
+# by scripts/setup-forgejo-backup.sh.
+backup:
+  enabled: true
+  schedule: "30 2 * * *"
+  retentionDays: 14
+  bucket: forgejo-backups
+  s3Endpoint: http://garage.infrastructure.svc.cluster.local:3900
+  awsCliImage: amazon/aws-cli:2.42.0
+  secretName: forgejo-backup-secret

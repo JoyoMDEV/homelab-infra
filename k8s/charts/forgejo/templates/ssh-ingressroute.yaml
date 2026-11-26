@@ -1,0 +1,17 @@
+# Git over SSH: raw TCP passthrough from the internal Traefik entrypoint
+# "forgejo-ssh" (port 2223 on each node's Tailscale IP) to Forgejo's built-in
+# SSH server. No TLS/SNI, so HostSNI(`*`) is the only possible match.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: {{ .Release.Name }}-ssh
+  labels:
+    app: forgejo
+spec:
+  entryPoints:
+    - forgejo-ssh
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: {{ .Release.Name }}
+          port: 22

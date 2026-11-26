@@ -1,0 +1,175 @@
+{{- if .Values.runner.enabled }}
+# Forgejo Actions runner with a Docker-in-Docker sidecar. Job containers run
+# inside the dind daemon, not as Kubernetes pods.
+#
+# Registration is offline (no .runner state file, no PVC): the uuid/token
+# pair is created by scripts/setup-forgejo-runner.sh via
+# `forgejo forgejo-cli actions register` and lands in Vault, from there in
+# the Secret forgejo-runner-secret (ExternalSecret in
+# k8s/security/external-secrets/forgejo/).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-runner-config
+  labels:
+    app: forgejo-runner
+data:
+  config.yaml: |
+    log:
+      level: info
+    runner:
+      capacity: {{ .Values.runner.capacity }}
+      timeout: 1h
+      envs:
+        # The homelab CA, so job containers can talk to
+        # https://forgejo.homelab.local (checkout, artifacts, cache) without
+        # replacing the system CA bundle.
+        NODE_EXTRA_CA_CERTS: /etc/homelab-ca/homelab-ca.crt
+        GIT_CONFIG_COUNT: "1"
+        GIT_CONFIG_KEY_0: http.https://{{ .Values.hostname }}/.sslCAInfo
+        GIT_CONFIG_VALUE_0: /etc/homelab-ca/homelab-ca.crt
+      labels:
+        {{- toYaml .Values.runner.labels | nindent 8 }}
+    cache:
+      enabled: true
+    container:
+      # Default bridge, so dockerd's --mtu applies (per-job networks would
+      # fall back to MTU 1500).
+      network: bridge
+      privileged: false
+      # Path on the dind container's filesystem (homelab-ca Secret mount).
+      options: -v /certs/homelab-ca:/etc/homelab-ca:ro
+      valid_volumes:
+        - /certs/homelab-ca
+      docker_host: "-"
+    server:
+      connections:
+        forgejo:
+          # In-cluster URL: the runner itself needs no TLS/CA setup.
+          url: http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local/
+          uuid: __UUID__
+          token_url: file:/secrets/token
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-runner
+  labels:
+    app: forgejo-runner
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: forgejo-runner
+  template:
+    metadata:
+      labels:
+        app: forgejo-runner
+      annotations:
+        checksum/config: {{ .Values.runner | toJson | sha256sum }}
+    spec:
+      # Neither container talks to the Kubernetes API.
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: {{ .Values.runner.nodeName }}
+      initContainers:
+        - name: render-config
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - sed "s/__UUID__/${RUNNER_UUID}/" /template/config.yaml > /config/config.yaml
+          env:
+            - name: RUNNER_UUID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.runner.secretName }}
+                  key: uuid
+          volumeMounts:
+            - name: config-template
+              mountPath: /template
+            - name: config
+              mountPath: /config
+      containers:
+        - name: runner
+          image: {{ .Values.runner.image }}
+          command:
+            - sh
+            - -c
+            - |
+              until [ -S /var/run/dind/docker.sock ]; do echo "waiting for dind"; sleep 2; done
+              exec forgejo-runner daemon --config /config/config.yaml
+          env:
+            - name: DOCKER_HOST
+              value: unix:///var/run/dind/docker.sock
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: runner-token
+              mountPath: /secrets
+              readOnly: true
+            - name: runner-data
+              mountPath: /data
+            - name: dind-socket
+              mountPath: /var/run/dind
+        - name: dind
+          image: {{ .Values.runner.dindImage }}
+          # Unix socket in a shared emptyDir, no TCP listener at all: whoever
+          # reaches this privileged daemon is root on the node. Socket group
+          # 1000 = the runner container's user.
+          args:
+            - --host=unix:///var/run/dind/docker.sock
+            - --group=1000
+            - --mtu={{ .Values.runner.mtu }}
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+          securityContext:
+            privileged: true
+          resources:
+            {{- toYaml .Values.runner.resources | nindent 12 }}
+          volumeMounts:
+            - name: docker-data
+              mountPath: /var/lib/docker
+            - name: dind-socket
+              mountPath: /var/run/dind
+            - name: homelab-ca
+              mountPath: /certs/homelab-ca
+              readOnly: true
+      volumes:
+        - name: config-template
+          configMap:
+            name: {{ .Release.Name }}-runner-config
+        - name: config
+          emptyDir: {}
+        - name: runner-data
+          emptyDir: {}
+        # Images and job workspaces. Capped so CI cannot fill the minipc disk,
+        # which also holds Forgejo, Garage and the backups.
+        - name: docker-data
+          emptyDir:
+            sizeLimit: {{ .Values.runner.dockerDataSizeLimit }}
+        - name: dind-socket
+          emptyDir: {}
+        - name: runner-token
+          secret:
+            secretName: {{ .Values.runner.secretName }}
+            items:
+              - key: token
+                path: token
+        # Synced into namespaces labelled homelab.local/inject-ca=true by the
+        # cert-sync CronJob (k8s/infrastructure/cert-sync-cronjob.yaml).
+        - name: homelab-ca
+          secret:
+            secretName: homelab-ca
+            optional: true
+{{- end }}

@@ -1,0 +1,99 @@
+{{- if .Values.backup.enabled }}
+# Nightly `forgejo dump` (repositories, SQLite DB, custom config, attachments)
+# uploaded to Garage. Velero does not back up PVC contents, so without this
+# the repos would only exist on the minipc's local-path volume.
+#
+# Mounts the same RWO PVC as the Forgejo pod; local-path pins it to the same
+# node, so both pods can mount it at once. `forgejo dump` is the documented
+# way to back up a running instance.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-backup
+  labels:
+    app: forgejo-backup
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: forgejo-backup
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            fsGroup: 1000
+          initContainers:
+            - name: dump
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  # dump aborts if the repositories dir does not exist yet
+                  mkdir -p /var/lib/gitea/git/repositories
+                  cd /tmp
+                  forgejo dump --type tar.gz --tempdir /tmp \
+                    --file "/backup/forgejo-dump-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+                  ls -la /backup
+              volumeMounts:
+                - name: data
+                  mountPath: /var/lib/gitea
+                - name: backup
+                  mountPath: /backup
+                - name: tmp
+                  mountPath: /tmp
+          containers:
+            - name: upload
+              image: {{ .Values.backup.awsCliImage }}
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  S3="aws --endpoint-url {{ .Values.backup.s3Endpoint }} s3"
+                  for f in /backup/*.tar.gz; do
+                    $S3 cp "$f" "s3://{{ .Values.backup.bucket }}/$(basename "$f")" --only-show-errors
+                    echo "uploaded $(basename "$f")"
+                  done
+                  # Retention: delete dumps older than retentionDays.
+                  cutoff=$(date -u -d "-{{ .Values.backup.retentionDays }} days" +%Y%m%d)
+                  $S3 ls "s3://{{ .Values.backup.bucket }}/" | awk '{print $4}' | while read -r key; do
+                    d=$(echo "$key" | sed -n 's/^forgejo-dump-\([0-9]\{8\}\)T.*/\1/p')
+                    if [ -n "$d" ] && [ "$d" -lt "$cutoff" ]; then
+                      $S3 rm "s3://{{ .Values.backup.bucket }}/$key" --only-show-errors
+                      echo "deleted $key"
+                    fi
+                  done
+              env:
+                - name: AWS_DEFAULT_REGION
+                  value: garage
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backup.secretName }}
+                      key: access-key-id
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.backup.secretName }}
+                      key: secret-access-key
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: {{ .Release.Name }}-data
+            - name: backup
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}
+{{- end }}
