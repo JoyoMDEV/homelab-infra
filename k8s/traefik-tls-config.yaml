@@ -41,6 +41,11 @@ spec:
       ssh:
         port: 2222
         protocol: TCP
+      # Git over SSH for Forgejo (IngressRouteTCP in k8s/charts/forgejo).
+      # Bound to the Tailscale IP only, see additionalArguments below.
+      forgejo-ssh:
+        port: 2223
+        protocol: TCP
     securityContext:
       capabilities:
         drop: [ALL]
@@ -63,6 +68,7 @@ spec:
     additionalArguments:
       - "--entryPoints.web.address=$(NODE_IP):80/tcp"
       - "--entryPoints.websecure.address=$(NODE_IP):443/tcp"
+      - "--entryPoints.forgejo-ssh.address=$(NODE_IP):2223/tcp"
     providers:
       kubernetesCRD:
         allowCrossNamespace: true

@@ -1,0 +1,83 @@
+---
+# Egress isolation for the Forgejo Actions runner and the backup job
+# (namespace forgejo). The Forgejo pod itself is not covered yet.
+#
+# CI jobs run as containers inside the runner pod's dind daemon and are
+# NATed out through the pod's IP, so Cilium sees them as the runner pod.
+# Without this policy any workflow could reach every in-cluster service
+# (Vault, Garage, kube-apiserver, kubelets). With it, jobs get DNS, Forgejo,
+# Traefik on the nodes (https://forgejo.homelab.local) and the internet
+# ("world" excludes cluster endpoints and nodes).
+
+# ── Runner + CI jobs ─────────────────────────────────────────────────────
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: forgejo-runner
+  namespace: forgejo
+spec:
+  endpointSelector:
+    matchLabels:
+      app: forgejo-runner
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # Runner -> Forgejo API (in-cluster URL, service port 80 -> pod 3000).
+    - toEndpoints:
+        - matchLabels:
+            app: forgejo
+      toPorts:
+        - ports:
+            - port: "3000"
+              protocol: TCP
+    # Jobs -> https://forgejo.homelab.local: the wildcard DNS points at a
+    # node's Tailscale IP, where Traefik runs with hostNetwork.
+    - toEntities:
+        - host
+        - remote-node
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # Internet: images, npm, actions from data.forgejo.org, Pulumi/Azure.
+    - toEntities:
+        - world
+
+---
+# ── Backup job: only DNS and Garage ──────────────────────────────────────
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: forgejo-backup
+  namespace: forgejo
+spec:
+  endpointSelector:
+    matchLabels:
+      app: forgejo-backup
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: infrastructure
+            app.kubernetes.io/name: garage
+      toPorts:
+        - ports:
+            - port: "3900"
+              protocol: TCP
