@@ -28,7 +28,9 @@ resources:
 # false once GitLab is gone.
 migrations:
   allowLocalNetworks: true
-  allowedDomains: gitlab.gitlab.svc.cluster.local
+  # The GitLab importer clones via the URL GitLab reports
+  # (https://gitlab.homelab.local), not via clone_addr.
+  allowedDomains: gitlab.gitlab.svc.cluster.local,gitlab.homelab.local
 
 # Forgejo Actions runner (templates/runner.yaml). Registered offline: the
 # uuid/token pair comes from Vault via the ExternalSecret
