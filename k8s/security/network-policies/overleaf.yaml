@@ -1,0 +1,159 @@
+---
+# Isolations-Policies für Overleaf (Namespace overleaf). Overleaf kann nichts
+# im restlichen Cluster erreichen außer der eigenen Mongo/Redis, und nur
+# Overleaf selbst erreicht diese beiden.
+#
+# Bis 2026-11 hing Overleaf am öffentlichen Traefik (traefik-public) mit
+# Authelia davor, dazu gehörten Policies im Namespace "public". Seitdem ist
+# Overleaf nur noch intern über overleaf.homelab.local (Tailscale)
+# erreichbar, die public-Policies sind entfallen.
+#
+# Cilium-Policies sind additiv: sobald IRGENDEINE Policy einen Pod für eine
+# Richtung (Ingress/Egress) auswählt, gilt nur noch, was IRGENDEINE
+# passende Policy explizit erlaubt. Die leere "overleaf-default-deny" ist
+# ein Sicherheitsnetz für künftige, noch nicht einzeln benannte Pods.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: overleaf-default-deny
+  namespace: overleaf
+spec:
+  endpointSelector: {}
+  ingress: []
+  egress: []
+
+---
+# ── Overleaf: Egress eigene Mongo/Redis, DNS, UND Internet (bewusst
+#    erlaubt - LaTeX-Paket-Nachladen), aber NICHT der restliche Cluster
+#    ("world"-Entity schließt Cluster-interne Ziele aus, genau die richtige
+#    Grenze hier). Ingress unbeschränkt: das interne Traefik (kube-system)
+#    muss Overleaf erreichen, Erreichbarkeit von außen nur über Tailscale. ──
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: overleaf-app
+  namespace: overleaf
+spec:
+  endpointSelector:
+    matchLabels:
+      app: overleaf
+  ingress:
+    - fromEntities:
+        - all
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app: overleaf-mongo
+      toPorts:
+        - ports:
+            - port: "27017"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app: overleaf-redis
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+    - toEntities:
+        - world
+
+---
+# ── Mongo: nur von Overleaf selbst erreichbar, keine Egress außer DNS. ────
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: overleaf-mongo
+  namespace: overleaf
+spec:
+  endpointSelector:
+    matchLabels:
+      app: overleaf-mongo
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: overleaf
+        # PostSync hook Job (k8s/overleaf/mongo.yaml) initialises the replica
+        # set. Its own egress was allowed by overleaf-mongo-init, but without
+        # this entry mongo dropped it at ingress and the Job hung forever.
+        - matchLabels:
+            job-name: overleaf-mongo-init-replicaset
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+---
+# ── Redis: nur von Overleaf selbst erreichbar, keine Egress außer DNS. ────
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: overleaf-redis
+  namespace: overleaf
+spec:
+  endpointSelector:
+    matchLabels:
+      app: overleaf-redis
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: overleaf
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+---
+# ── Mongo-Init-Job: braucht kurzzeitig Zugriff auf Mongo für rs.initiate().
+#    "job-name" wird von Kubernetes automatisch an Job-Pods vergeben. ──────
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: overleaf-mongo-init
+  namespace: overleaf
+spec:
+  endpointSelector:
+    matchLabels:
+      job-name: overleaf-mongo-init-replicaset
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app: overleaf-mongo
+      toPorts:
+        - ports:
+            - port: "27017"
+              protocol: TCP
