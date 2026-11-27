@@ -17,6 +17,11 @@ spec:
     namespace: overleaf
   syncPolicy:
     automated:
+      # Explicit, so root re-enables it if someone switches auto-sync off
+      # live: automated.enabled=false had been set outside git, and the app
+      # silently stopped syncing from 2026-09 to 2026-11 (root's three-way
+      # merge leaves fields alone that git doesn't mention).
+      enabled: true
       prune: true
       selfHeal: true
     syncOptions:
