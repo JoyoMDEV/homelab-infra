@@ -2,7 +2,7 @@
 
 Dieses Dokument beschreibt die Backup-Strategie für das Homelab-Setup bestehend aus einem k3s-Cluster mit CloudNativePG, Forgejo, Keycloak und Nextcloud.
 
-**Infrastruktur:** Ziel sind nur noch die zwei Home-Nodes, der Hetzner-Server wird abgebaut.
+**Infrastruktur:** Ziel sind nur noch die zwei Home-Nodes, der Hetzner-Server wurde am 2026-11-27 abgebaut (nur die ungenutzte Storage Box ist geblieben).
 
 - `k3s-worker-minipc`: Live-Daten auf der SSD (PVCs, Postgres).
 - `k3s-worker-pi`: Garage auf der 1-TB-USB-HDD des Raspberry Pi, Ziel für alle Backups (Velero, CNPG, Forgejo-Dumps).

@@ -70,6 +70,6 @@ sudo ufw allow 6443/tcp
 
 Stellt den bootstrap-offenen Zustand wieder her, bis das Problem geklärt ist.
 
-Falls auch die zweite Session weg ist: Hetzner Cloud Console (Rescue-System /
-VNC-Konsole im Hetzner-Dashboard) nutzen, um lokal auf den Server zuzugreifen
+Falls auch die zweite Session weg ist: an den Rechner zu Hause mit Monitor und
+Tastatur gehen (die Nodes stehen lokal, es gibt keine Cloud-Konsole mehr), um lokal auf den Server zuzugreifen
 und `ufw` zurückzusetzen.

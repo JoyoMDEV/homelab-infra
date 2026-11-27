@@ -3,11 +3,11 @@
 Always read this import first:
 @~/Code/gitlab/context-hub/CLAUDE.md
 
-k3s cluster on two home nodes (mini PC = server, Raspberry Pi = agent) managed with Ansible and ArgoCD. The Hetzner `k3s-server` was retired as control plane on 2026-11-27; `terraform/` only remains until it is destroyed. See `README.md` for the architecture diagram and CI/CD flow.
+k3s cluster on two home nodes (mini PC = server, Raspberry Pi = agent) managed with Ansible and ArgoCD. The Hetzner `k3s-server` was retired and deleted on 2026-11-27. See `README.md` for the architecture diagram and CI/CD flow.
 
 ## Repo layout
 
-- `terraform/` — Hetzner Cloud provisioning (servers, network, firewall). State is local and gitignored.
+- `terraform/` — only the Hetzner Storage Box (currently unused, kept for a possible offsite backup). State is local and gitignored.
 - `ansible/` — server configuration (`roles/`: `common`, `hardening`, `k3s_server`, `k3s_agent`, `tailscale`).
 - `k8s/argocd/applications/` — one ArgoCD `Application` per deployed service. `k8s/argocd/root.yaml` is the app-of-apps that watches this directory.
 - `k8s/security/external-secrets/<category>/` — one `ExternalSecret` per service, grouped by category (`auth`, `productivity`, `infrastructure`, `automation`, `backup`, `forgejo`, `security`).

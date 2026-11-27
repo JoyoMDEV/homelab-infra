@@ -10,12 +10,6 @@ variable "ssh_public_key_path" {
   default     = "~/.ssh/id_ed25519.pub"
 }
 
-variable "server_location" {
-  description = "Hetzner datacenter location for Server"
-  type        = string
-  default     = "nbg1"
-}
-
 variable "storage_location" {
   description = "Hetzner datacenter location for Storage"
 }
