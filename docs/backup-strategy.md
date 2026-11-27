@@ -1,6 +1,13 @@
 # Backup-Strategie
 
-Dieses Dokument beschreibt die Backup-Strategie für das Homelab-Setup bestehend aus einem k3s-Cluster (Hetzner-Server + zwei Home-Nodes, Ziel: nur Home-Nodes), Samba AD DC, CloudNativePG, Forgejo, Keycloak und Nextcloud.
+Dieses Dokument beschreibt die Backup-Strategie für das Homelab-Setup bestehend aus einem k3s-Cluster mit CloudNativePG, Forgejo, Keycloak und Nextcloud.
+
+**Infrastruktur:** Ziel sind nur noch die zwei Home-Nodes, der Hetzner-Server wird abgebaut.
+
+- `k3s-worker-minipc`: Live-Daten auf der SSD (PVCs, Postgres).
+- `k3s-worker-pi`: Garage auf der 1-TB-USB-HDD des Raspberry Pi, Ziel für alle Backups (Velero, CNPG, Forgejo-Dumps).
+
+Live-Daten und Backups liegen damit auf getrennten Geräten, aber am selben Ort. Ein Offsite-Backup gibt es noch nicht (context-hub#36).
 
 ---
 
@@ -11,7 +18,6 @@ Dieses Dokument beschreibt die Backup-Strategie für das Homelab-Setup bestehend
 | PostgreSQL (CNPG) | Datenbank | 🔴 Kritisch | ✅ CNPG Barman via Garage (kein Offsite, siehe unten) |
 | Kubernetes Cluster State | K8s-Ressourcen | 🟠 Hoch | ✅ Velero (täglich 02:00, 14 Tage Retention) |
 | Nextcloud Nutzerdaten | Dateien | 🟠 Hoch | ❌ nicht gesichert (Storage Box entfällt) |
-| Samba AD DC | Verzeichnisdienst | 🔴 Kritisch | ✅ Ansible-Rolle backup (täglich 01:00, 7 Tage lokal, 30 Tage in Garage via rclone) |
 | Forgejo (Repos, Issues, SQLite) | Git-Daten | 🟠 Hoch | ✅ Nächtlicher `forgejo dump` nach Garage (`forgejo-backups`) |
 | Kubernetes Secrets | Credentials | 🔴 Kritisch | ⚠️ Teilweise (Ansible Vault) |
 | TLS / CA | Zertifikate | 🟡 Mittel | ⚠️ Nur im Cluster-Secret |
@@ -110,39 +116,7 @@ kubectl describe backup.velero.io <name> -n backup
 
 ---
 
-### Ebene 4 – Samba AD DC ✅ Implementiert
-
-**Architektur:**
-```
-samba-tool domain backup online (täglich 01:00 via systemd Timer)
-  → /backup/samba/<timestamp>/ (lokal auf dem Host, 7 Tage Retention)
-  → rclone copy → Garage (Bucket samba-backup, 30 Tage Remote-Retention)
-```
-
-**Details:**
-- Backup-Befehl: `samba-tool domain backup online` (DC läuft weiter während Backup)
-- DB-Check vor jedem Backup: `samba-tool dbcheck --cross-ncs`
-- Lokale Retention: 7 Tage
-- Remote Retention: 30 Tage, `rclone delete --min-age`
-- Backup-Datei: `samba-backup-homelab.local-<timestamp>.tar.bz2`
-**Backup prüfen:**
-```bash
-# Timer-Status und letzte Logs
-make samba-backup-status
-
-# Backup-Dateien auf dem Host
-ssh root@<server-ip> "ls -lh /backup/samba/"
-
-# Backup-Dateien in Garage (Zugangsdaten aus dem Ansible Vault)
-kubectl exec -n infrastructure garage-0 -c garage -- /garage bucket info samba-backup
-```
-
-**RPO:** ~24 Stunden
-**RTO:** ~30-60 Minuten (neuer Server + Provision + Restore)
-
----
-
-### Ebene 5 – Kubernetes Secrets ⚠️ Partial
+### Ebene 4 – Kubernetes Secrets ⚠️ Partial
 
 **Aktuell:** Teile in Ansible Vault. Kubernetes Secrets nur im Cluster.
 
@@ -163,20 +137,18 @@ make vault-edit
 
 | Zeit | Job | Ziel | Status |
 |---|---|---|---|
-| 03:00 | CNPG Base-Backup (ScheduledBackup) | Garage → lokal | ✅ |
-| 02:00 | Velero Cluster-Backup | Garage → lokal | ✅ |
+| 03:00 | CNPG Base-Backup (ScheduledBackup) | Garage (Pi-HDD) | ✅ |
+| 02:00 | Velero Cluster-Backup | Garage (Pi-HDD) | ✅ |
 | 03:30 | Restic Nextcloud-Dateien | Backblaze B2 | ❌ geplant |
-| 01:00 | Samba AD Backup (systemd Timer) | Garage (rclone) | ✅ |
 
 ---
 
-## Bekannte Lücken (Stand 2026-10-20)
+## Bekannte Lücken (Stand 2026-11-27)
 
-- **Kein Offsite-Backup.** Der Restic-Job (MinIO -> Storage Box) ist entfernt, er scheiterte ohnehin seit mindestens 2026-10-18 (Storage Box lehnte SSH auf Port 23 ab), und die Storage Box wird abgeschafft. Garage ist die einzige Kopie, sie liegt im selben Cluster. Ein Konzept für eine zweite Kopie außerhalb des Clusters steht aus.
+- **Kein Offsite-Backup.** Der Restic-Job (MinIO -> Storage Box) ist entfernt, er scheiterte ohnehin seit mindestens 2026-10-18 (Storage Box lehnte SSH auf Port 23 ab), und die Storage Box wird abgeschafft. Garage ist die einzige Kopie, sie liegt auf der HDD des Pi im selben Cluster und am selben Ort wie die Live-Daten. Ein Konzept für eine zweite Kopie außerhalb des Hauses steht aus (context-hub#36).
 - **PVC-Inhalte werden nicht gesichert.** Velero läuft ohne node-agent (`defaultVolumesToFsBackup: false`, `local-path` wird von Kopia nicht unterstützt). Gesichert werden nur Cluster-Objekte und die Postgres-Daten (CNPG). Nextcloud-/Paperless-Dateien, Overleaf und die Forgejo-Repos liegen nur auf dem jeweiligen Node (Forgejo zusätzlich als nächtlicher Dump in Garage).
 - MinIO ist entfernt, die alten Backups dort sind weg. CNPG hat in Garage eine neue Backup-Linie begonnen (erstes Base-Backup am 2026-10-20).
-- Die Storage Box wird nicht mehr genutzt (Samba-Backup läuft über Garage, der Nextcloud-Mount ist entfernt). Die Terraform-Ressource `hcloud_storage_box.main` existiert noch und kann entfernt werden.
-- Auch das Samba-Backup liegt in Garage, also im selben Cluster und nicht offsite.
+- Die Storage Box wird nicht mehr genutzt (der Nextcloud-Mount ist entfernt). Die Terraform-Ressource `hcloud_storage_box.main` existiert noch und kann entfernt werden.
 
 ---
 
@@ -205,76 +177,16 @@ make recovery-test   # Verifiziert dass Backup funktioniert
 **RTO:** ~5 Minuten | **RPO:** ~1 Stunde
 
 ### Szenario B: Kompletter Cluster-Verlust
-1. Neuen Hetzner-Server provisionieren: `make tf-apply && make ansible-run`
-2. CNPG aus Garage/Barman-Backup wiederherstellen
-3. Velero Cluster-State wiederherstellen (sobald implementiert)
-4. Samba AD aus Backup restoren (sobald implementiert)
+1. Home-Nodes neu aufsetzen: `make ansible-run`
+2. CNPG aus Garage/Barman-Backup wiederherstellen (setzt voraus, dass die Pi-HDD mit Garage überlebt hat)
+3. Velero Cluster-State wiederherstellen
 
 **RTO:** ~2-4 Stunden | **RPO:** ~24 Stunden
-
-### Szenario C: Samba AD DC ausgefallen
-
-⚠️ **Achtung:** Restore nur auf einem frischen Server durchführen — niemals auf einem laufenden DC. Ein restored DC würde mit der Produktion interferieren.
-
-**Voraussetzungen:**
-- Neuer Server provisioniert (oder bestehender Server neu aufgesetzt)
-- Samba installiert aber NICHT provisioniert
-- Backup-Datei aus Garage verfügbar
-
-**Schritt 1: Backup aus Garage holen**
-```bash
-# Neueste Backup-Datei aus Garage laden (rclone per Umgebungsvariablen, Werte aus dem Ansible Vault)
-export RCLONE_CONFIG_GARAGE_TYPE=s3 RCLONE_CONFIG_GARAGE_PROVIDER=Other \
-  RCLONE_CONFIG_GARAGE_ENDPOINT=http://10.43.0.50:3900 RCLONE_CONFIG_GARAGE_REGION=garage \
-  RCLONE_CONFIG_GARAGE_ACCESS_KEY_ID=<id> RCLONE_CONFIG_GARAGE_SECRET_ACCESS_KEY=<secret>
-rclone ls GARAGE:samba-backup
-rclone copy GARAGE:samba-backup/<neuestes-verzeichnis> /tmp/
-```
-
-**Schritt 2: Samba-Dienst stoppen**
-```bash
-systemctl stop samba-ad-dc
-```
-
-**Schritt 3: Domain aus Backup wiederherstellen**
-```bash
-samba-tool domain backup restore \
-  --backup-file=/tmp/samba-backup-homelab.local-<timestamp>.tar.bz2 \
-  --newservername=k3s-server \
-  --targetdir=/var/lib/samba-restored
-
-# smb.conf aus dem Restore übernehmen
-cp /var/lib/samba-restored/etc/smb.conf /etc/samba/smb.conf
-```
-
-**Schritt 4: Samba starten und verifizieren**
-```bash
-systemctl start samba-ad-dc
-systemctl status samba-ad-dc
-
-# Domain-Level prüfen
-samba-tool domain level show
-
-# User prüfen
-samba-tool user list
-
-# DNS prüfen
-dig @127.0.0.1 auth.homelab.local
-```
-
-**Schritt 5: Keycloak LDAP-Sync prüfen**
-```bash
-# In Keycloak: User Federation → samba-ad → Synchronize all users
-# Alle OIDC-Services (ArgoCD, Nextcloud, Paperless) sollten
-# danach wieder funktionieren
-```
-
-**Hinweis:** Nach dem Restore müssen alle anderen DCs neu der Domain beitreten
-(nicht applicable bei Single-DC Setup wie hier).
 
 ---
 
 ## Offene Punkte / ToDos
 
 - [ ] **Restic CronJob** für Nextcloud-Dateien auf Backblaze B2 (Issue #5)
+- [ ] **Offsite-Kopie** der Garage-Buckets (context-hub#36)
 - [ ] **Recovery-Tests** einmal pro Quartal: `make recovery-test`

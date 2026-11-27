@@ -5,7 +5,6 @@ Keycloak läuft bereits unter **https://auth.homelab.local**.
 
 **Voraussetzungen:**
 - Keycloak Pod ist `Running`: `kubectl get pods -n auth`
-- Samba AD DC läuft: `make status`
 - Du bist im Tailscale-Netz
 - CoreDNS für `*.homelab.local` konfiguriert:
   ```bash
@@ -20,7 +19,7 @@ Keycloak läuft bereits unter **https://auth.homelab.local**.
 
 1. [Admin-Passwort auslesen](#1-admin-passwort-auslesen)
 2. [Realm anlegen](#2-realm-homelab-anlegen)
-3. [LDAP-Federation mit Samba AD](#3-ldap-federation-mit-samba-ad)
+3. ~~LDAP-Federation mit Samba AD~~ (entfernt)
 5. [OIDC-Client: ArgoCD](#5-oidc-client-argocd)
 7. ~~OIDC-Client: Grafana~~ (entfernt)
 8. [OIDC-Client: Nextcloud](#8-oidc-client-nextcloud-vorbereitung)
@@ -58,76 +57,17 @@ User: `admin` / Passwort aus dem Befehl oben
 
 ---
 
-## 3. LDAP-Federation mit Samba AD
+## 3. (entfernt)
 
-> Verbindet Keycloak mit dem Samba AD DC. Benutzer aus dem AD können sich danach
-> mit ihren AD-Credentials bei allen OIDC-Services anmelden.
+Die LDAP-Federation `samba-ad` zum Samba AD DC wurde am 2026-11-27 entfernt, der DC ist abgeschaltet.
 
-**Navigation:** Realm `homelab` → **User Federation** → **"Add provider"** → **LDAP**
+Benutzer sind lokale Keycloak-User:
 
-### 3.1 Connection
+1. Realm `homelab` → **Users** → **"Add user"** → Benutzer anlegen
+2. Tab **"Credentials"** → **"Set password"**
+3. Tab **"Groups"** → Gruppen zuweisen
 
-| Feld | Wert |
-|------|------|
-| UI display name | `samba-ad` |
-| Vendor | `Active Directory` |
-| Connection URL | `ldap://<tailscale-ip-des-servers>:389` |
-| Enable StartTLS | OFF (Tailscale verschlüsselt die Verbindung) |
-| Use Truststore SPI | `Only for ldaps` |
-| Connection pooling | ON |
-| Connection timeout | `5000` |
-| Read timeout | `10000` |
-
-> Tailscale-IP des Servers:
-> ```bash
-> ssh root@<server-public-ip> tailscale ip -4
-> ```
-
-### 3.2 Bind
-
-| Feld | Wert |
-|------|------|
-| Bind type | `simple` |
-| Bind DN | `CN=Administrator,CN=Users,DC=homelab,DC=local` |
-| Bind credentials | `<samba_admin_password>` |
-
-> Samba Admin-Passwort auslesen:
-> ```bash
-> cd ansible && ansible-vault view inventory/group_vars/all/vault.yml
-> # → vault_samba_admin_password
-> ```
-
-### 3.3 LDAP Searching and Updating
-
-| Feld | Wert |
-|------|------|
-| Edit mode | `READ_ONLY` |
-| Users DN | `CN=Users,DC=homelab,DC=local` |
-| Username LDAP attribute | `sAMAccountName` |
-| RDN LDAP attribute | `cn` |
-| UUID LDAP attribute | `objectGUID` |
-| User object classes | `person, organizationalPerson, user` |
-| User LDAP filter | *(leer lassen)* |
-| Search scope | `Subtree` |
-| Pagination | ON |
-
-### 3.4 Synchronization
-
-| Feld | Wert |
-|------|------|
-| Import users | ON |
-| Sync Registrations | OFF |
-| Periodic full sync | ON |
-| Full sync period | `86400` (1x täglich) |
-| Periodic changed users sync | ON |
-| Changed users sync period | `3600` (stündlich) |
-
-4. **"Save"** klicken
-5. **"Test connection"** → muss grün werden ✅
-6. **"Test authentication"** → muss grün werden ✅
-7. **"Synchronize all users"** klicken
-
-> Erfolgreich wenn unter **Users** die AD-Benutzer erscheinen.
+Passwörter und Gruppenmitgliedschaften liegen in Keycloak. Details zu Gruppen in `docs/group-management.md`.
 
 ---
 
@@ -176,11 +116,11 @@ kubectl create secret generic argocd-keycloak-secret \
 
 ### 5.5 ArgoCD Admin-Gruppe anlegen
 
-Damit AD-Benutzer Admin-Rechte in ArgoCD bekommen:
+Damit Benutzer Admin-Rechte in ArgoCD bekommen:
 
 1. Realm `homelab` → **Groups** → **"Create group"**
 2. Name: `argocd-admins`
-3. Deinen AD-Benutzer der Gruppe zuweisen:
+3. Deinen Benutzer der Gruppe zuweisen:
    **Users** → Benutzer auswählen → Tab **"Groups"** → `argocd-admins` joinen
 
 ---
@@ -276,18 +216,11 @@ curl -s https://auth.homelab.local/realms/homelab/.well-known/openid-configurati
   | python3 -m json.tool | grep -E "issuer|token_endpoint|authorization_endpoint"
 ```
 
-### LDAP Sync prüfen
-
-```bash
-# Logs auf LDAP-Fehler prüfen
-kubectl logs -n auth -l app.kubernetes.io/name=keycloakx --tail=50 | grep -i ldap
-```
-
 ### ArgoCD Login testen
 
 1. https://argocd.homelab.local in **privatem Fenster** öffnen
 2. **"Log in via Keycloak"** klicken
-3. AD-Credentials eingeben
+3. Keycloak-Credentials eingeben
 4. User in `argocd-admins` → Admin-Zugriff, sonst read-only
 
 ---
@@ -305,18 +238,6 @@ make setup-coredns
 kubectl run -it --rm dns-test --image=alpine --restart=Never -- \
   nslookup auth.homelab.local
 # Muss die Traefik Cluster-IP zurückgeben
-```
-
-**LDAP-Verbindung schlägt fehl**
-
-```bash
-# Samba AD direkt testen
-kubectl run -it --rm ldap-test --image=alpine --restart=Never -- \
-  sh -c "apk add --no-cache openldap-clients && \
-  ldapsearch -x -H ldap://<tailscale-ip>:389 \
-  -D 'CN=Administrator,CN=Users,DC=homelab,DC=local' \
-  -w '<samba_admin_password>' \
-  -b 'DC=homelab,DC=local' '(objectClass=user)' cn"
 ```
 
 **Keycloak Pod crasht (OOMKilled)**

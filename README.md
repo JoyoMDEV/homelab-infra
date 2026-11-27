@@ -12,13 +12,13 @@ Hybrid Kubernetes cluster: 1 Hetzner Cloud server + 2 home nodes, managed with T
 │  k3s-server      │  k3s-worker-     │  Pi 4B            │
 │  32 GB / 16 vCPU │  minipc          │  k3s-worker-pi    │
 │  Control Plane   │  Worker          │  Worker           │
-│  Samba AD DC     │                  │                   │
+│  (being retired) │  SSD: live data  │  HDD: Garage      │
 │                  │                  │                   │
 └──────────────────┴──────────────────┴───────────────────┘
 
 CNI:     Cilium (migrated from Flannel, see docs/cilium-migration.md;
          kube-proxy still active, replacement not yet done)
-DNS:     *.homelab.local → Samba AD DC (Tailscale Split DNS)
+DNS:     *.homelab.local → homelab-dns CoreDNS on the minipc (Tailscale Split DNS)
 Ingress: Traefik (hostPort 80/443) → Services
 TLS:     cert-manager internal CA → Wildcard *.homelab.local
 Secrets: HashiCorp Vault → External Secrets Operator → K8s Secrets
@@ -66,8 +66,6 @@ homelab-infra/
 │   │   ├── tailscale/           #   Tailscale mesh VPN
 │   │   ├── k3s_server/          #   k3s control plane
 │   │   ├── k3s_agent/           #   k3s worker nodes
-│   │   ├── samba/                #   Samba AD DC (HOMELAB.LOCAL, wildcard DNS)
-│   │   └── backup/               #   Samba AD backup timer
 │   ├── site.yml / cluster.yml / harden_ssh.yml / migrate-to-cilium.yml
 │
 ├── k8s/                         # Kubernetes manifests
@@ -128,9 +126,9 @@ make tf-apply
 
 # 3. Configure Ansible secrets
 make vault-edit
-# Fill in: vault_tailscale_auth_key, vault_samba_admin_password, etc.
+# Fill in: vault_tailscale_auth_key, etc.
 
-# 4. Configure server (Ubuntu, Tailscale, k3s, Samba AD)
+# 4. Configure server (Ubuntu, Tailscale, k3s)
 make ansible-ping
 make ansible-run
 
@@ -172,7 +170,6 @@ Application and ExternalSecret together.
 - Ubuntu hardening (SSH keys only, UFW, fail2ban)
 - Tailscale mesh VPN
 - k3s cluster (Cilium CNI over tailscale0)
-- Samba AD DC (HOMELAB.LOCAL, wildcard `*.homelab.local` DNS)
 
 ### Via Bootstrap Scripts (one-time, pre-Vault)
 - Traefik hostPort config (80/443) + HTTP→HTTPS redirect
@@ -193,8 +190,9 @@ never committed to Git - see "Secrets Management" below.
 | `infrastructure` | infrastructure | Postgres cluster, cert-sync CronJob, wildcard cert |
 | `redis` | infrastructure | Shared Redis cache |
 | `garage` | infrastructure | S3-compatible object storage (Velero, CNPG backups, runner cache) |
+| `homelab-dns` | homelab-dns | Authoritative CoreDNS for `*.homelab.local` (wildcard → minipc Tailscale IP), Tailscale split DNS target |
 | `forgejo` | forgejo | Git hosting, Actions runner, nightly backup to Garage |
-| `keycloak` | auth | SSO / identity provider (LDAP → Samba AD, OIDC for everything else) |
+| `keycloak` | auth | SSO / identity provider (local users and groups, OIDC for everything else) |
 | `vault` | security | HashiCorp Vault (also managed as an ArgoCD app for upgrades) |
 | `vaultwarden` | security | Bitwarden-compatible password manager |
 | `nextcloud` | productivity | File sync & sharing |
@@ -279,8 +277,6 @@ scaffolds both.
 | `make ansible-run` | Run full site playbook |
 | `make ansible-check` | Dry-run site playbook |
 | `make ansible-cluster` | Run k3s cluster playbook only |
-| `make ansible-samba` | Run Samba AD role only |
-| `make ansible-backup` | Run Samba backup role only |
 | `make harden-ssh` | Lock SSH/k3s-API to tailscale0 (manual, post-bootstrap - read `ansible/roles/hardening/README.md` first) |
 | `make migrate-cilium-workers` / `migrate-cilium-workers-clean` / `migrate-cilium-server` | Flannel → Cilium migration phases (see `docs/cilium-migration.md`) |
 | `make vault-edit` / `vault-view` | Edit/view Ansible Vault secrets |
@@ -296,7 +292,6 @@ scaffolds both.
 | `make cert-sync` | Manually trigger wildcard cert sync to kube-system |
 | `make velero-status` | Show Velero backup status and storage location |
 | `make recovery-test` | Run all recovery tests (quarterly): Postgres + Velero |
-| `make samba-backup-status` | Show Samba backup timer status on server |
 
 ## Secrets Management
 
@@ -325,7 +320,9 @@ External Secrets Operator  →  creates/owns the actual Kubernetes Secret  →  
 
 ## DNS
 
-All services are reachable only via `*.homelab.local` through Tailscale Split DNS. Nothing is
+All services are reachable only via `*.homelab.local` through Tailscale Split DNS: the
+`homelab-dns` CoreDNS (`k8s/homelab-dns/`) answers the whole zone with a wildcard to the
+minipc's Tailscale IP, where Traefik routes by Host header. New services need no DNS change. Nothing is
 exposed to the internet (the public Traefik instance + Authelia were removed in 2026-11).
 
 | Service | URL |
@@ -343,8 +340,8 @@ exposed to the internet (the public Traefik instance + Authelia were removed in 
 
 - [x] Devcontainer + linting + pre-commit
 - [x] Terraform: Hetzner CX53 + private network + firewall
-- [x] Ansible: common, hardening, tailscale, k3s_server, k3s_agent, samba, backup
-- [x] Samba AD DC: HOMELAB.LOCAL with wildcard DNS over Tailscale
+- [x] Ansible: common, hardening, tailscale, k3s_server, k3s_agent
+- [x] Wildcard DNS for *.homelab.local over Tailscale (Samba AD DC until 2026-11, now CoreDNS `homelab-dns`)
 - [x] k3s cluster over Tailscale, migrated Flannel → Cilium
 - [x] Traefik ingress (hostPort 80/443) + HTTP→HTTPS redirect
 - [x] ArgoCD bootstrap + App-of-Apps
@@ -353,7 +350,7 @@ exposed to the internet (the public Traefik instance + Authelia were removed in 
 - [x] HashiCorp Vault + External Secrets Operator - all service secrets migrated off direct kubectl-created Secrets
 - [x] Forgejo + SSH on Port 2223 (Tailscale only) + Actions runner (replaced GitLab CE in 2026-11)
 - [x] cert-manager + internal CA + wildcard TLS for *.homelab.local
-- [x] Keycloak SSO (LDAP → Samba AD, OIDC for ArgoCD, Nextcloud, Paperless)
+- [x] Keycloak SSO (OIDC for ArgoCD, Nextcloud, Paperless)
 - [x] Nextcloud, Paperless-ngx, Vaultwarden, Overleaf
 - [x] Renovate (automated dependency updates)
 - [x] Velero (cluster backup/restore) + quarterly recovery tests
