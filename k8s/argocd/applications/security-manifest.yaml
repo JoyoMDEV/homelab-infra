@@ -20,6 +20,12 @@ kind: Application
 metadata:
   name: security-manifests
   namespace: argocd
+  annotations:
+    # Compare via server-side dry-run, so defaults the API server fills in
+    # (External Secrets CRD defaults like conversionStrategy, decodingStrategy,
+    # metadataPolicy, nullBytePolicy, deletionPolicy) don't show up as a
+    # permanent OutOfSync.
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:

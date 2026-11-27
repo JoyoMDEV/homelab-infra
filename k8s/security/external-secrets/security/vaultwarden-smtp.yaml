@@ -9,7 +9,10 @@ spec:
     name: vault
     kind: ClusterSecretStore
   target:
-    name: vaultwarden
+    # Own Secret, not the chart's: with release name "vaultwarden" the chart
+    # renders a Secret called "vaultwarden" itself (Yubico/Duo/Push keys), and
+    # both writing the same object kept the app OutOfSync.
+    name: vaultwarden-smtp
     creationPolicy: Owner
   data:
     - secretKey: SMTP_USERNAME
