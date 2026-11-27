@@ -22,6 +22,13 @@ spec:
         deployment:
           replicaCount: 1
 
+        # The chart defaults to dxflrs/amd64_garage (amd64 only). dxflrs/garage
+        # is the multi-arch image of the same release (amd64, arm64, ...) and
+        # is needed to run Garage on the Pi (context-hub#41). Tag stays empty
+        # = chart appVersion (v2.4.1).
+        image:
+          repository: dxflrs/garage
+
         persistence:
           enabled: true
           meta:
