@@ -6,7 +6,7 @@ Single pod, SQLite on a 20 Gi PVC, chart in `k8s/charts/forgejo`, ArgoCD app
 
 ## Erstinstallation
 
-1. Namespace-Label/DNS: `scripts/setup-coredns.sh` erneut ausführen, damit `forgejo.homelab.local` im Cluster auflöst. Für Clients außerhalb des Clusters braucht es den Eintrag in der Samba-DNS-Zone (falls kein Wildcard existiert).
+1. Namespace-Label/DNS: `scripts/setup-coredns.sh` erneut ausführen, damit `forgejo.homelab.local` im Cluster auflöst. Für Clients außerhalb des Clusters reicht der Wildcard-Eintrag für `*.homelab.local` in `k8s/homelab-dns`, ein eigener Eintrag ist nicht nötig.
 2. Secrets nach Vault (generiert `SECRET_KEY` und `INTERNAL_TOKEN`):
    ```bash
    export VAULT_TOKEN="..."

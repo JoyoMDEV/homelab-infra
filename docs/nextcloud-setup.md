@@ -7,7 +7,7 @@ Nextcloud läuft unter **https://nextcloud.homelab.local**.
 - Kubernetes-Cluster läuft: `make status`
 - ArgoCD erreichbar: https://argocd.homelab.local
 - Keycloak läuft: https://auth.homelab.local
-- Keycloak Realm `homelab` + LDAP-Federation eingerichtet (siehe `docs/keycloak-setup.md`)
+- Keycloak Realm `homelab` eingerichtet (siehe `docs/keycloak-setup.md`)
 - CoreDNS konfiguriert: `make setup-coredns`
 - CA importiert auf deinem Gerät: `make cert-ca`
 

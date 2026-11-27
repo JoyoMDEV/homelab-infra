@@ -1,22 +1,25 @@
 # Group Management Runbook
 
-Zentrales Gruppen-Management für das Homelab via Samba AD → Keycloak → Services.
+Zentrales Gruppen-Management für das Homelab via Keycloak → Services.
 
 **Konzept:**
 ```
-Samba AD (Source of Truth)
-  └── Gruppen in OU=HomelabGroups
-        └── Keycloak LDAP Group Mapper (sync)
-              └── OIDC Token (groups claim)
-                    └── Service RBAC (Admin/User)
+Keycloak Realm homelab (Source of Truth)
+  └── Gruppen und Mitgliedschaften
+        └── OIDC Token (groups claim)
+              └── Service RBAC (Admin/User)
 ```
+
+User und Gruppen sind lokale Keycloak-Objekte im Realm `homelab`. Passwörter
+und Gruppenmitgliedschaften liegen in Keycloak, es gibt keinen externen
+Verzeichnisdienst und keinen Sync mehr.
 
 ---
 
 ## Inhaltsverzeichnis
 
 1. [Gruppen-Übersicht](#1-gruppen-übersicht)
-2. [Neuen Admin-User anlegen](#2-neuen-admin-user-anlegen)
+2. [Neuen User anlegen](#2-neuen-user-anlegen)
 3. [User Gruppen zuweisen](#3-user-gruppen-zuweisen)
 4. [Neue Gruppe anlegen](#4-neue-gruppe-anlegen)
 5. [Service-Konfiguration](#5-service-konfiguration)
@@ -24,16 +27,15 @@ Samba AD (Source of Truth)
    - [Vault](#vault)
    - [Nextcloud](#nextcloud)
    - [Paperless](#paperless)
-   - [Homarr](#homarr)
    - [Vaultwarden](#vaultwarden)
-6. [Keycloak Gruppen-Sync](#6-keycloak-gruppen-sync)
+6. [kcadm.sh im Pod](#6-kcadmsh-im-pod)
 7. [Troubleshooting](#7-troubleshooting)
 
 ---
 
 ## 1. Gruppen-Übersicht
 
-Alle Gruppen liegen in `OU=HomelabGroups,DC=homelab,DC=local`.
+Alle Gruppen sind Keycloak-Gruppen im Realm `homelab` (Top-Level, kein Pfad).
 
 | Gruppe | Service | Rolle |
 |---|---|---|
@@ -41,90 +43,85 @@ Alle Gruppen liegen in `OU=HomelabGroups,DC=homelab,DC=local`.
 | `argocd-admins` | ArgoCD | role:admin |
 | `nextcloud-admins` | Nextcloud | Admin |
 | `paperless-admins` | Paperless-ngx | Superuser |
-| `homarr-admins` | Homarr | Admin |
 | `vaultwarden-admins` | Vaultwarden | Admin |
+
+`gitlab-admins`, `grafana-admins`, `homarr-admins` und `nocodb-admins` sind Reste entfernter Services und können gelöscht werden.
 
 ---
 
-## 2. Neuen Admin-User anlegen
+## 2. Neuen User anlegen
+
+### Via Admin-UI
+
+1. https://auth.homelab.local → Realm `homelab` → **Users** → **"Add user"**
+2. Username, E-Mail, Vorname, Nachname ausfüllen, **"Email verified"** auf ON → **"Create"**
+3. Tab **"Credentials"** → **"Set password"**, `Temporary` auf OFF, wenn der User das Passwort nicht beim ersten Login ändern soll
+4. Tab **"Groups"** → **"Join Group"** → passende Gruppen auswählen (siehe Abschnitt 3)
+
+### Via kcadm.sh
+
+Vorher einloggen, siehe [Abschnitt 6](#6-kcadmsh-im-pod).
 
 ```bash
-SERVER_IP=$(cd terraform && terraform output -raw k3s_server_ip)
+kcadm create users -r homelab \
+  -s username=<username> -s enabled=true -s emailVerified=true \
+  -s email=<username>@homelab.local \
+  -s firstName='<Vorname>' -s lastName='<Nachname>'
 
-# Samba Admin Passwort aus Vault
-SAMBA_PW=$(kubectl exec -n security vault-0 -- \
-  env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=<root-token> \
-  vault kv get -field=password secret/homelab/samba/admin 2>/dev/null || \
-  echo "<manuell eingeben>")
-
-# User anlegen
-ssh root@${SERVER_IP} \
-  "samba-tool user create <username> \
-   --given-name='<Vorname>' \
-   --surname='<Nachname>' \
-   --mail-address='<username>@homelab.local' \
-   -U Administrator --password='${SAMBA_PW}'"
+kcadm set-password -r homelab --username <username> --new-password '<passwort>'
 ```
-
-Danach Keycloak sync triggern:
-**User Federation → `samba-ad` → "Synchronize all users"**
 
 ---
 
 ## 3. User Gruppen zuweisen
 
-### Via Samba AD (empfohlen — Source of Truth)
+### Via Admin-UI
+
+Realm `homelab` → **Users** → User auswählen → Tab **"Groups"** → **"Join Group"** → Gruppe(n) auswählen → **"Join"**
+
+Entfernen: im selben Tab die Gruppe markieren → **"Leave"**
+
+Alternativ von der Gruppe aus: **Groups** → Gruppe → Tab **"Members"** → **"Add member"**
+
+### Via kcadm.sh
 
 ```bash
-SERVER_IP=$(cd terraform && terraform output -raw k3s_server_ip)
+kcadm() { kubectl -n auth exec -i keycloak-keycloakx-0 -- /opt/keycloak/bin/kcadm.sh "$@"; }
 
-# Einzelne Gruppe
-ssh root@${SERVER_IP} \
-  "samba-tool group addmembers '<gruppe>' '<username>' \
-   -U Administrator --password='<pw>'"
+# IDs nachschlagen
+USER_ID=$(kcadm get users -r homelab -q username=<username> --fields id --format csv --noquotes)
+GROUP_ID=$(kcadm get groups -r homelab -q search=<gruppe> --fields id --format csv --noquotes)
 
-# Alle Admin-Gruppen auf einmal
-for GROUP in homelab-admins argocd-admins \
-             nextcloud-admins paperless-admins \
-             homarr-admins vaultwarden-admins; do
-  ssh root@${SERVER_IP} \
-    "samba-tool group addmembers '${GROUP}' '<username>' \
-     -U Administrator --password='<pw>'" 2>&1 | grep -v WARNING
-  echo "✓ <username> → ${GROUP}"
-done
+# Gruppe zuweisen
+kcadm update users/$USER_ID/groups/$GROUP_ID -r homelab -s realm=homelab -s userId=$USER_ID -s groupId=$GROUP_ID -n
+
+# Gruppe entfernen
+kcadm delete users/$USER_ID/groups/$GROUP_ID -r homelab
+
+# Gruppen eines Users anzeigen
+kcadm get users/$USER_ID/groups -r homelab --fields name
 ```
 
-Danach Keycloak Group Mapper sync triggern:
-**User Federation → `samba-ad` → Mappers → `ad-groups` → "Sync LDAP Groups to Keycloak"**
-
-### User aus Gruppe entfernen
-
-```bash
-ssh root@${SERVER_IP} \
-  "samba-tool group removemembers '<gruppe>' '<username>' \
-   -U Administrator --password='<pw>'"
-```
+Neue Gruppenmitgliedschaften wirken erst mit einem neuen Token, also nach erneutem Login (siehe Troubleshooting).
 
 ---
 
 ## 4. Neue Gruppe anlegen
 
-```bash
-# Script nutzen (legt Gruppe in OU=HomelabGroups an)
-./scripts/setup-ad-groups.sh
+### Via Admin-UI
 
-# Oder manuell
-ssh root@${SERVER_IP} \
-  "samba-tool group add '<neue-gruppe>' \
-   --description='<Beschreibung>' \
-   --groupou='OU=HomelabGroups' \
-   -U Administrator --password='<pw>'"
+Realm `homelab` → **Groups** → **"Create group"** → Name eingeben → **"Create"**
+
+### Via kcadm.sh
+
+```bash
+kcadm create groups -r homelab -s name=<neue-gruppe>
 ```
 
 Danach:
-1. Keycloak sync triggern
-2. Service konfigurieren (siehe Abschnitt 5)
-3. Keycloak Client Groups Mapper prüfen
+1. User zuweisen (Abschnitt 3)
+2. Service konfigurieren (Abschnitt 5)
+3. Prüfen, ob der Keycloak-Client des Service einen `groups` Mapper hat (siehe Troubleshooting)
 
 ---
 
@@ -219,25 +216,6 @@ print(f'User {u.username}: superuser={u.is_superuser}')
 
 ---
 
-### Homarr
-
-**Status: ⚠️ manuell / OIDC**
-
-Homarr nutzt OIDC für Auth aber hat kein Gruppen-basiertes Admin-Mapping.
-Ersten User der sich einloggt automatisch als Admin setzen oder in den
-Homarr-Settings manuell konfigurieren.
-
-Keycloak Client `homarr` → Client Scopes → `homarr-dedicated` → Mapper `groups` anlegen:
-
-| Feld | Wert |
-|---|---|
-| Name | `groups` |
-| Token Claim Name | `groups` |
-| Full group path | `OFF` |
-| Add to ID token | `ON` |
-
----
-
 ### Vaultwarden
 
 **Status: ⚠️ manuell**
@@ -255,29 +233,36 @@ kubectl exec -n security vault-0 -- \
 
 ---
 
-## 6. Keycloak Gruppen-Sync
+## 6. kcadm.sh im Pod
 
-### Manueller Sync (nach AD-Änderungen)
-
-**User Federation → `samba-ad` → "Synchronize all users"**
-
-Oder Gruppen-Mapper spezifisch:
-**User Federation → `samba-ad` → Mappers → `ad-groups` → "Sync LDAP Groups to Keycloak"**
-
-### Automatischer Sync
-
-Konfiguriert in der LDAP Federation:
-- Full sync: alle 24h (`86400` Sekunden)
-- Changed users sync: stündlich (`3600` Sekunden)
-
-### Gruppen-Claim im Token prüfen
+Das Keycloak-Admin-CLI liegt im Pod unter `/opt/keycloak/bin/kcadm.sh`. Die Admin-Zugangsdaten stehen dort als Umgebungsvariablen `KEYCLOAK_ADMIN` und `KEYCLOAK_ADMIN_PASSWORD` bereit. Einmal einloggen, die Session wird im Pod gespeichert und gilt für die folgenden `kcadm.sh`-Aufrufe:
 
 ```bash
-# Token für einen User holen und Groups-Claim prüfen
-curl -s -X POST \
-  https://auth.homelab.local/realms/homelab/protocol/openid-connect/token \
-  -d "client_id=argocd&grant_type=password&username=<user>&password=<pw>" \
-  | python3 -m json.tool | grep -A5 groups
+kubectl -n auth exec -i keycloak-keycloakx-0 -- sh -c \
+  '/opt/keycloak/bin/kcadm.sh config credentials \
+     --server "http://localhost:8080${KC_HTTP_RELATIVE_PATH}" \
+     --realm master \
+     --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD"'
+```
+
+Die einfachen Anführungszeichen sind wichtig, damit die Variablen im Pod und nicht lokal aufgelöst werden.
+
+Für alle weiteren Aufrufe diese Shell-Funktion definieren (in den Beispielen dieses Runbooks vorausgesetzt):
+
+```bash
+kcadm() { kubectl -n auth exec -i keycloak-keycloakx-0 -- /opt/keycloak/bin/kcadm.sh "$@"; }
+```
+
+Eine Funktion statt einer Variablen wie `KCADM="kubectl ..."`: zsh (Standard auf macOS) teilt Variablen beim Aufruf nicht in Wörter auf, `$KCADM get ...` schlägt dort fehl. Ohne `-t` gibt es außerdem keine `\r` in der Ausgabe von `$(...)`. Getestet am 2026-11-27: Gruppe anlegen, beitreten, austreten, löschen.
+
+Nützliche Abfragen:
+
+```bash
+kcadm() { kubectl -n auth exec -i keycloak-keycloakx-0 -- /opt/keycloak/bin/kcadm.sh "$@"; }
+
+kcadm get users -r homelab --fields username,email,enabled
+kcadm get groups -r homelab --fields name
+kcadm get groups/<group-id>/members -r homelab --fields username
 ```
 
 ---
@@ -286,32 +271,13 @@ curl -s -X POST \
 
 ### User sieht keine Admin-Rechte nach Login
 
-1. Prüfen ob User in AD-Gruppe ist:
-```bash
-ssh root@${SERVER_IP} \
-  "samba-tool user getgroups '<username>' -U Administrator --password='<pw>'"
-```
+1. Prüfen ob User in der Gruppe ist:
+   **Users → `<username>` → Tab "Groups"**
 
-2. Prüfen ob Gruppe in Keycloak synct:
-**Users → `<username>` → Tab "Groups"**
+2. Session invalidieren (Keycloak):
+   **Users → `<username>` → Tab "Sessions" → "Logout all sessions"**
 
-3. Session invalidieren (Keycloak):
-**Users → `<username>` → Tab "Sessions" → "Logout all sessions"**
-
-4. Neu einloggen im Browser (privates Fenster)
-
-### Gruppen erscheinen nicht in Keycloak
-
-```bash
-# LDAP Verbindung testen
-kubectl run -it --rm ldap-test --image=alpine --restart=Never -- \
-  sh -c "apk add -q openldap-clients && \
-  ldapsearch -x -H ldap://<tailscale-ip>:389 \
-  -D 'CN=Administrator,CN=Users,DC=homelab,DC=local' \
-  -w '<pw>' \
-  -b 'OU=HomelabGroups,DC=homelab,DC=local' \
-  '(objectClass=group)' cn"
-```
+3. Neu einloggen im Browser (privates Fenster)
 
 ### OIDC Token enthält keine Gruppen
 
@@ -319,3 +285,17 @@ Keycloak Client → Client Scopes → `<client>-dedicated` → Mappers:
 - `groups` Mapper vorhanden?
 - `Add to ID token: ON`?
 - `Full group path: OFF`?
+
+Mapper anlegen, falls er fehlt (**Add mapper → By configuration → Group Membership**):
+
+| Feld | Wert |
+|---|---|
+| Name | `groups` |
+| Token Claim Name | `groups` |
+| Full group path | `OFF` |
+| Add to ID token | `ON` |
+| Add to access token | `ON` |
+| Add to userinfo | `ON` |
+
+Ob der Claim im Token landet, lässt sich in der Admin-UI prüfen:
+**Clients → `<client>` → Tab "Client scopes" → Sub-Tab "Evaluate"** → User auswählen → **"Generated ID token"**.

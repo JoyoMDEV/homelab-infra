@@ -8,7 +8,7 @@ Hybrid k3s cluster (2 Hetzner Cloud servers + 2 home nodes) managed with Terrafo
 ## Repo layout
 
 - `terraform/` — Hetzner Cloud provisioning (servers, network, firewall). State is local and gitignored.
-- `ansible/` — server configuration (`roles/`: `common`, `hardening`, `k3s_server`, `k3s_agent`, `samba`, `tailscale`, `backup`).
+- `ansible/` — server configuration (`roles/`: `common`, `hardening`, `k3s_server`, `k3s_agent`, `tailscale`).
 - `k8s/argocd/applications/` — one ArgoCD `Application` per deployed service. `k8s/argocd/root.yaml` is the app-of-apps that watches this directory.
 - `k8s/security/external-secrets/<category>/` — one `ExternalSecret` per service, grouped by category (`auth`, `productivity`, `infrastructure`, `automation`, `backup`, `forgejo`, `security`).
 - `k8s/charts/` — local Helm charts for services not available upstream.
@@ -21,7 +21,7 @@ Hybrid k3s cluster (2 Hetzner Cloud servers + 2 home nodes) managed with Terrafo
 
 **One ArgoCD Application per service**, in `k8s/argocd/applications/<service>.yaml`: `spec.project: default`, `syncPolicy.automated: {prune: true, selfHeal: true}`, `syncOptions: [CreateNamespace=true]`. `spec.destination.namespace` is the service's k8s namespace (matches its `external-secrets` category in most cases). Always pin `targetRevision` to a real chart/tag version — never leave a placeholder.
 
-**Ingress**: Traefik (`ingressClassName: traefik`), host `<service>.homelab.local`, TLS via the `homelab-wildcard-tls` secret (cert-manager internal CA). DNS for `*.homelab.local` is served by the Samba AD DC over Tailscale split DNS.
+**Ingress**: Traefik (`ingressClassName: traefik`), host `<service>.homelab.local`, TLS via the `homelab-wildcard-tls` secret (cert-manager internal CA). DNS for `*.homelab.local` is a wildcard served by the `homelab-dns` CoreDNS (`k8s/homelab-dns/`, hostNetwork on the minipc, Tailscale split DNS); new services need no DNS change.
 
 **Never edit directly**: `kubeconfig`, `terraform/*.tfstate*`, `certs/**` — these are gitignored, high-blast-radius files (cluster credentials, Terraform state, internal CA cert). A project hook in `.claude/settings.json` blocks edits to these paths.
 
