@@ -5,16 +5,17 @@ Hybrid Kubernetes cluster: 1 Hetzner Cloud server + 2 home nodes, managed with T
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Tailscale Mesh VPN                   │
-├──────────────────┬──────────────────┬───────────────────┤
-│  Hetzner CX53    │  Home: Mini-PC   │  Home: Raspberry  │
-│  k3s-server      │  k3s-worker-     │  Pi 4B            │
-│  32 GB / 16 vCPU │  minipc          │  k3s-worker-pi    │
-│  Control Plane   │  Worker          │  Worker           │
-│  (being retired) │  SSD: live data  │  HDD: Garage      │
-│                  │                  │                   │
-└──────────────────┴──────────────────┴───────────────────┘
+┌──────────────────────────────────────────────┐
+│               Tailscale Mesh VPN             │
+├───────────────────────┬──────────────────────┤
+│  Home: Mini-PC        │  Home: Raspberry     │
+│  k3s-worker-minipc    │  Pi 4B               │
+│  k3s server (SQLite)  │  k3s-worker-pi       │
+│  amd64, 16 GB, SSD    │  arm64, 8 GB         │
+│  all live volumes     │  USB-HDD: Garage     │
+│  homelab-dns          │  (backups)           │
+└───────────────────────┴──────────────────────┘
+(Hetzner k3s-server retired as control plane 2026-11-27)
 
 CNI:     Cilium (migrated from Flannel, see docs/cilium-migration.md;
          kube-proxy still active, replacement not yet done)

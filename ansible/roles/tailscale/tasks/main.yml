@@ -41,31 +41,16 @@
   changed_when: false
   failed_when: false
 
+# All nodes accept Tailscale DNS. The server used to run with
+# --accept-dns=false so the Samba AD DC on it could own DNS; Samba is gone
+# (2026-11) and homelab.local now comes from homelab-dns via split DNS.
 # noqa no-changed-when
-- name: Authenticate Tailscale (server - no accept-dns)
+- name: Authenticate Tailscale
   ansible.builtin.command: >
     tailscale up
     --auth-key={{ tailscale_auth_key }}
     --hostname={{ inventory_hostname }}
-    --accept-dns=false
-  when:
-    - "'Logged out' in tailscale_status.stdout or tailscale_status.rc != 0"
-    - k3s_role is defined and k3s_role == 'server'
-
-# noqa no-changed-when
-- name: Authenticate Tailscale (worker - with accept-dns)
-  ansible.builtin.command: >
-    tailscale up
-    --auth-key={{ tailscale_auth_key }}
-    --hostname={{ inventory_hostname }}
-  when:
-    - "'Logged out' in tailscale_status.stdout or tailscale_status.rc != 0"
-    - k3s_role is not defined or k3s_role != 'server'
-
-- name: Disable accept-dns on server (if already authenticated)
-  ansible.builtin.command: tailscale set --accept-dns=false
-  when: k3s_role is defined and k3s_role == 'server'
-  changed_when: false
+  when: "'Logged out' in tailscale_status.stdout or tailscale_status.rc != 0"
 
 - name: Get Tailscale IP
   ansible.builtin.command: tailscale ip -4

@@ -1,5 +1,5 @@
 ---
-- name: Setup k3s-server
+- name: Setup k3s server (minipc)
   hosts: server
   become: true
   roles:

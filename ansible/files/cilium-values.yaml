@@ -5,6 +5,12 @@
 # überschrieben (Tailscale-IP ist pro Umgebung unterschiedlich), die Werte
 # hier sind der Default für den Fall, dass jemand `helm install` von Hand
 # ohne das Playbook ausführt.
+#
+# Zieht der k3s-Server auf einen anderen Node um, MUSS k8sServiceHost mit:
+#   helm upgrade cilium cilium/cilium --version <installiert> -n kube-system \
+#     --reuse-values --set k8sServiceHost=<neue Server-IP>
+# Sonst erreichen Cilium-Agent und -Operator die API nicht mehr und der
+# Datapath friert ein (2026-11-27: "connection refused" auf 10.43.0.1:443).
 tunnelProtocol: vxlan
 tunnelPort: 8473  # Flannel belegt während der Migration noch Port 8472 (VXLAN-
                   # Default) auf jedem Node - ohne diesen Wert kollidiert Cilium's

@@ -3,7 +3,7 @@
 Always read this import first:
 @~/Code/gitlab/context-hub/CLAUDE.md
 
-Hybrid k3s cluster (2 Hetzner Cloud servers + 2 home nodes) managed with Terraform, Ansible, and ArgoCD. See `README.md` for the architecture diagram and CI/CD flow.
+k3s cluster on two home nodes (mini PC = server, Raspberry Pi = agent) managed with Ansible and ArgoCD. The Hetzner `k3s-server` was retired as control plane on 2026-11-27; `terraform/` only remains until it is destroyed. See `README.md` for the architecture diagram and CI/CD flow.
 
 ## Repo layout
 
