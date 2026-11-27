@@ -1,6 +1,6 @@
 # Homelab Infrastructure
 
-Hybrid Kubernetes cluster: 1 Hetzner Cloud server + 2 home nodes, managed with Terraform, Ansible & ArgoCD.
+Kubernetes cluster on two home nodes (mini PC + Raspberry Pi), managed with Ansible & ArgoCD. Terraform only manages the Hetzner Storage Box.
 
 ## Architecture
 
@@ -15,7 +15,7 @@ Hybrid Kubernetes cluster: 1 Hetzner Cloud server + 2 home nodes, managed with T
 │  all live volumes     │  USB-HDD: Garage     │
 │  homelab-dns          │  (backups)           │
 └───────────────────────┴──────────────────────┘
-(Hetzner k3s-server retired as control plane 2026-11-27)
+(Hetzner k3s-server retired 2026-11-27 and deleted; only the Storage Box is left)
 
 CNI:     Cilium (migrated from Flannel, see docs/cilium-migration.md;
          kube-proxy still active, replacement not yet done)
@@ -47,17 +47,17 @@ homelab-infra/
 ├── .devcontainer/              # Devcontainer (Go, Python, Terraform, Helm, k9s)
 ├── .claude/                    # Claude Code project config - see CLAUDE.md
 │
-├── terraform/                  # Hetzner Cloud provisioning
+├── terraform/                  # Hetzner Storage Box (only remaining cloud resource)
 │   ├── main.tf
 │   ├── variables.tf
-│   ├── servers.tf              #   CX53 (active) + CX43 worker (commented out)
+│   ├── storage-box.tf          #   Hetzner Storage Box (BX11)
 │   ├── outputs.tf
 │   └── terraform.tfvars.example
 │
 ├── ansible/                    # Server configuration
 │   ├── ansible.cfg
 │   ├── inventory/
-│   │   ├── hosts.yml            #   server (Hetzner) + workers (home) groups
+│   │   ├── hosts.yml            #   server (minipc) + workers (Pi) groups
 │   │   └── group_vars/all/
 │   │       ├── vars.yml         #   Non-secret variables
 │   │       └── vault.yml        #   Encrypted secrets (ansible-vault)
@@ -120,10 +120,8 @@ homelab-infra/
 # 1. Open in VS Code devcontainer
 code .  # → "Reopen in Container"
 
-# 2. Provision Hetzner server
-make tf-init
-make tf-plan
-make tf-apply
+# 2. Nodes: two machines at home with Ubuntu 24.04 and SSH access
+#    (Terraform is only needed for the Hetzner Storage Box: make tf-init / tf-plan / tf-apply)
 
 # 3. Configure Ansible secrets
 make vault-edit
@@ -340,7 +338,7 @@ exposed to the internet (the public Traefik instance + Authelia were removed in 
 ## Progress
 
 - [x] Devcontainer + linting + pre-commit
-- [x] Terraform: Hetzner CX53 + private network + firewall
+- [x] Terraform: Hetzner CX53 + private network + firewall (deleted 2026-11-27, cluster fully on-prem)
 - [x] Ansible: common, hardening, tailscale, k3s_server, k3s_agent
 - [x] Wildcard DNS for *.homelab.local over Tailscale (Samba AD DC until 2026-11, now CoreDNS `homelab-dns`)
 - [x] k3s cluster over Tailscale, migrated Flannel → Cilium

@@ -1,5 +1,4 @@
 hcloud_token         = "your-hetzner-api-token-here"
 ssh_public_key_path  = "~/.ssh/id_ed25519.pub"
-server_location      = "fsn1"
 storage_location     = "fsn1"
 storage_box_password = "password-for-hetzner-storage-box"
