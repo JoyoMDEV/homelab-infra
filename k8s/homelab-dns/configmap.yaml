@@ -19,9 +19,10 @@ data:
         }
         errors
         log
-    }
-    .:18053 {
-        bind 127.0.0.1
+        # HTTP on loopback for the probes. Not in a separate server block:
+        # a ".:18053" block made CoreDNS itself listen on TCP 18053, the
+        # health HTTP listener collided with it and the liveness probe timed
+        # out (restart loop, homelab.local down).
         health 127.0.0.1:18053
         ready 127.0.0.1:18054
     }
