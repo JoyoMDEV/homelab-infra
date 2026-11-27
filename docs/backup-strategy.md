@@ -7,7 +7,7 @@ Dieses Dokument beschreibt die Backup-Strategie für das Homelab-Setup bestehend
 - `k3s-worker-minipc`: Live-Daten auf der SSD (PVCs, Postgres).
 - `k3s-worker-pi`: Garage auf der 1-TB-USB-HDD des Raspberry Pi, Ziel für alle Backups (Velero, CNPG, Forgejo-Dumps).
 
-Live-Daten und Backups liegen damit auf getrennten Geräten, aber am selben Ort. Ein Offsite-Backup gibt es noch nicht (context-hub#36).
+Live-Daten und Backups liegen damit auf getrennten Geräten am selben Ort. Offsite: nächtlich eine verschlüsselte restic-Kopie aller Garage-Buckets auf der Hetzner Storage Box (context-hub#36, siehe "Offsite").
 
 ---
 
@@ -15,7 +15,7 @@ Live-Daten und Backups liegen damit auf getrennten Geräten, aber am selben Ort.
 
 | Komponente | Typ | Kritikalität | Sicherung |
 |---|---|---|---|
-| PostgreSQL (CNPG) | Datenbank | 🔴 Kritisch | ✅ CNPG Barman via Garage (kein Offsite, siehe unten) |
+| PostgreSQL (CNPG) | Datenbank | 🔴 Kritisch | ✅ CNPG Barman via Garage, offsite per restic |
 | Kubernetes Cluster State | K8s-Ressourcen | 🟠 Hoch | ✅ Velero (täglich 02:00, 14 Tage Retention) |
 | Nextcloud Nutzerdaten | Dateien | 🟠 Hoch | ❌ nicht gesichert (Storage Box entfällt) |
 | Forgejo (Repos, Issues, SQLite) | Git-Daten | 🟠 Hoch | ✅ Nächtlicher `forgejo dump` nach Garage (`forgejo-backups`) |
@@ -40,7 +40,7 @@ CNPG
 - WAL-Archivierung: kontinuierlich, gzip-komprimiert
 - Base-Backup: täglich 03:00 Uhr via ScheduledBackup CRD
 - Retention CNPG: 30 Tage
-- Kein Offsite (Restic und Storage Box entfernt, siehe "Bekannte Lücken")
+- Offsite über die restic-Kopie der Garage-Buckets (siehe "Offsite")
 
 **Recovery:**
 ```bash
@@ -145,7 +145,7 @@ make vault-edit
 
 ## Bekannte Lücken (Stand 2026-11-27)
 
-- **Kein Offsite-Backup.** Der Restic-Job (MinIO -> Storage Box) ist entfernt, er scheiterte ohnehin seit mindestens 2026-10-18 (Storage Box lehnte SSH auf Port 23 ab), und die Storage Box wird abgeschafft. Garage ist die einzige Kopie, sie liegt auf der HDD des Pi im selben Cluster und am selben Ort wie die Live-Daten. Ein Konzept für eine zweite Kopie außerhalb des Hauses steht aus (context-hub#36).
+- **Offsite erst seit 2026-11 wieder.** Vorher gab es seit dem 2026-10-18 keine Kopie außerhalb des Hauses (der alte Restic-Job scheiterte am nicht eingetragenen SSH-Key). Der Restore aus der Storage Box ist im Runbook beschrieben und sollte regelmäßig geprobt werden.
 - **PVC-Inhalte werden nicht gesichert.** Velero läuft ohne node-agent (`defaultVolumesToFsBackup: false`, `local-path` wird von Kopia nicht unterstützt). Gesichert werden nur Cluster-Objekte und die Postgres-Daten (CNPG). Nextcloud-/Paperless-Dateien, Overleaf und die Forgejo-Repos liegen nur auf dem jeweiligen Node (Forgejo zusätzlich als nächtlicher Dump in Garage).
 - MinIO ist entfernt, die alten Backups dort sind weg. CNPG hat in Garage eine neue Backup-Linie begonnen (erstes Base-Backup am 2026-10-20).
 - Die Storage Box wird nicht mehr genutzt (der Nextcloud-Mount ist entfernt). Die Terraform-Ressource `hcloud_storage_box.main` existiert noch und kann entfernt werden.
@@ -188,5 +188,19 @@ make recovery-test   # Verifiziert dass Backup funktioniert
 ## Offene Punkte / ToDos
 
 - [ ] **Restic CronJob** für Nextcloud-Dateien auf Backblaze B2 (Issue #5)
-- [ ] **Offsite-Kopie** der Garage-Buckets (context-hub#36)
+- [x] **Offsite-Kopie** der Garage-Buckets (context-hub#36)
 - [ ] **Recovery-Tests** einmal pro Quartal: `make recovery-test`
+
+## Offsite
+
+CronJob `backup/offsite-backup` (`k8s/infrastructure/offsite-backup.yaml`), täglich 04:30:
+
+1. `rclone sync` spiegelt `velero-backups`, `cnpg-backups`, `forgejo-backups` und `archive` mit einem reinen Lese-Key als Dateien in das Staging-Volume `offsite-staging` (minipc-SSD).
+2. `restic backup` sichert das Staging-Volume nach `sftp:<storage-box>:restic-homelab` (Port 23). Clientseitig verschlüsselt, dedupliziert, Aufbewahrung 7 täglich / 4 wöchentlich / 6 monatlich, danach `restic check`.
+
+Zugangsdaten: Vault `homelab/backup/offsite-backup-secret`, angelegt von `scripts/setup-offsite-backup.sh`. **Das Restic-Passwort muss zusätzlich außerhalb des Clusters liegen** (Passwortmanager), sonst ist das Backup bei Totalverlust wertlos.
+
+Testlauf: `kubectl -n backup create job --from=cronjob/offsite-backup offsite-backup-test`
+
+Restore: siehe context-hub `homelab-infra/runbooks/offsite-backup-restore.md`.
+
