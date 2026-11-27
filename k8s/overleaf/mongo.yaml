@@ -11,15 +11,21 @@ spec:
   accessModes:
     - ReadWriteOnce
 ---
+# StatefulSet instead of Deployment (context-hub#42): the pod is always
+# overleaf-mongo-0, and the old pod is gone before the new one starts.
+# The replica set member is the pod's own FQDN. Before mongod starts, an init
+# container waits until that name resolves to this pod's IP. Without that,
+# mongod's startup "isSelf" check could hit the previous pod's IP, mark the
+# node REMOVED and never recover on its own (21 days of Overleaf downtime,
+# see context-hub homelab-infra/references/overleaf-mongo-replicaset-stale-ip.md).
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: overleaf-mongo
   namespace: overleaf
 spec:
+  serviceName: overleaf-mongo
   replicas: 1
-  strategy:
-    type: Recreate
   selector:
     matchLabels:
       app: overleaf-mongo
@@ -32,6 +38,25 @@ spec:
       # kann SIGKILL statt eines sauberen Shutdowns kommen, das den
       # Replica-Set-Zustand (local.system.replset) korrumpieren kann.
       terminationGracePeriodSeconds: 60
+      initContainers:
+        - name: wait-for-own-dns
+          image: busybox:1.36
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          command:
+            - sh
+            - -c
+            - |
+              NAME=overleaf-mongo-0.overleaf-mongo.overleaf.svc.cluster.local
+              # Exact match on the address lines only (10.42.1.25 must not
+              # match a stale 10.42.1.252), skipping the resolver's own line.
+              until nslookup "$NAME" 2>/dev/null | sed -n '/^Name:/,$p' | grep -qx "Address: *$POD_IP"; do
+                echo "waiting for $NAME -> $POD_IP"; sleep 2
+              done
+              echo "$NAME resolves to $POD_IP"
       containers:
         - name: mongo
           image: mongo:8.0
@@ -60,6 +85,7 @@ spec:
             limits:
               memory: 1Gi
       volumes:
+        # Existing PVC (data stays), not a volumeClaimTemplate.
         - name: data
           persistentVolumeClaim:
             claimName: overleaf-mongo-data
@@ -107,21 +133,21 @@ spec:
             - overleaf-mongo
             - --eval
             - >
-              try {
-                const status = rs.status();
-                if (status.members[0].stateStr !== "PRIMARY") {
-                  throw new Error("not primary, forcing reconfig");
-                }
-                print("replica set healthy, nothing to do");
-              } catch (e) {
-                try {
-                  rs.initiate({_id: "overleaf", members: [{_id: 0, host: "overleaf-mongo:27017"}]});
-                  print("replica set initiated");
-                } catch (e2) {
-                  const cfg = rs.conf();
+              const HOST = "overleaf-mongo-0.overleaf-mongo.overleaf.svc.cluster.local:27017";
+              let cfg = null;
+              try { cfg = rs.conf(); } catch (e) { cfg = null; }
+              if (cfg === null) {
+                rs.initiate({_id: "overleaf", members: [{_id: 0, host: HOST}]});
+                print("replica set initiated with " + HOST);
+              } else {
+                let primary = false;
+                try { primary = rs.status().members[0].stateStr === "PRIMARY"; } catch (e) {}
+                if (cfg.members[0].host !== HOST || !primary) {
+                  cfg.members[0].host = HOST;
                   cfg.version += 1;
                   rs.reconfig(cfg, {force: true});
-                  print("replica set force-reconfigured");
+                  print("replica set reconfigured to " + HOST);
+                } else {
+                  print("replica set healthy on " + HOST + ", nothing to do");
                 }
               }
-
