@@ -25,7 +25,15 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     resourceNames: ["homelab-wildcard-tls", "homelab-ca-keypair", "homelab-ca"]
-    verbs: ["get", "create", "patch", "update"]
+    verbs: ["get", "patch", "update"]
+  # "create" cannot be restricted by resourceNames (the name is not known to
+  # RBAC before the object exists), so the rule above never allowed creating
+  # homelab-ca in a newly labelled namespace and the job failed every night
+  # from 2026-09-14 on. Create stays cluster-wide but write-only: no get/list
+  # on arbitrary secrets.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -156,10 +164,13 @@ spec:
                     fi
                   else
                     echo "    Creating wildcard secret in ${DST_NS}..."
+                    TMP=$(mktemp -d)
+                    echo "${SRC_CRT}" | base64 -d > "${TMP}/tls.crt"
+                    echo "${SRC_KEY}" | base64 -d > "${TMP}/tls.key"
                     kubectl create secret tls "${WILDCARD_SECRET}" \
-                      --cert=<(echo "${SRC_CRT}" | base64 -d) \
-                      --key=<(echo "${SRC_KEY}" | base64 -d) \
+                      --cert="${TMP}/tls.crt" --key="${TMP}/tls.key" \
                       -n "${DST_NS}"
+                    rm -rf "${TMP}"
                   fi
 
                   # ── 2. Sync CA cert to all namespaces labeled inject-ca=true ──────
@@ -184,6 +195,7 @@ spec:
                     echo "    To enable CA injection: kubectl label namespace <ns> ${LABEL}"
                   fi
 
+                  FAILED=""
                   for NS in ${NAMESPACES}; do
                     echo "    Namespace: ${NS}"
                     if kubectl get secret "${CA_SECRET}" -n "${NS}" &>/dev/null; then
@@ -195,17 +207,25 @@ spec:
                         echo "      CA changed, updating..."
                         kubectl patch secret "${CA_SECRET}" -n "${NS}" \
                           --type merge \
-                          -p "{\"data\":{\"homelab-ca.crt\":\"${CA_CRT}\"}}"
+                          -p "{\"data\":{\"homelab-ca.crt\":\"${CA_CRT}\"}}" \
+                          || FAILED="${FAILED} ${NS}"
                       fi
                     else
                       echo "      Creating CA secret..."
                       kubectl create secret generic "${CA_SECRET}" \
                         --from-literal=homelab-ca.crt="$(echo "${CA_CRT}" | base64 -d)" \
-                        -n "${NS}"
+                        -n "${NS}" \
+                        || FAILED="${FAILED} ${NS}"
                     fi
                   done
 
                   echo ""
+                  if [ -n "${FAILED}" ]; then
+                    # Keep going for the other namespaces, but still fail
+                    # the job so the problem shows up in ArgoCD.
+                    echo "==> cert-sync finished with errors in:${FAILED}"
+                    exit 1
+                  fi
                   echo "==> cert-sync complete."
               resources:
                 requests:

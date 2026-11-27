@@ -43,15 +43,16 @@ spec:
           tlsSecret: homelab-wildcard-tls
           additionalAnnotations: {}
 
-        # Das Chart schreibt SMTP-Credentials in sein eigenes Secret 'vaultwarden'
-        # mit Keys in Großbuchstaben (SMTP_USERNAME, SMTP_PASSWORD).
+        # SMTP-Credentials kommen aus dem ExternalSecret 'vaultwarden-smtp'
+        # (Keys SMTP_USERNAME, SMTP_PASSWORD). Nicht 'vaultwarden': so heißt
+        # das Secret, das das Chart selbst rendert.
         smtp:
           host: mail.your-server.de
           from: contact@johannesmoseler.de
           fromName: "Vaultwarden"
           security: starttls
           port: 587
-          existingSecret: "vaultwarden"
+          existingSecret: "vaultwarden-smtp"
           username:
             existingSecretKey: "SMTP_USERNAME"
           password:
