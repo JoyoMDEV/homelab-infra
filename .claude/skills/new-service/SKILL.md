@@ -12,7 +12,7 @@ Scaffolds the boilerplate for a new service deployed via ArgoCD in this repo, fo
 Ask the user (or infer from context) for:
 
 1. **Service name** (lowercase, hyphenated, e.g. `paperless`) — used as the k8s resource name, ArgoCD app name, and directory name.
-2. **Category / namespace** — the k8s namespace it deploys into. Check existing categories first: `ls k8s/security/external-secrets/` and `ls k8s/argocd/applications/` for precedent (`productivity`, `infrastructure`, `auth`, `dashboard`, `forgejo`, `security`, `cert-manager`). Reuse an existing category/namespace when the service fits; only introduce a new one if none fit.
+2. **Category / namespace** — the k8s namespace it deploys into. Check existing categories first: `ls k8s/security/external-secrets/` and `ls k8s/argocd/applications/` for precedent (`productivity`, `infrastructure`, `auth`, `automation`, `backup`, `forgejo`, `security`). Reuse an existing category/namespace when the service fits; only introduce a new one if none fit.
 3. **Source**: a Helm chart (repo URL + chart name + version) or a local chart path (`k8s/charts/<name>`)?
 4. **Hostname**: usually `<service>.homelab.local`.
 5. **Secret keys needed**: what does the ExternalSecret need to pull from Vault (DB creds, OIDC client secret, admin password, etc.)?

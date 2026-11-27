@@ -42,23 +42,7 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: finance
-  labels:
-    managed-by: argocd
-    homelab.local/inject-ca: "true"
----
-apiVersion: v1
-kind: Namespace
-metadata:
   name: infrastructure
-  labels:
-    managed-by: argocd
-    homelab.local/inject-ca: "true"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: dashboard
   labels:
     managed-by: argocd
     homelab.local/inject-ca: "true"
@@ -70,14 +54,6 @@ metadata:
   labels:
     managed-by: argocd
     tier: public
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: backend
-  labels:
-    managed-by: argocd
-    homelab.local/inject-ca: "true"
 ---
 apiVersion: v1
 kind: Namespace
