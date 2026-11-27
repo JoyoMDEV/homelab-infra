@@ -1,0 +1,27 @@
+---
+# Authoritative DNS for *.homelab.local on the minipc's Tailscale IP,
+# replacing the Samba AD DC (context-hub#34). Plain manifests in
+# k8s/homelab-dns, like overleaf.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homelab-dns
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/JoyoMDEV/homelab-infra.git
+    targetRevision: main
+    path: k8s/homelab-dns
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homelab-dns
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
