@@ -23,8 +23,8 @@ danach bewusst, separat und manuell ein.
 
    ```yaml
    # ansible/inventory/hosts.yml
-   k3s-server:
-     ansible_host: 100.118.73.72 # Tailscale-IP, nicht die öffentliche!
+   k3s-worker-minipc:
+     ansible_host: 100.79.105.118 # Tailscale-IP
    ```
 
    Das ist wichtig, weil Ansible selbst über diese Adresse verbindet — läuft

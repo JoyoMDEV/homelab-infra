@@ -9,6 +9,10 @@
     path: /usr/local/bin/k3s
   register: k3s_server_binary
 
+# Only runs on a fresh host. The current server (minipc) was not installed
+# this way: on 2026-11-27 the SQLite datastore, certificates and token were
+# moved over from the Hetzner k3s-server (context-hub#35). Keep these flags in
+# line with /etc/systemd/system/k3s.service on the minipc.
 # noqa command-instead-of-module no-changed-when risky-shell-pipe
 - name: Install k3s server
   when: not k3s_server_binary.stat.exists
@@ -17,12 +21,12 @@
       --write-kubeconfig-mode 644 \
       --disable servicelb \
       --node-ip {{ k3s_server_tailscale_ip.stdout }} \
+      --flannel-iface tailscale0 \
       --flannel-backend=none \
       --disable-network-policy \
       --node-label role=server \
-      --node-label location=cloud \
-      --tls-san {{ k3s_server_tailscale_ip.stdout }} \
-      --tls-san {{ ansible_host }}
+      --node-label location={{ location | default('home') }} \
+      --tls-san {{ k3s_server_tailscale_ip.stdout }}
   environment:
     INSTALL_K3S_VERSION: "{{ k3s_server_version | default(omit) }}"
 
