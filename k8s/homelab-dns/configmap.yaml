@@ -1,0 +1,41 @@
+---
+# Authoritative DNS for homelab.local, replacing the Samba AD DC
+# (context-hub#34). Tailscale split DNS sends only homelab.local queries
+# here, so no forwarding is needed. Every name resolves to the minipc's
+# Tailscale IP, where Traefik (DaemonSet, hostNetwork) routes by Host header.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homelab-dns
+  namespace: homelab-dns
+data:
+  Corefile: |
+    homelab.local:53 {
+        # Only the Tailscale addresses of the node, never 0.0.0.0:
+        # systemd-resolved keeps 127.0.0.53/54, nothing is exposed elsewhere.
+        bind tailscale0
+        file /etc/coredns/homelab.local.db {
+            reload 30s
+        }
+        errors
+        log
+    }
+    .:18053 {
+        bind 127.0.0.1
+        health 127.0.0.1:18053
+        ready 127.0.0.1:18054
+    }
+  # Bump the serial on every change.
+  homelab.local.db: |
+    $ORIGIN homelab.local.
+    $TTL 300
+    @   IN SOA ns.homelab.local. admin.homelab.local. (
+            2026112701 ; serial
+            3600       ; refresh
+            600        ; retry
+            1209600    ; expire
+            300 )      ; negative TTL
+    @   IN NS  ns.homelab.local.
+    ns  IN A   100.79.105.118
+    @   IN A   100.79.105.118
+    *   IN A   100.79.105.118

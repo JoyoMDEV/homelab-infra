@@ -1,0 +1,65 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homelab-dns
+  namespace: homelab-dns
+  labels:
+    app: homelab-dns
+spec:
+  replicas: 1
+  # hostNetwork port 53: the old pod must be gone before the new one binds.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: homelab-dns
+  template:
+    metadata:
+      labels:
+        app: homelab-dns
+    spec:
+      hostNetwork: true
+      # Serves only its own zone, needs no cluster DNS.
+      dnsPolicy: Default
+      automountServiceAccountToken: false
+      # The node whose Tailscale IP the zone and the Tailscale split DNS
+      # point to.
+      nodeSelector:
+        kubernetes.io/hostname: k3s-worker-minipc
+      containers:
+        - name: coredns
+          image: coredns/coredns:1.15.0
+          args: ["-conf", "/etc/coredns/Corefile"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+              add: [NET_BIND_SERVICE]
+          livenessProbe:
+            httpGet:
+              host: 127.0.0.1
+              path: /health
+              port: 18053
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              host: 127.0.0.1
+              path: /ready
+              port: 18054
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/coredns
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: homelab-dns
