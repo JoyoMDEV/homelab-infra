@@ -1,0 +1,138 @@
+---
+# Offsite copy of everything in Garage to the Hetzner Storage Box
+# (context-hub#36). Garage itself sits on the Pi's USB HDD at home, so
+# without this a fire or theft at home would take data and backups.
+#
+# Nightly, in two steps:
+#   1. rclone mirrors the Garage buckets (read-only key) as plain files into
+#      a staging volume on the minipc SSD. Incremental, so only changes are
+#      downloaded.
+#   2. restic backs the staging volume up to a repository on the Storage Box
+#      over SFTP (port 23): encrypted client-side, deduplicated, with
+#      retention 7 daily / 4 weekly / 6 monthly.
+# Restore: context-hub homelab-infra/runbooks/offsite-backup-restore.md.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: offsite-staging
+  namespace: backup
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 30Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: offsite-backup
+  namespace: backup
+spec:
+  # After Velero (02:00), Forgejo dump (02:30) and the CNPG base backup (03:00).
+  schedule: "30 4 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: offsite-backup
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          # Staging lives on the minipc SSD (the Pi only has an SD card for
+          # local-path volumes).
+          nodeSelector:
+            kubernetes.io/hostname: k3s-worker-minipc
+          initContainers:
+            - name: mirror-garage
+              image: rclone/rclone:1.76.0
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  for b in velero-backups cnpg-backups forgejo-backups archive; do
+                    echo "==> rclone sync garage:$b"
+                    rclone sync "garage:$b" "/staging/$b" --fast-list --stats-one-line --stats 0 -v
+                  done
+                  du -sh /staging/*
+              env:
+                - name: RCLONE_CONFIG_GARAGE_TYPE
+                  value: s3
+                - name: RCLONE_CONFIG_GARAGE_PROVIDER
+                  value: Other
+                - name: RCLONE_CONFIG_GARAGE_ENDPOINT
+                  value: http://garage.infrastructure.svc.cluster.local:3900
+                - name: RCLONE_CONFIG_GARAGE_REGION
+                  value: garage
+                - name: RCLONE_CONFIG_GARAGE_FORCE_PATH_STYLE
+                  value: "true"
+                - name: RCLONE_CONFIG_GARAGE_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: offsite-backup-secret
+                      key: garage-access-key-id
+                - name: RCLONE_CONFIG_GARAGE_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: offsite-backup-secret
+                      key: garage-secret-access-key
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  memory: 512Mi
+              volumeMounts:
+                - name: staging
+                  mountPath: /staging
+          containers:
+            - name: restic
+              image: restic/restic:0.19.1
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  mkdir -p /root/.ssh && chmod 700 /root/.ssh
+                  install -m 600 /secrets/ssh-privatekey /root/.ssh/id_ed25519
+                  install -m 600 /secrets/known-hosts /root/.ssh/known_hosts
+                  H=$(cat /secrets/storage-box-host); U=$(cat /secrets/storage-box-user); P=$(cat /secrets/storage-box-port)
+                  # Host key is pinned (known-hosts from the setup script), no accept-new.
+                  printf 'Host storagebox\n  HostName %s\n  Port %s\n  User %s\n  IdentityFile /root/.ssh/id_ed25519\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n  ServerAliveInterval 60\n' "$H" "$P" "$U" > /root/.ssh/config
+                  export RESTIC_REPOSITORY="sftp:storagebox:restic-homelab"
+                  export RESTIC_PASSWORD_FILE=/secrets/restic-password
+                  restic cat config >/dev/null 2>&1 || { echo "==> restic init"; restic init; }
+                  echo "==> restic backup"
+                  restic backup /staging --host homelab --tag garage
+                  echo "==> restic forget/prune"
+                  restic forget --host homelab --tag garage --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune
+                  echo "==> restic check"
+                  restic check
+                  restic snapshots --latest 3
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  memory: 2Gi
+              volumeMounts:
+                - name: staging
+                  mountPath: /staging
+                  readOnly: true
+                - name: secret
+                  mountPath: /secrets
+                  readOnly: true
+          volumes:
+            - name: staging
+              persistentVolumeClaim:
+                claimName: offsite-staging
+            - name: secret
+              secret:
+                secretName: offsite-backup-secret
+                defaultMode: 0400
