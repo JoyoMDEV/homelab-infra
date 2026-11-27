@@ -273,7 +273,7 @@ path "auth/token/lookup-self" {
 success "Policy 'reader' angelegt."
 
 # Namespace-spezifische Policies
-for NS in forgejo auth productivity security automation dashboard infrastructure; do
+for NS in forgejo auth productivity security automation infrastructure; do
   write_policy "ns-${NS}" "path \"secret/data/homelab/${NS}/*\" {
   capabilities = [\"read\"]
 }
